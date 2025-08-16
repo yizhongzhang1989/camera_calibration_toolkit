@@ -540,6 +540,80 @@ body {
     to { opacity: 1; }
 }
 
+/* Image Selection Column */
+.image-selection-cell {
+    padding: 1rem 0.5rem;
+    text-align: center;
+    vertical-align: middle;
+}
+
+.image-checkbox {
+    margin: 0.5rem 0;
+    transform: scale(1.2);
+    cursor: pointer;
+}
+
+.image-name {
+    font-size: 0.85rem;
+    color: #333;
+    margin: 0.5rem 0;
+    word-break: break-word;
+    line-height: 1.2;
+}
+
+.image-index {
+    background: #007bff;
+    color: white;
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    display: inline-block;
+}
+
+.select-all-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.select-all-checkbox {
+    transform: scale(1.1);
+    cursor: pointer;
+}
+
+.select-all-label {
+    font-size: 0.8rem;
+    color: #666;
+    cursor: pointer;
+}
+
+.image-delete-btn {
+    background: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.image-delete-btn:hover {
+    background: #c82333;
+    transform: scale(1.1);
+}
+
 .result-image {
     background: white;
     border-radius: 8px;

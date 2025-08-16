@@ -130,12 +130,17 @@ def upload_images():
         # Update session data
         if session_id not in session_data:
             session_data[session_id] = {}
-        session_data[session_id]['images'] = uploaded_files
+        
+        # Append new images to existing ones (if any)
+        existing_images = session_data[session_id].get('images', [])
+        all_images = existing_images + uploaded_files
+        
+        session_data[session_id]['images'] = all_images
         session_data[session_id]['calibration_type'] = calibration_type
         
         return jsonify({
-            'message': f'Successfully uploaded {len(uploaded_files)} images',
-            'files': uploaded_files
+            'message': f'Successfully uploaded {len(uploaded_files)} new images. Total: {len(all_images)} images',
+            'files': all_images
         })
         
     except Exception as e:
@@ -234,14 +239,18 @@ def calibrate():
         images = session_info['images']
         parameters = session_info['parameters']
         calibration_type = session_info.get('calibration_type', 'intrinsic')
+        selected_indices = request.json.get('selected_indices', list(range(len(images))))
         
         # Extract parameters
         XX = int(parameters['chessboard_x'])
         YY = int(parameters['chessboard_y'])
         L = float(parameters['square_size'])
         
-        # Get image paths
-        image_paths = [img['path'] for img in images]
+        # Get image paths - only selected ones
+        image_paths = [images[i]['path'] for i in selected_indices if i < len(images)]
+        
+        if len(image_paths) < 3:
+            return jsonify({'error': 'Need at least 3 selected images for calibration'}), 400
         
         results = {}
         
@@ -266,6 +275,8 @@ def calibrate():
                 os.makedirs(undistorted_dir, exist_ok=True)
                 
                 for i, img_path in enumerate(image_paths):
+                    original_index = selected_indices[i]
+                    
                     # Generate corner detection visualization
                     img = cv2.imread(img_path)
                     if img is not None:
@@ -280,26 +291,28 @@ def calibrate():
                             img_with_corners = img.copy()
                             cv2.drawChessboardCorners(img_with_corners, (XX, YY), corners, find_corners_ret)
                             
-                            corner_filename = f"{i}.jpg"
+                            corner_filename = f"{original_index}.jpg"
                             corner_path = os.path.join(corner_viz_dir, corner_filename)
                             cv2.imwrite(corner_path, img_with_corners)
                             
                             corner_images.append({
                                 'name': corner_filename,
                                 'path': corner_path,
-                                'url': url_for('get_corner_image', session_id=session_id, filename=corner_filename)
+                                'url': url_for('get_corner_image', session_id=session_id, filename=corner_filename),
+                                'index': original_index
                             })
                         
                         # Generate undistorted image
                         undistorted_img = intrinsic_calibrator.undistort_image(img_path)
-                        undistorted_filename = f"{i}.jpg"
+                        undistorted_filename = f"{original_index}.jpg"
                         undistorted_path = os.path.join(undistorted_dir, undistorted_filename)
                         cv2.imwrite(undistorted_path, undistorted_img)
                         
                         undistorted_images.append({
                             'name': undistorted_filename,
                             'path': undistorted_path,
-                            'url': url_for('get_undistorted_image', session_id=session_id, filename=undistorted_filename)
+                            'url': url_for('get_undistorted_image', session_id=session_id, filename=undistorted_filename),
+                            'index': original_index
                         })
                 
                 results = {

@@ -51,6 +51,7 @@ class IntrinsicCalibration {
         document.getElementById('calibrate-btn').addEventListener('click', () => this.startCalibration());
         document.getElementById('clear-btn').addEventListener('click', () => this.clearSession());
         document.getElementById('download-btn').addEventListener('click', () => this.downloadResults());
+        document.getElementById('clear-all-images-btn').addEventListener('click', () => this.clearAllImages());
         
         // View controls
         document.querySelectorAll('.view-btn').forEach(btn => {
@@ -84,8 +85,11 @@ class IntrinsicCalibration {
                 return;
             }
             
-            this.uploadedImages = result.files;
-            this.showStatus(`Successfully uploaded ${result.files.length} images`, 'success');
+            // Backend returns all images (existing + new), so just replace the array
+            const allImages = result.files || [];
+            this.uploadedImages = allImages;
+            
+            this.showStatus(result.message, 'success');
             this.updateUI();
             this.displayUploadedImages();
             
@@ -95,22 +99,9 @@ class IntrinsicCalibration {
     }
     
     displayUploadedImages() {
-        const imageList = document.getElementById('image-list');
         const placeholder = document.getElementById('results-placeholder');
         const comparisonTable = document.getElementById('image-comparison-table');
         const tableBody = document.getElementById('image-comparison-body');
-        
-        // Update file list in control panel
-        imageList.innerHTML = '';
-        this.uploadedImages.forEach((file, index) => {
-            const fileItem = document.createElement('div');
-            fileItem.className = 'file-item';
-            fileItem.innerHTML = `
-                <span class="file-name">📷 ${file.name}</span>
-                <button class="remove-btn" onclick="intrinsicCalib.removeImage(${index})">&times;</button>
-            `;
-            imageList.appendChild(fileItem);
-        });
         
         // Update table display
         if (this.uploadedImages.length === 0) {
@@ -124,9 +115,31 @@ class IntrinsicCalibration {
         
         // Clear and populate table
         tableBody.innerHTML = '';
+        
+        // Add select all row
+        const selectAllRow = document.createElement('tr');
+        selectAllRow.innerHTML = `
+            <td class="image-selection-cell">
+                <div class="select-all-container">
+                    <input type="checkbox" id="select-all-checkbox" class="select-all-checkbox" checked>
+                    <label for="select-all-checkbox" class="select-all-label">Select All</label>
+                </div>
+            </td>
+            <td colspan="3" style="text-align: center; color: #666; font-style: italic; padding: 1rem;">
+                Use checkboxes to select images for calibration, or × button to remove images
+            </td>
+        `;
+        tableBody.appendChild(selectAllRow);
+        
         this.uploadedImages.forEach((file, index) => {
             const row = document.createElement('tr');
             row.innerHTML = `
+                <td class="image-selection-cell">
+                    <div class="image-index">${index + 1}</div>
+                    <div class="image-name">${file.name}</div>
+                    <input type="checkbox" id="image-${index}" class="image-checkbox" data-index="${index}" checked>
+                    <button class="image-delete-btn" onclick="intrinsicCalib.removeImage(${index})" title="Remove image">&times;</button>
+                </td>
                 <td>
                     <div class="comparison-image-container">
                         <img src="${file.url}" alt="Original ${index + 1}" class="comparison-image" loading="lazy" onclick="intrinsicCalib.openModal('${file.url}', 'Original Image ${index + 1}')">
@@ -146,6 +159,25 @@ class IntrinsicCalibration {
                 </td>
             `;
             tableBody.appendChild(row);
+        });
+        
+        // Add select all functionality
+        const selectAllCheckbox = document.getElementById('select-all-checkbox');
+        if (selectAllCheckbox) {
+            selectAllCheckbox.addEventListener('change', (e) => {
+                const imageCheckboxes = document.querySelectorAll('.image-checkbox');
+                imageCheckboxes.forEach(checkbox => {
+                    checkbox.checked = e.target.checked;
+                });
+            });
+        }
+        
+        // Add individual checkbox listeners
+        const imageCheckboxes = document.querySelectorAll('.image-checkbox');
+        imageCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                this.updateSelectAllState();
+            });
         });
     }
     
@@ -183,13 +215,15 @@ class IntrinsicCalibration {
     }
     
     async startCalibration() {
-        if (this.uploadedImages.length < 3) {
-            this.showStatus('Need at least 3 images for calibration', 'error');
+        const selectedIndices = this.getSelectedImageIndices();
+        
+        if (selectedIndices.length < 3) {
+            this.showStatus('Need at least 3 selected images for calibration', 'error');
             return;
         }
         
         try {
-            this.showStatus('Starting intrinsic calibration...', 'info');
+            this.showStatus(`Starting intrinsic calibration with ${selectedIndices.length} selected images...`, 'info');
             document.getElementById('calibrate-btn').disabled = true;
             
             // Update parameters first
@@ -200,7 +234,8 @@ class IntrinsicCalibration {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     session_id: this.sessionId,
-                    calibration_type: 'intrinsic'
+                    calibration_type: 'intrinsic',
+                    selected_indices: selectedIndices
                 })
             });
             
@@ -268,13 +303,25 @@ class IntrinsicCalibration {
         const cornerImages = this.calibrationResults.corner_images || [];
         const undistortedImages = this.calibrationResults.undistorted_images || [];
         
+        // Create lookup maps by index
+        const cornerImageMap = {};
+        const undistortedImageMap = {};
+        
+        cornerImages.forEach(img => {
+            cornerImageMap[img.index] = img;
+        });
+        
+        undistortedImages.forEach(img => {
+            undistortedImageMap[img.index] = img;
+        });
+        
         this.uploadedImages.forEach((file, index) => {
             // Update corner detection column
             const cornerCell = document.getElementById(`corner-cell-${index}`);
-            if (cornerImages[index]) {
+            if (cornerImageMap[index]) {
                 cornerCell.innerHTML = `
                     <div class="comparison-image-container">
-                        <img src="${cornerImages[index].url}" alt="Corners ${index + 1}" class="comparison-image" loading="lazy" onclick="intrinsicCalib.openModal('${cornerImages[index].url}', 'Corner Detection ${index + 1}')">
+                        <img src="${cornerImageMap[index].url}" alt="Corners ${index + 1}" class="comparison-image" loading="lazy" onclick="intrinsicCalib.openModal('${cornerImageMap[index].url}', 'Corner Detection ${index + 1}')">
                     </div>
                 `;
             } else {
@@ -288,10 +335,10 @@ class IntrinsicCalibration {
             
             // Update undistorted column
             const undistortedCell = document.getElementById(`undistorted-cell-${index}`);
-            if (undistortedImages[index]) {
+            if (undistortedImageMap[index]) {
                 undistortedCell.innerHTML = `
                     <div class="comparison-image-container">
-                        <img src="${undistortedImages[index].url}" alt="Undistorted ${index + 1}" class="comparison-image" loading="lazy" onclick="intrinsicCalib.openModal('${undistortedImages[index].url}', 'Undistorted Image ${index + 1}')">
+                        <img src="${undistortedImageMap[index].url}" alt="Undistorted ${index + 1}" class="comparison-image" loading="lazy" onclick="intrinsicCalib.openModal('${undistortedImageMap[index].url}', 'Undistorted Image ${index + 1}')">
                     </div>
                 `;
             } else {
@@ -348,7 +395,6 @@ class IntrinsicCalibration {
             this.calibrationResults = null;
             this.sessionId = this.generateSessionId();
             
-            document.getElementById('image-list').innerHTML = '';
             document.getElementById('calibration-metrics').style.display = 'none';
             
             // Reset table view
@@ -375,6 +421,7 @@ class IntrinsicCalibration {
         
         document.getElementById('calibrate-btn').disabled = !hasImages;
         document.getElementById('download-btn').style.display = hasResults ? 'block' : 'none';
+        document.getElementById('clear-all-images-btn').style.display = hasImages ? 'block' : 'none';
         
         // Update calibrate button text
         const calibrateBtn = document.getElementById('calibrate-btn');
@@ -383,6 +430,41 @@ class IntrinsicCalibration {
             calibrateBtn.disabled = false;
         } else {
             calibrateBtn.textContent = 'Start Calibration';
+        }
+    }
+    
+    async clearAllImages() {
+        if (this.uploadedImages.length === 0) return;
+        
+        if (!confirm(`Are you sure you want to remove all ${this.uploadedImages.length} images?`)) {
+            return;
+        }
+        
+        try {
+            // Clear from backend session
+            await fetch(`/api/clear_session/${this.sessionId}`, { method: 'POST' });
+            
+            // Reset local data
+            this.uploadedImages = [];
+            this.calibrationResults = null;
+            this.sessionId = this.generateSessionId();
+            
+            // Reset UI
+            document.getElementById('calibration-metrics').style.display = 'none';
+            
+            const placeholder = document.getElementById('results-placeholder');
+            const comparisonTable = document.getElementById('image-comparison-table');
+            placeholder.style.display = 'block';
+            comparisonTable.style.display = 'none';
+            
+            const progressInfo = document.getElementById('progress-info');
+            progressInfo.innerHTML = 'Upload images to see calibration results';
+            
+            this.updateUI();
+            this.showStatus('All images cleared', 'info');
+            
+        } catch (error) {
+            this.showStatus(`Failed to clear images: ${error.message}`, 'error');
         }
     }
     
@@ -442,6 +524,39 @@ class IntrinsicCalibration {
         modal.onclick = (e) => {
             if (e.target === modal) closeModal();
         };
+    }
+    
+    updateSelectAllState() {
+        const selectAllCheckbox = document.getElementById('select-all-checkbox');
+        const imageCheckboxes = document.querySelectorAll('.image-checkbox');
+        
+        if (!selectAllCheckbox || imageCheckboxes.length === 0) return;
+        
+        const checkedCount = Array.from(imageCheckboxes).filter(cb => cb.checked).length;
+        
+        if (checkedCount === 0) {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = false;
+        } else if (checkedCount === imageCheckboxes.length) {
+            selectAllCheckbox.checked = true;
+            selectAllCheckbox.indeterminate = false;
+        } else {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = true;
+        }
+    }
+    
+    getSelectedImageIndices() {
+        const imageCheckboxes = document.querySelectorAll('.image-checkbox');
+        const selectedIndices = [];
+        
+        imageCheckboxes.forEach(checkbox => {
+            if (checkbox.checked) {
+                selectedIndices.push(parseInt(checkbox.dataset.index));
+            }
+        });
+        
+        return selectedIndices;
     }
 }
 
