@@ -43,13 +43,12 @@ class IntrinsicCalibration {
         });
         
         // Parameters change
-        ['chessboard-x', 'chessboard-y', 'square-size'].forEach(id => {
+        ['chessboard-x', 'chessboard-y', 'square-size', 'distortion-model'].forEach(id => {
             document.getElementById(id).addEventListener('change', () => this.updateParameters());
         });
         
         // Buttons
         document.getElementById('calibrate-btn').addEventListener('click', () => this.startCalibration());
-        document.getElementById('clear-btn').addEventListener('click', () => this.clearSession());
         document.getElementById('download-btn').addEventListener('click', () => this.downloadResults());
         document.getElementById('clear-all-images-btn').addEventListener('click', () => this.clearAllImages());
         
@@ -135,10 +134,17 @@ class IntrinsicCalibration {
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td class="image-selection-cell">
-                    <div class="image-index">${index + 1}</div>
-                    <div class="image-name">${file.name}</div>
-                    <input type="checkbox" id="image-${index}" class="image-checkbox" data-index="${index}" checked>
-                    <button class="image-delete-btn" onclick="intrinsicCalib.removeImage(${index})" title="Remove image">&times;</button>
+                    <div class="selection-row-1">
+                        <span class="image-index">${index + 1}</span>
+                        <span class="image-name">${file.name}</span>
+                    </div>
+                    <div class="selection-row-2">
+                        <span class="image-resolution" id="resolution-${index}">Loading...</span>
+                    </div>
+                    <div class="selection-row-3">
+                        <input type="checkbox" id="image-${index}" class="image-checkbox" data-index="${index}" checked>
+                        <button class="image-delete-btn" onclick="intrinsicCalib.removeImage(${index})" title="Remove image">&times;</button>
+                    </div>
                 </td>
                 <td>
                     <div class="comparison-image-container">
@@ -146,19 +152,22 @@ class IntrinsicCalibration {
                     </div>
                 </td>
                 <td id="corner-cell-${index}">
-                    <div style="color: #999; padding: 2rem;">
-                        <div style="font-size: 2rem;">⏳</div>
-                        <div>Corner detection pending</div>
+                    <div class="image-placeholder">
+                        <div class="placeholder-icon">⏳</div>
+                        <div class="placeholder-text">Corner detection pending</div>
                     </div>
                 </td>
                 <td id="undistorted-cell-${index}">
-                    <div style="color: #999; padding: 2rem;">
-                        <div style="font-size: 2rem;">⏳</div>
-                        <div>Calibration needed</div>
+                    <div class="image-placeholder">
+                        <div class="placeholder-icon">⏳</div>
+                        <div class="placeholder-text">Calibration needed</div>
                     </div>
                 </td>
             `;
             tableBody.appendChild(row);
+            
+            // Load image dimensions for this row
+            this.loadImageDimensions(file.url, index);
         });
         
         // Add select all functionality
@@ -191,7 +200,8 @@ class IntrinsicCalibration {
         const parameters = {
             chessboard_x: parseInt(document.getElementById('chessboard-x').value),
             chessboard_y: parseInt(document.getElementById('chessboard-y').value),
-            square_size: parseFloat(document.getElementById('square-size').value)
+            square_size: parseFloat(document.getElementById('square-size').value),
+            distortion_model: document.getElementById('distortion-model').value
         };
         
         try {
@@ -271,10 +281,41 @@ class IntrinsicCalibration {
             <pre>${this.formatMatrix(cameraMatrix)}</pre>
         `;
         
-        // Distortion coefficients
+        // Distortion coefficients - show only relevant ones based on model
         const distCoeffs = this.calibrationResults.distortion_coefficients[0];
+        const distortionModel = document.getElementById('distortion-model').value;
+        
+        let relevantCoeffs;
+        let labels;
+        
+        switch(distortionModel) {
+            case 'standard':
+                relevantCoeffs = distCoeffs.slice(0, 5);
+                labels = ['k1', 'k2', 'p1', 'p2', 'k3'];
+                break;
+            case 'rational':
+                relevantCoeffs = distCoeffs.slice(0, 8);
+                labels = ['k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'k5', 'k6'];
+                break;
+            case 'thin_prism':
+                relevantCoeffs = distCoeffs.slice(0, 12);
+                labels = ['k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'k5', 'k6', 's1', 's2', 's3', 's4'];
+                break;
+            case 'tilted':
+                relevantCoeffs = distCoeffs;
+                labels = ['k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'k5', 'k6', 's1', 's2', 's3', 's4', 'τx', 'τy'];
+                break;
+            default:
+                relevantCoeffs = distCoeffs;
+                labels = distCoeffs.map((_, i) => `coeff${i+1}`);
+        }
+        
+        const coeffDisplay = relevantCoeffs.map((coeff, i) => 
+            `${labels[i]}: ${coeff.toFixed(6)}`
+        ).join('\n');
+        
         document.getElementById('distortion-display').innerHTML = `
-            <pre>[${distCoeffs.map(x => x.toFixed(6)).join(',\n ')}]</pre>
+            <pre>${coeffDisplay}</pre>
         `;
         
         // Reprojection error
@@ -353,9 +394,46 @@ class IntrinsicCalibration {
     }
     
     formatMatrix(matrix) {
+        if (!matrix || !Array.isArray(matrix)) return 'Matrix not available';
+        
+        // Ensure we have a proper 3x3 matrix format
+        if (matrix.length === 9) {
+            // Convert flat array to 3x3 matrix
+            const mat3x3 = [
+                matrix.slice(0, 3),
+                matrix.slice(3, 6),
+                matrix.slice(6, 9)
+            ];
+            return this.format3x3Matrix(mat3x3);
+        } else if (matrix.length === 3 && Array.isArray(matrix[0])) {
+            // Already in 3x3 format
+            return this.format3x3Matrix(matrix);
+        } else {
+            return 'Invalid matrix format';
+        }
+    }
+    
+    format3x3Matrix(matrix) {
         return matrix.map(row => 
-            '[' + row.map(val => val.toFixed(2).padStart(8)).join(' ') + ']'
-        ).join('\\n');
+            '[' + row.map(val => val.toFixed(2).padStart(10)).join('  ') + ']'
+        ).join('\n');
+    }
+    
+    loadImageDimensions(imageUrl, index) {
+        const img = new Image();
+        img.onload = () => {
+            const resolutionElement = document.getElementById(`resolution-${index}`);
+            if (resolutionElement) {
+                resolutionElement.textContent = `${img.width} × ${img.height}`;
+            }
+        };
+        img.onerror = () => {
+            const resolutionElement = document.getElementById(`resolution-${index}`);
+            if (resolutionElement) {
+                resolutionElement.textContent = 'Resolution unknown';
+            }
+        };
+        img.src = imageUrl;
     }
     
     switchView(view) {
@@ -383,35 +461,6 @@ class IntrinsicCalibration {
             
         } catch (error) {
             this.showStatus(`Download failed: ${error.message}`, 'error');
-        }
-    }
-    
-    async clearSession() {
-        try {
-            await fetch(`/api/clear_session/${this.sessionId}`, { method: 'POST' });
-            
-            // Reset UI
-            this.uploadedImages = [];
-            this.calibrationResults = null;
-            this.sessionId = this.generateSessionId();
-            
-            document.getElementById('calibration-metrics').style.display = 'none';
-            
-            // Reset table view
-            const placeholder = document.getElementById('results-placeholder');
-            const comparisonTable = document.getElementById('image-comparison-table');
-            placeholder.style.display = 'block';
-            comparisonTable.style.display = 'none';
-            
-            // Reset progress info
-            const progressInfo = document.getElementById('progress-info');
-            progressInfo.innerHTML = 'Upload images to see calibration results';
-            
-            this.updateUI();
-            this.showStatus('Session cleared', 'info');
-            
-        } catch (error) {
-            this.showStatus(`Clear session failed: ${error.message}`, 'error');
         }
     }
     

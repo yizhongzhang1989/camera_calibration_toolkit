@@ -245,6 +245,7 @@ def calibrate():
         XX = int(parameters['chessboard_x'])
         YY = int(parameters['chessboard_y'])
         L = float(parameters['square_size'])
+        distortion_model = parameters.get('distortion_model', 'standard')
         
         # Get image paths - only selected ones
         image_paths = [images[i]['path'] for i in selected_indices if i < len(images)]
@@ -257,7 +258,7 @@ def calibrate():
         if calibration_type == 'intrinsic':
             # Intrinsic calibration only
             ret, camera_matrix, dist_coeffs = intrinsic_calibrator.calibrate_from_images(
-                image_paths, XX, YY, L, verbose=True)
+                image_paths, XX, YY, L, distortion_model, verbose=True)
             
             if ret:
                 # Save results
@@ -339,7 +340,7 @@ def calibrate():
             # First do intrinsic calibration if not already done
             if not intrinsic_calibrator.calibration_completed:
                 ret, camera_matrix, dist_coeffs = intrinsic_calibrator.calibrate_from_images(
-                    image_paths, XX, YY, L, verbose=True)
+                    image_paths, XX, YY, L, distortion_model, verbose=True)
                 if not ret:
                     return jsonify({'error': 'Intrinsic calibration failed'}), 500
             

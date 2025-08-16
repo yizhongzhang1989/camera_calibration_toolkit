@@ -58,8 +58,19 @@
 
                 <div class="panel-section">
                     <h3>🚀 Calibration</h3>
+                    
+                    <div class="form-group">
+                        <label>Distortion Model:</label>
+                        <select id="distortion-model">
+                            <option value="standard">Standard (5 coefficients: k1, k2, p1, p2, k3)</option>
+                            <option value="rational">Rational (8 coefficients: k1-k6, p1, p2)</option>
+                            <option value="thin_prism">Thin Prism (12 coefficients: k1-k6, p1, p2, s1-s4)</option>
+                            <option value="tilted">Tilted (14 coefficients: k1-k6, p1, p2, s1-s4, τx, τy)</option>
+                        </select>
+                        <small>Choose distortion model complexity for your camera</small>
+                    </div>
+                    
                     <button id="calibrate-btn" class="primary-btn" disabled>Start Calibration</button>
-                    <button id="clear-btn" class="secondary-btn">Clear Session</button>
                     
                     <div id="calibration-status" class="status-display">
                         <p>Ready to start calibration</p>
@@ -117,10 +128,10 @@
                     <table id="image-comparison-table" class="image-comparison-table" style="display: none;">
                         <thead>
                             <tr>
-                                <th style="width: 20%;">📋 Image Selection</th>
-                                <th style="width: 26.67%;">📷 Original Image</th>
-                                <th style="width: 26.67%;">🎯 Corner Detection</th>
-                                <th style="width: 26.67%;">✨ Undistorted Image</th>
+                                <th style="width: 12%;"></th>
+                                <th style="width: 29.33%;">📷 Original Image</th>
+                                <th style="width: 29.33%;">🎯 Corner Detection</th>
+                                <th style="width: 29.33%;">✨ Undistorted Image</th>
                             </tr>
                         </thead>
                         <tbody id="image-comparison-body">

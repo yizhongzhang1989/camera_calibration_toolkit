@@ -34,7 +34,7 @@ class IntrinsicCalibrator:
         self.calibration_completed = False
     
     def calibrate_from_images(self, image_paths: List[str], XX: int, YY: int, L: float,
-                            verbose: bool = False) -> Tuple[bool, np.ndarray, np.ndarray]:
+                            distortion_model: str = 'standard', verbose: bool = False) -> Tuple[bool, np.ndarray, np.ndarray]:
         """
         Calibrate camera intrinsic parameters from a list of chessboard images.
         
@@ -43,6 +43,7 @@ class IntrinsicCalibrator:
             XX: Number of chessboard corners along x-axis
             YY: Number of chessboard corners along y-axis
             L: Size of chessboard squares in meters
+            distortion_model: Distortion model to use ('standard', 'rational', 'thin_prism', 'tilted')
             verbose: Whether to print detailed information
             
         Returns:
@@ -85,9 +86,19 @@ class IntrinsicCalibrator:
         if len(imgpoints) < 3:
             raise ValueError(f"Need at least 3 images with detected corners, got {len(imgpoints)}")
         
+        # Set calibration flags based on distortion model
+        flags = 0
+        if distortion_model == 'rational':
+            flags = cv2.CALIB_RATIONAL_MODEL
+        elif distortion_model == 'thin_prism':
+            flags = cv2.CALIB_RATIONAL_MODEL | cv2.CALIB_THIN_PRISM_MODEL
+        elif distortion_model == 'tilted':
+            flags = cv2.CALIB_RATIONAL_MODEL | cv2.CALIB_THIN_PRISM_MODEL | cv2.CALIB_TILTED_MODEL
+        # 'standard' uses flags = 0 (default)
+        
         # Calibrate camera
         ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(
-            valid_objpoints, imgpoints, self.image_size, None, None)
+            valid_objpoints, imgpoints, self.image_size, None, None, flags=flags)
         
         if ret:
             self.camera_matrix = mtx
@@ -103,7 +114,7 @@ class IntrinsicCalibrator:
     
     def calibrate_from_directory(self, directory_path: str, XX: int, YY: int, L: float,
                                selected_indices: Optional[List[int]] = None,
-                               verbose: bool = False) -> Tuple[bool, np.ndarray, np.ndarray]:
+                               distortion_model: str = 'standard', verbose: bool = False) -> Tuple[bool, np.ndarray, np.ndarray]:
         """
         Calibrate camera from all images in a directory.
         
@@ -113,6 +124,7 @@ class IntrinsicCalibrator:
             YY: Number of chessboard corners along y-axis
             L: Size of chessboard squares in meters
             selected_indices: Optional list of image indices to use (0-based)
+            distortion_model: Distortion model to use ('standard', 'rational', 'thin_prism', 'tilted')
             verbose: Whether to print detailed information
             
         Returns:
@@ -123,7 +135,7 @@ class IntrinsicCalibrator:
         if selected_indices is not None:
             image_paths = [image_paths[i] for i in selected_indices if i < len(image_paths)]
         
-        return self.calibrate_from_images(image_paths, XX, YY, L, verbose)
+        return self.calibrate_from_images(image_paths, XX, YY, L, distortion_model, verbose)
     
     def save_parameters(self, save_directory: str) -> None:
         """
