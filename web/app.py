@@ -236,7 +236,25 @@ def set_parameters():
             'distortion_model': data.get('distortion_model', 'standard')
         }
         
-        # Validate parameters
+        # Add eye-in-hand specific parameters
+        if data.get('handeye_method'):
+            parameters['handeye_method'] = data.get('handeye_method')
+        if data.get('camera_matrix_source'):
+            parameters['camera_matrix_source'] = data.get('camera_matrix_source')
+            
+        # Add manual camera parameters if provided
+        if data.get('fx') is not None:
+            parameters['fx'] = data.get('fx')
+        if data.get('fy') is not None:
+            parameters['fy'] = data.get('fy')
+        if data.get('cx') is not None:
+            parameters['cx'] = data.get('cx')
+        if data.get('cy') is not None:
+            parameters['cy'] = data.get('cy')
+        if data.get('distortion_coefficients') is not None:
+            parameters['distortion_coefficients'] = data.get('distortion_coefficients')
+        
+        # Validate required parameters
         required_params = ['chessboard_x', 'chessboard_y', 'square_size']
         for param in required_params:
             if parameters[param] is None:
@@ -270,7 +288,7 @@ def calibrate():
         
         images = session_info['images']
         parameters = session_info['parameters']
-        calibration_type = session_info.get('calibration_type', 'intrinsic')
+        calibration_type = request.json.get('calibration_type', session_info.get('calibration_type', 'intrinsic'))
         selected_indices = request.json.get('selected_indices', list(range(len(images))))
         
         # Extract parameters
@@ -370,15 +388,37 @@ def calibrate():
             if 'poses' not in session_info:
                 return jsonify({'error': 'Pose files required for eye-in-hand calibration'}), 400
             
-            # First do intrinsic calibration if not already done
-            if not intrinsic_calibrator.calibration_completed:
-                ret, camera_matrix, dist_coeffs = intrinsic_calibrator.calibrate_from_images(
-                    image_paths, XX, YY, L, distortion_model, verbose=True)
-                if not ret:
-                    return jsonify({'error': 'Intrinsic calibration failed'}), 500
+            # Handle camera intrinsics - either from previous calibration or manual input
+            camera_matrix_source = parameters.get('camera_matrix_source', 'intrinsic')
+            
+            if camera_matrix_source == 'manual':
+                # Use manual camera parameters
+                fx = float(parameters.get('fx', 800))
+                fy = float(parameters.get('fy', 800))
+                cx = float(parameters.get('cx', 320))
+                cy = float(parameters.get('cy', 240))
+                dist_coeffs = np.array(parameters.get('distortion_coefficients', [0, 0, 0, 0, 0]), dtype=np.float32)
+                
+                camera_matrix = np.array([
+                    [fx, 0, cx],
+                    [0, fy, cy],
+                    [0, 0, 1]
+                ], dtype=np.float32)
+                
+                print(f"Using manual camera parameters: fx={fx}, fy={fy}, cx={cx}, cy={cy}")
+                
+            else:
+                # Use intrinsic calibration results
+                if not intrinsic_calibrator.calibration_completed:
+                    ret, camera_matrix, dist_coeffs = intrinsic_calibrator.calibrate_from_images(
+                        image_paths, XX, YY, L, distortion_model, verbose=True)
+                    if not ret:
+                        return jsonify({'error': 'Intrinsic calibration failed'}), 500
+                else:
+                    # Load camera intrinsics from previous calibration
+                    camera_matrix, dist_coeffs = intrinsic_calibrator.get_parameters()
             
             # Load camera intrinsics into eye-in-hand calibrator
-            camera_matrix, dist_coeffs = intrinsic_calibrator.get_parameters()
             eye_in_hand_calibrator.load_camera_intrinsics(camera_matrix, dist_coeffs)
             
             # Load pose data - manually handle separate images and poses folders
@@ -474,15 +514,91 @@ def calibrate():
                 results_folder = os.path.join(RESULTS_FOLDER, session_id)
                 eye_in_hand_calibrator.save_results(results_folder)
                 
+                # Generate corner detection and undistorted images (similar to intrinsic calibration)
+                corner_images = []
+                undistorted_images = []
+                reprojected_images = []
+                
+                # Create visualization directories
+                corner_viz_dir = os.path.join(results_folder, 'corner_visualizations')
+                undistorted_dir = os.path.join(results_folder, 'undistorted_images')
+                reprojection_dir = os.path.join(results_folder, 'visualizations')
+                
+                os.makedirs(corner_viz_dir, exist_ok=True)
+                os.makedirs(undistorted_dir, exist_ok=True)
+                os.makedirs(reprojection_dir, exist_ok=True)
+                
+                from core.utils import find_chessboard_corners
+                
+                for i, image_path in enumerate(image_paths_sorted):
+                    original_index = selected_indices[i] if i < len(selected_indices) else i
+                    
+                    # Read image
+                    img = cv2.imread(image_path)
+                    if img is None:
+                        continue
+                        
+                    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                    
+                    # Corner detection
+                    find_corners_ret, corners = find_chessboard_corners(gray, XX, YY)
+                    
+                    if find_corners_ret:
+                        # Draw corners on the image
+                        img_with_corners = img.copy()
+                        cv2.drawChessboardCorners(img_with_corners, (XX, YY), corners, find_corners_ret)
+                        
+                        corner_filename = f"{original_index}.jpg"
+                        corner_path = os.path.join(corner_viz_dir, corner_filename)
+                        cv2.imwrite(corner_path, img_with_corners)
+                        
+                        corner_images.append({
+                            'name': corner_filename,
+                            'path': corner_path,
+                            'url': url_for('get_corner_image', session_id=session_id, filename=corner_filename),
+                            'index': original_index
+                        })
+                    
+                    # Generate undistorted image
+                    undistorted_img = cv2.undistort(img, camera_matrix, dist_coeffs)
+                    undistorted_filename = f"{original_index}.jpg"
+                    undistorted_path = os.path.join(undistorted_dir, undistorted_filename)
+                    cv2.imwrite(undistorted_path, undistorted_img)
+                    
+                    undistorted_images.append({
+                        'name': undistorted_filename,
+                        'path': undistorted_path,
+                        'url': url_for('get_undistorted_image', session_id=session_id, filename=undistorted_filename),
+                        'index': original_index
+                    })
+                    
+                    # Look for reprojected visualization files
+                    reprojected_filename = f"{i}_optimized.jpg"  # Backend uses 0-based index for reprojection files
+                    reprojected_path = os.path.join(reprojection_dir, reprojected_filename)
+                    
+                    if os.path.exists(reprojected_path):
+                        reprojected_images.append({
+                            'name': reprojected_filename,
+                            'path': reprojected_path,
+                            'url': url_for('get_visualization_image', session_id=session_id, filename=reprojected_filename),
+                            'index': original_index
+                        })
+                
                 results = {
                     'success': True,
                     'calibration_type': 'eye_in_hand',
-                    'cam2end_matrix': optimized_cam2end.tolist(),
+                    'handeye_transform': optimized_cam2end.tolist(),  # Expected by JavaScript
+                    'cam2end_matrix': optimized_cam2end.tolist(),     # For compatibility
+                    'reprojection_error': optimized_mean_error,       # Expected by JavaScript
                     'initial_reprojection_errors': errors.tolist(),
                     'optimized_reprojection_errors': final_errors.tolist(),
                     'initial_mean_error': initial_mean_error,
                     'optimized_mean_error': optimized_mean_error,
                     'improvement_percentage': float((initial_mean_error - optimized_mean_error) / initial_mean_error * 100),
+                    'corner_images': corner_images,
+                    'undistorted_images': undistorted_images,
+                    'reprojected_images': reprojected_images,
+                    'images_used': len(image_paths_sorted),
                     'message': f'Eye-in-hand calibration completed with optimization. Initial error: {initial_mean_error:.4f} pixels, Optimized error: {optimized_mean_error:.4f} pixels ({(initial_mean_error - optimized_mean_error) / initial_mean_error * 100:.1f}% improvement)'
                 }
                 
@@ -612,10 +728,26 @@ def get_undistorted_image(session_id, filename):
     """Serve undistorted images."""
     try:
         results_folder = os.path.join(RESULTS_FOLDER, session_id)
-        image_path = os.path.join(results_folder, 'undistorted', filename)
+        image_path = os.path.join(results_folder, 'undistorted_images', filename)
         
         if not os.path.exists(image_path):
             return jsonify({'error': 'Undistorted image not found'}), 404
+        
+        return send_file(image_path)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/visualization_image/<session_id>/<filename>')
+def get_visualization_image(session_id, filename):
+    """Serve visualization/reprojection images."""
+    try:
+        results_folder = os.path.join(RESULTS_FOLDER, session_id)
+        image_path = os.path.join(results_folder, 'visualizations', filename)
+        
+        if not os.path.exists(image_path):
+            return jsonify({'error': 'Visualization image not found'}), 404
         
         return send_file(image_path)
         
