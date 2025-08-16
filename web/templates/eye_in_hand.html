@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Calibration Toolkit</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+    <!-- Fixed Control Panel -->
+    <div class="control-panel">
+        <div class="panel-header">
+            <h1>Camera Calibration Toolkit</h1>
+        </div>
+        
+        <div class="panel-content">
+            <!-- Calibration Type Selection -->
+            <div class="control-group">
+                <label>Calibration Type:</label>
+                <select id="calibrationType">
+                    <option value="intrinsic">Intrinsic Only</option>
+                    <option value="eye_in_hand" selected>Eye-in-Hand</option>
+                    <option value="eye_to_hand">Eye-to-Hand (Coming Soon)</option>
+                    <option value="stereo">Stereo (Coming Soon)</option>
+                </select>
+            </div>
+            
+            <!-- Chessboard Parameters -->
+            <div class="control-group">
+                <label>Chessboard Parameters:</label>
+                <div class="parameter-row">
+                    <input type="number" id="chessboardX" value="11" min="3" max="20">
+                    <span>×</span>
+                    <input type="number" id="chessboardY" value="8" min="3" max="20">
+                    <span>corners</span>
+                </div>
+                <div class="parameter-row">
+                    <input type="number" id="squareSize" value="0.02" step="0.001" min="0.001" max="1">
+                    <span>meters/square</span>
+                </div>
+            </div>
+            
+            <!-- File Upload -->
+            <div class="control-group">
+                <label>Upload Images:</label>
+                <input type="file" id="imageFiles" multiple accept="image/*" style="display: none;">
+                <button onclick="document.getElementById('imageFiles').click()" class="btn btn-secondary">
+                    Choose Images
+                </button>
+                <span id="imageCount">0 images</span>
+            </div>
+            
+            <div class="control-group" id="poseUploadGroup">
+                <label>Upload Robot Poses:</label>
+                <input type="file" id="poseFiles" multiple accept=".json" style="display: none;">
+                <button onclick="document.getElementById('poseFiles').click()" class="btn btn-secondary">
+                    Choose Pose Files
+                </button>
+                <span id="poseCount">0 poses</span>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="control-group">
+                <button id="calibrateBtn" class="btn btn-primary" disabled>
+                    Start Calibration
+                </button>
+                <button id="exportBtn" class="btn btn-success" disabled>
+                    Export Results
+                </button>
+                <button id="clearBtn" class="btn btn-danger">
+                    Clear All
+                </button>
+            </div>
+            
+            <!-- Status -->
+            <div class="control-group">
+                <div id="statusPanel">
+                    <div class="status-item">
+                        <span>Status:</span>
+                        <span id="calibrationStatus">Ready</span>
+                    </div>
+                    <div class="status-item">
+                        <span>Mean Error:</span>
+                        <span id="meanError">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 3D Visualization -->
+        <div class="visualization-container">
+            <div id="threejsContainer"></div>
+        </div>
+    </div>
+    
+    <!-- Scrollable Content Area -->
+    <div class="content-area">
+        <div class="content-header">
+            <h2>Calibration Results</h2>
+            <div class="view-controls">
+                <button class="btn btn-small" id="showOriginal">Original</button>
+                <button class="btn btn-small" id="showCorners">Corners</button>
+                <button class="btn btn-small" id="showReprojection">Reprojection</button>
+            </div>
+        </div>
+        
+        <!-- Progress Bar -->
+        <div class="progress-container" id="progressContainer" style="display: none;">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-text" id="progressText">Processing...</div>
+        </div>
+        
+        <!-- Results Display -->
+        <div id="resultsContainer">
+            <!-- Image rows will be dynamically populated here -->
+            <div class="instructions">
+                <h3>Instructions:</h3>
+                <ol>
+                    <li>Select calibration type (Eye-in-Hand for robot-mounted cameras)</li>
+                    <li>Set chessboard parameters (corners and square size)</li>
+                    <li>Upload calibration images showing the chessboard from different angles</li>
+                    <li>For Eye-in-Hand: Upload corresponding robot pose JSON files</li>
+                    <li>Click "Start Calibration" to begin the process</li>
+                    <li>View results and export calibration data</li>
+                </ol>
+                
+                <h4>Pose File Format:</h4>
+                <pre><code>{
+    "end_xyzrpy": {
+        "x": 0.5,
+        "y": 0.2,
+        "z": 0.3,
+        "rx": 0.0,
+        "ry": 0.0,
+        "rz": 1.57
+    }
+}</code></pre>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Calibrating...</div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

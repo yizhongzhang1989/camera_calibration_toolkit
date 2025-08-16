@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intrinsic Calibration - Camera Calibration Toolkit</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <div class="header">
+            <h1>📷 Camera Intrinsic Calibration</h1>
+            <div class="breadcrumb">
+                <a href="/">Home</a> > Intrinsic Calibration
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Control Panel -->
+            <div class="control-panel">
+                <div class="panel-section">
+                    <h3>📋 Calibration Parameters</h3>
+                    
+                    <div class="form-group">
+                        <label>Chessboard Corners (X-axis):</label>
+                        <input type="number" id="chessboard-x" value="11" min="3" max="20">
+                        <small>Number of internal corners along width</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Chessboard Corners (Y-axis):</label>
+                        <input type="number" id="chessboard-y" value="8" min="3" max="20">
+                        <small>Number of internal corners along height</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Square Size (meters):</label>
+                        <input type="number" id="square-size" value="0.02" step="0.001" min="0.001" max="1">
+                        <small>Physical size of each chessboard square</small>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h3>📁 Upload Images</h3>
+                    <div class="upload-area" id="image-upload-area">
+                        <input type="file" id="image-files" multiple accept="image/*">
+                        <div class="upload-text">
+                            <p>📷 Drop chessboard images here or click to select</p>
+                            <small>Supported: JPG, PNG, BMP, TIFF</small>
+                        </div>
+                    </div>
+                    <div id="image-list" class="file-list"></div>
+                </div>
+
+                <div class="panel-section">
+                    <h3>🚀 Calibration</h3>
+                    <button id="calibrate-btn" class="primary-btn" disabled>Start Calibration</button>
+                    <button id="clear-btn" class="secondary-btn">Clear Session</button>
+                    
+                    <div id="calibration-status" class="status-display">
+                        <p>Ready to start calibration</p>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h3>📊 Results</h3>
+                    <div id="results-summary" class="results-display">
+                        <p>No calibration results yet</p>
+                    </div>
+                    
+                    <button id="download-btn" class="primary-btn" style="display: none;">
+                        📥 Download Results
+                    </button>
+                </div>
+            </div>
+
+            <!-- Results Display -->
+            <div class="results-panel">
+                <div class="panel-header">
+                    <h3>📈 Calibration Results</h3>
+                    <div class="view-controls">
+                        <button class="view-btn active" data-view="images">Original Images</button>
+                        <button class="view-btn" data-view="corners">Corner Detection</button>
+                        <button class="view-btn" data-view="undistorted">Undistorted</button>
+                    </div>
+                </div>
+                
+                <div class="image-grid" id="results-grid">
+                    <div class="placeholder-message">
+                        <div class="placeholder-icon">📷</div>
+                        <h4>Upload Images to Start</h4>
+                        <p>Upload chessboard calibration images to see results here</p>
+                    </div>
+                </div>
+                
+                <div id="calibration-metrics" class="metrics-display" style="display: none;">
+                    <h4>📊 Calibration Metrics</h4>
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <h5>Camera Matrix</h5>
+                            <div id="camera-matrix-display"></div>
+                        </div>
+                        <div class="metric-card">
+                            <h5>Distortion Coefficients</h5>
+                            <div id="distortion-display"></div>
+                        </div>
+                        <div class="metric-card">
+                            <h5>Reprojection Error</h5>
+                            <div id="error-display"></div>
+                        </div>
+                        <div class="metric-card">
+                            <h5>Images Used</h5>
+                            <div id="images-count-display"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/intrinsic.js') }}"></script>
+</body>
+</html>

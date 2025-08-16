@@ -81,8 +81,20 @@ def image_to_base64(image_path):
 
 @app.route('/')
 def index():
-    """Main calibration interface."""
+    """Main calibration type selection page."""
     return render_template('index.html')
+
+
+@app.route('/intrinsic')
+def intrinsic_calibration():
+    """Intrinsic calibration interface."""
+    return render_template('intrinsic.html')
+
+
+@app.route('/eye_in_hand')
+def eye_in_hand_calibration():
+    """Eye-in-hand calibration interface."""
+    return render_template('eye_in_hand.html')
 
 
 @app.route('/api/upload_images', methods=['POST'])
@@ -234,7 +246,7 @@ def calibrate():
         results = {}
         
         if calibration_type == 'intrinsic':
-            # Intrinsic calibration
+            # Intrinsic calibration only
             ret, camera_matrix, dist_coeffs = intrinsic_calibrator.calibrate_from_images(
                 image_paths, XX, YY, L, verbose=True)
             
@@ -248,7 +260,8 @@ def calibrate():
                     'calibration_type': 'intrinsic',
                     'camera_matrix': camera_matrix.tolist(),
                     'distortion_coefficients': dist_coeffs.tolist(),
-                    'message': 'Intrinsic calibration completed successfully'
+                    'images_used': len(image_paths),
+                    'message': f'Intrinsic calibration completed successfully using {len(image_paths)} images'
                 }
             else:
                 results = {
