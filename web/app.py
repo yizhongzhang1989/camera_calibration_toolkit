@@ -343,8 +343,9 @@ def calibrate():
                 # Use shared visualization utility
                 results = create_calibration_results(
                     'intrinsic', session_id, image_paths, selected_indices,
-                    camera_matrix, dist_coeffs, results_folder, XX, YY,
-                    rms_error=float(ret), distortion_model=distortion_model
+                    camera_matrix, dist_coeffs, results_folder, XX, YY, L,
+                    rms_error=float(ret), distortion_model=distortion_model,
+                    rvecs=intrinsic_calibrator.rvecs, tvecs=intrinsic_calibrator.tvecs
                 )
             else:
                 results = {
@@ -486,7 +487,7 @@ def calibrate():
                 # Use shared visualization utility
                 results = create_calibration_results(
                     'eye_in_hand', session_id, image_paths_sorted, selected_indices,
-                    camera_matrix, dist_coeffs, results_folder, XX, YY,
+                    camera_matrix, dist_coeffs, results_folder, XX, YY, L,
                     handeye_transform=optimized_cam2end,
                     cam2end_matrix=optimized_cam2end,
                     reprojection_error=optimized_mean_error,
@@ -494,7 +495,8 @@ def calibrate():
                     optimized_reprojection_errors=final_errors.tolist(),
                     initial_mean_error=initial_mean_error,
                     optimized_mean_error=optimized_mean_error,
-                    improvement_percentage=float((initial_mean_error - optimized_mean_error) / initial_mean_error * 100)
+                    improvement_percentage=float((initial_mean_error - optimized_mean_error) / initial_mean_error * 100),
+                    rvecs=rvecs, tvecs=tvecs
                 )
                 
             except Exception as e:

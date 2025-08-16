@@ -32,6 +32,9 @@ class IntrinsicCalibrator:
         self.distortion_coefficients = None
         self.image_size = None
         self.calibration_completed = False
+        self.rvecs = None  # Rotation vectors for each image (extrinsics)
+        self.tvecs = None  # Translation vectors for each image (extrinsics)
+        self.valid_image_paths = None  # Paths of images with successful corner detection
     
     def calibrate_from_images(self, image_paths: List[str], XX: int, YY: int, L: float,
                             distortion_model: str = 'standard', verbose: bool = False) -> Tuple[bool, np.ndarray, np.ndarray]:
@@ -103,6 +106,9 @@ class IntrinsicCalibrator:
         if ret:
             self.camera_matrix = mtx
             self.distortion_coefficients = dist
+            self.rvecs = rvecs
+            self.tvecs = tvecs
+            self.valid_image_paths = valid_image_paths
             self.calibration_completed = True
             
             if verbose:
@@ -159,6 +165,23 @@ class IntrinsicCalibrator:
         dist_dict = {"distortion_coefficients": self.distortion_coefficients.tolist()}
         with open(os.path.join(save_directory, 'dist.json'), 'w', encoding='utf-8') as f:
             json.dump(dist_dict, f, indent=4, ensure_ascii=False)
+        
+        # Save extrinsic parameters (pose of each image relative to chessboard)
+        if self.rvecs is not None and self.tvecs is not None and self.valid_image_paths is not None:
+            extrinsics_dict = {}
+            for i, (rvec, tvec, image_path) in enumerate(zip(self.rvecs, self.tvecs, self.valid_image_paths)):
+                image_name = os.path.splitext(os.path.basename(image_path))[0]
+                # Convert rotation vector to rotation matrix for easier interpretation
+                rmat, _ = cv2.Rodrigues(rvec)
+                extrinsics_dict[image_name] = {
+                    "rotation_vector": rvec.flatten().tolist(),
+                    "translation_vector": tvec.flatten().tolist(),
+                    "rotation_matrix": rmat.tolist(),
+                    "image_path": image_path
+                }
+            
+            with open(os.path.join(save_directory, 'extrinsics.json'), 'w', encoding='utf-8') as f:
+                json.dump(extrinsics_dict, f, indent=4, ensure_ascii=False)
         
         print(f"Camera intrinsic parameters saved to: {save_directory}")
     

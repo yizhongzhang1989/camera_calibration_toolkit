@@ -13,6 +13,76 @@ from flask import url_for
 from core.utils import find_chessboard_corners
 
 
+def draw_coordinate_axes(img, camera_matrix, dist_coeffs, rvec, tvec, XX, YY, L):
+    """
+    Draw coordinate axes on the image to visualize the chessboard pose.
+    
+    Args:
+        img: Input image
+        camera_matrix: Camera intrinsic matrix
+        dist_coeffs: Distortion coefficients
+        rvec: Rotation vector (chessboard to camera)
+        tvec: Translation vector (chessboard to camera)
+        XX: Number of chessboard corners along x-axis
+        YY: Number of chessboard corners along y-axis
+        L: Size of chessboard squares
+        
+    Returns:
+        Image with coordinate axes drawn
+    """
+    # Create 3D points for coordinate axes
+    # Origin at (0, 0, 0), with axes lengths matching chessboard dimensions
+    x_length = (XX - 1) * L  # X-axis length matches chessboard width
+    y_length = (YY - 1) * L  # Y-axis length matches chessboard height
+    z_length = L             # Z-axis length equals one square size
+    
+    axes_points = np.array([
+        [0, 0, 0],           # Origin
+        [x_length, 0, 0],    # X-axis end (red)
+        [0, y_length, 0],    # Y-axis end (green)  
+        [0, 0, z_length]     # Z-axis end (blue)
+    ], dtype=np.float32)
+    
+    # Project 3D points to image plane
+    projected_points, _ = cv2.projectPoints(
+        axes_points, rvec, tvec, camera_matrix, dist_coeffs
+    )
+    
+    # Convert to integer pixel coordinates
+    projected_points = projected_points.reshape(-1, 2).astype(int)
+    
+    img_with_axes = img.copy()
+    
+    # Draw coordinate axes with different colors
+    # X-axis in red
+    cv2.arrowedLine(img_with_axes, 
+                   tuple(projected_points[0]), 
+                   tuple(projected_points[1]),
+                   (0, 0, 255), 5, tipLength=0.1)
+    
+    # Y-axis in green  
+    cv2.arrowedLine(img_with_axes,
+                   tuple(projected_points[0]),
+                   tuple(projected_points[2]),
+                   (0, 255, 0), 5, tipLength=0.1)
+    
+    # Z-axis in blue
+    cv2.arrowedLine(img_with_axes,
+                   tuple(projected_points[0]),
+                   tuple(projected_points[3]),
+                   (255, 0, 0), 5, tipLength=0.1)
+    
+    # Add text labels near the axes endpoints
+    cv2.putText(img_with_axes, 'X', tuple(projected_points[1] + [10, -10]), 
+                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+    cv2.putText(img_with_axes, 'Y', tuple(projected_points[2] + [10, -10]), 
+                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+    cv2.putText(img_with_axes, 'Z', tuple(projected_points[3] + [10, -10]), 
+                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+    
+    return img_with_axes
+
+
 def trim_distortion_coefficients(dist_coeffs, distortion_model='standard'):
     """
     Trim distortion coefficients based on the distortion model to remove trailing zeros.
@@ -53,7 +123,8 @@ def trim_distortion_coefficients(dist_coeffs, distortion_model='standard'):
 
 def generate_calibration_visualizations(session_id, image_paths, selected_indices, 
                                        camera_matrix, dist_coeffs, XX, YY, 
-                                       results_folder, calibration_type='intrinsic'):
+                                       results_folder, calibration_type='intrinsic',
+                                       L=1.0, rvecs=None, tvecs=None):
     """
     Generate corner detection and undistorted images for calibration results.
     
@@ -67,6 +138,8 @@ def generate_calibration_visualizations(session_id, image_paths, selected_indice
         YY: Number of chessboard corners along y-axis
         results_folder: Base folder for saving results
         calibration_type: Type of calibration ('intrinsic' or 'eye_in_hand')
+        rvecs: Rotation vectors for each image (optional)
+        tvecs: Translation vectors for each image (optional)
         
     Returns:
         Tuple of (corner_images, undistorted_images) lists
@@ -87,6 +160,9 @@ def generate_calibration_visualizations(session_id, image_paths, selected_indice
     for i, image_path in enumerate(image_paths):
         original_index = selected_indices[i] if i < len(selected_indices) else i
         
+        # Extract original filename (without extension) from the image path
+        original_filename = os.path.splitext(os.path.basename(image_path))[0]
+        
         # Read image
         img = cv2.imread(image_path)
         if img is None:
@@ -102,7 +178,7 @@ def generate_calibration_visualizations(session_id, image_paths, selected_indice
             img_with_corners = img.copy()
             cv2.drawChessboardCorners(img_with_corners, (XX, YY), corners, find_corners_ret)
             
-            corner_filename = f"{original_index}.jpg"
+            corner_filename = f"{original_filename}_corners.jpg"
             corner_path = os.path.join(corner_viz_dir, corner_filename)
             cv2.imwrite(corner_path, img_with_corners)
             
@@ -110,19 +186,27 @@ def generate_calibration_visualizations(session_id, image_paths, selected_indice
                 'name': corner_filename,
                 'path': corner_path,
                 'url': url_for('get_corner_image', session_id=session_id, filename=corner_filename),
-                'index': original_index
+                'index': original_index,
+                'original_name': original_filename
             })
         
         # Generate undistorted image
-        if calibration_type == 'intrinsic':
-            # For intrinsic calibration, use the calibrator's undistort method if available
-            # This maintains compatibility with existing code
-            undistorted_img = cv2.undistort(img, camera_matrix, dist_coeffs)
-        else:
-            # For eye-in-hand calibration, use direct OpenCV undistort
-            undistorted_img = cv2.undistort(img, camera_matrix, dist_coeffs)
+        undistorted_img = cv2.undistort(img, camera_matrix, dist_coeffs)
+        
+        # Draw coordinate axes on undistorted image if rotation and translation vectors are provided
+        if rvecs is not None and tvecs is not None and original_index < len(rvecs):
+            undistorted_img = draw_coordinate_axes(
+                undistorted_img, 
+                camera_matrix, 
+                np.zeros(5),  # No distortion for undistorted image
+                rvecs[original_index], 
+                tvecs[original_index], 
+                XX, 
+                YY, 
+                L
+            )
             
-        undistorted_filename = f"{original_index}.jpg"
+        undistorted_filename = f"{original_filename}_undistorted.jpg"
         undistorted_path = os.path.join(undistorted_dir, undistorted_filename)
         cv2.imwrite(undistorted_path, undistorted_img)
         
@@ -130,7 +214,8 @@ def generate_calibration_visualizations(session_id, image_paths, selected_indice
             'name': undistorted_filename,
             'path': undistorted_path,
             'url': url_for('get_undistorted_image', session_id=session_id, filename=undistorted_filename),
-            'index': original_index
+            'index': original_index,
+            'original_name': original_filename
         })
     
     return corner_images, undistorted_images
@@ -158,24 +243,34 @@ def generate_reprojection_visualizations(session_id, image_paths, selected_indic
     for i, image_path in enumerate(image_paths):
         original_index = selected_indices[i] if i < len(selected_indices) else i
         
-        # Look for reprojected visualization files
-        # Backend uses 0-based index for reprojection files
-        reprojected_filename = f"{i}_optimized.jpg"
-        reprojected_path = os.path.join(reprojection_dir, reprojected_filename)
+        # Extract original filename (without extension) from the image path
+        original_filename = os.path.splitext(os.path.basename(image_path))[0]
         
-        if os.path.exists(reprojected_path):
-            reprojected_images.append({
-                'name': reprojected_filename,
-                'path': reprojected_path,
-                'url': url_for('get_visualization_image', session_id=session_id, filename=reprojected_filename),
-                'index': original_index
-            })
+        # Look for reprojected visualization files
+        # Backend generates files with pattern: optimized_reproject_originalname.png
+        possible_filenames = [
+            f"optimized_reproject_{original_filename}.png",  # New pattern from calibrator
+            f"{i}_optimized.jpg",  # Fallback to old index-based naming
+            f"{original_filename}_optimized.jpg"  # Alternative filename-based naming
+        ]
+        
+        for reprojected_filename in possible_filenames:
+            reprojected_path = os.path.join(reprojection_dir, reprojected_filename)
+            if os.path.exists(reprojected_path):
+                reprojected_images.append({
+                    'name': reprojected_filename,
+                    'path': reprojected_path,
+                    'url': url_for('get_visualization_image', session_id=session_id, filename=reprojected_filename),
+                    'index': original_index,
+                    'original_name': original_filename
+                })
+                break  # Use the first match found
     
     return reprojected_images
 
 
 def create_calibration_results(calibration_type, session_id, image_paths, selected_indices,
-                              camera_matrix, dist_coeffs, results_folder, XX, YY, **kwargs):
+                              camera_matrix, dist_coeffs, results_folder, XX, YY, L=1.0, **kwargs):
     """
     Create standardized calibration results with visualizations.
     
@@ -196,7 +291,8 @@ def create_calibration_results(calibration_type, session_id, image_paths, select
     # Generate common visualizations
     corner_images, undistorted_images = generate_calibration_visualizations(
         session_id, image_paths, selected_indices, camera_matrix, dist_coeffs, 
-        XX, YY, results_folder, calibration_type
+        XX, YY, results_folder, calibration_type, L,
+        rvecs=kwargs.get('rvecs'), tvecs=kwargs.get('tvecs')
     )
     
     # Base result structure
