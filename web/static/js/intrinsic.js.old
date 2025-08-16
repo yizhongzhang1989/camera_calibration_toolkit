@@ -1,0 +1,1054 @@
+/**
+ * Intrinsic Camera Calibration Web Interface
+ * Handles file uploads, parameter settings, and calibration workflow
+ */
+
+class IntrinsicCalibration {
+    constructor() {
+        this.sessionId = this.generateSessionId();
+        this.uploadedImages = [];
+        this.calibrationResults = null;
+        this.currentView = 'images';
+        
+        this.initializeEventListeners();
+        this.initializeModal();
+        this.initializeChessboard();
+        this.updateUI();
+    }
+    
+    initializeChessboard() {
+        // Initialize shared chessboard configuration
+        this.chessboardConfig = new ChessboardConfig({
+            statusCallback: (message, type) => this.showStatus(message, type)
+        });
+        
+        // Set up global callbacks for the shared component
+        window.chessboardConfig = this.chessboardConfig;
+        window.onChessboardConfigSaved = (config) => {
+            // Update hidden form inputs for backward compatibility
+            document.getElementById('chessboard-x').value = config.cornerX;
+            document.getElementById('chessboard-y').value = config.cornerY;
+            document.getElementById('square-size').value = config.squareSize;
+            
+            // Update parameters
+            this.updateParameters();
+        };
+        
+        window.getCurrentChessboardConfig = () => {
+            return {
+                cornerX: parseInt(document.getElementById('chessboard-x').value) || 11,
+                cornerY: parseInt(document.getElementById('chessboard-y').value) || 8,
+                squareSize: parseFloat(document.getElementById('square-size').value) || 0.02
+            };
+        };
+        
+        // Initialize display
+        this.chessboardConfig.setConfiguration(window.getCurrentChessboardConfig());
+    }
+    
+    generateSessionId() {
+        return 'intrinsic_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    }
+    
+    initializeEventListeners() {
+        // File upload
+        const imageFiles = document.getElementById('image-files');
+        const uploadArea = document.getElementById('image-upload-area');
+        
+        imageFiles.addEventListener('change', (e) => this.handleImageUpload(e.target.files));
+        
+        // Drag and drop
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            this.handleImageUpload(e.dataTransfer.files);
+        });
+        
+        // Parameters change
+        ['chessboard-x', 'chessboard-y', 'square-size', 'distortion-model'].forEach(id => {
+            document.getElementById(id).addEventListener('change', () => this.updateParameters());
+        });
+        
+        // Buttons
+        document.getElementById('calibrate-btn').addEventListener('click', () => this.startCalibration());
+        document.getElementById('download-btn').addEventListener('click', () => this.downloadResults());
+        document.getElementById('clear-all-images-btn').addEventListener('click', () => this.clearAllImages());
+        
+        // View controls
+        document.querySelectorAll('.view-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => this.switchView(e.target.dataset.view));
+        });
+    }
+    
+    async handleImageUpload(files) {
+        const formData = new FormData();
+        formData.append('session_id', this.sessionId);
+        formData.append('calibration_type', 'intrinsic');
+        
+        for (let file of files) {
+            if (file.type.startsWith('image/')) {
+                formData.append('files', file);
+            }
+        }
+        
+        try {
+            this.showStatus('Uploading images...', 'info');
+            
+            const response = await fetch('/api/upload_images', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.error) {
+                this.showStatus(`Error: ${result.error}`, 'error');
+                return;
+            }
+            
+            // Backend returns all images (existing + new), so just replace the array
+            const allImages = result.files || [];
+            this.uploadedImages = allImages;
+            
+            this.showStatus(result.message, 'success');
+            this.updateUI();
+            this.displayUploadedImages();
+            
+        } catch (error) {
+            this.showStatus(`Upload failed: ${error.message}`, 'error');
+        }
+    }
+    
+    displayUploadedImages() {
+        const placeholder = document.getElementById('results-placeholder');
+        const comparisonTable = document.getElementById('image-comparison-table');
+        const tableBody = document.getElementById('image-comparison-body');
+        
+        // Update table display
+        if (this.uploadedImages.length === 0) {
+            placeholder.style.display = 'block';
+            comparisonTable.style.display = 'none';
+            return;
+        }
+        
+        placeholder.style.display = 'none';
+        comparisonTable.style.display = 'table';
+        
+        // Clear and populate table
+        tableBody.innerHTML = '';
+        
+        // Add select all row
+        const selectAllRow = document.createElement('tr');
+        selectAllRow.innerHTML = `
+            <td class="image-selection-cell">
+                <div class="select-all-container">
+                    <input type="checkbox" id="select-all-checkbox" class="select-all-checkbox" checked>
+                    <label for="select-all-checkbox" class="select-all-label">Select All</label>
+                </div>
+            </td>
+            <td colspan="3" style="text-align: center; color: #666; font-style: italic; padding: 1rem;">
+                Use checkboxes to select images for calibration, or × button to remove images
+            </td>
+        `;
+        tableBody.appendChild(selectAllRow);
+        
+        this.uploadedImages.forEach((file, index) => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td class="image-selection-cell">
+                    <div class="selection-row-1">
+                        <span class="image-index">${index + 1}</span>
+                        <span class="image-name">${file.name}</span>
+                    </div>
+                    <div class="selection-row-2">
+                        <span class="image-resolution" id="resolution-${index}">Loading...</span>
+                    </div>
+                    <div class="selection-row-3">
+                        <input type="checkbox" id="image-${index}" class="image-checkbox" data-index="${index}" checked>
+                        <button class="image-delete-btn" onclick="intrinsicCalib.removeImage(${index})" title="Remove image">&times;</button>
+                    </div>
+                </td>
+                <td>
+                    <div class="comparison-image-container">
+                        <img src="${file.url}" alt="Original ${index + 1}" class="comparison-image" loading="lazy" onclick="intrinsicCalib.openModal('${file.url}', 'Original Image ${index + 1}')">
+                    </div>
+                </td>
+                <td id="corner-cell-${index}">
+                    <div class="image-placeholder">
+                        <div class="placeholder-icon">⏳</div>
+                        <div class="placeholder-text">Corner detection pending</div>
+                    </div>
+                </td>
+                <td id="undistorted-cell-${index}">
+                    <div class="image-placeholder">
+                        <div class="placeholder-icon">⏳</div>
+                        <div class="placeholder-text">Calibration needed</div>
+                    </div>
+                </td>
+            `;
+            tableBody.appendChild(row);
+            
+            // Load image dimensions for this row
+            this.loadImageDimensions(file.url, index);
+        });
+        
+        // Add select all functionality
+        const selectAllCheckbox = document.getElementById('select-all-checkbox');
+        if (selectAllCheckbox) {
+            selectAllCheckbox.addEventListener('change', (e) => {
+                const imageCheckboxes = document.querySelectorAll('.image-checkbox');
+                imageCheckboxes.forEach(checkbox => {
+                    checkbox.checked = e.target.checked;
+                });
+            });
+        }
+        
+        // Add individual checkbox listeners
+        const imageCheckboxes = document.querySelectorAll('.image-checkbox');
+        imageCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                this.updateSelectAllState();
+            });
+        });
+    }
+    
+    removeImage(index) {
+        this.uploadedImages.splice(index, 1);
+        this.updateUI();
+        this.displayUploadedImages();
+    }
+    
+    async updateParameters() {
+        const parameters = {
+            chessboard_x: parseInt(document.getElementById('chessboard-x').value),
+            chessboard_y: parseInt(document.getElementById('chessboard-y').value),
+            square_size: parseFloat(document.getElementById('square-size').value),
+            distortion_model: document.getElementById('distortion-model').value
+        };
+        
+        try {
+            const response = await fetch('/api/set_parameters', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    session_id: this.sessionId,
+                    parameters: parameters
+                })
+            });
+            
+            const result = await response.json();
+            if (result.error) {
+                this.showStatus(`Parameter error: ${result.error}`, 'error');
+            }
+            
+        } catch (error) {
+            this.showStatus(`Parameter update failed: ${error.message}`, 'error');
+        }
+    }
+    
+    async startCalibration() {
+        const selectedIndices = this.getSelectedImageIndices();
+        
+        if (selectedIndices.length < 3) {
+            this.showStatus('Need at least 3 selected images for calibration', 'error');
+            return;
+        }
+        
+        try {
+            this.showStatus(`Starting intrinsic calibration with ${selectedIndices.length} selected images...`, 'info');
+            document.getElementById('calibrate-btn').disabled = true;
+            
+            // Update parameters first
+            await this.updateParameters();
+            
+            const response = await fetch('/api/calibrate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    session_id: this.sessionId,
+                    calibration_type: 'intrinsic',
+                    selected_indices: selectedIndices
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.error) {
+                this.showStatus(`Calibration failed: ${result.error}`, 'error');
+                document.getElementById('calibrate-btn').disabled = false;
+                return;
+            }
+            
+            this.calibrationResults = result;
+            this.showStatus(result.message, 'success');
+            this.displayResults();
+            this.updateUI();
+            
+        } catch (error) {
+            this.showStatus(`Calibration failed: ${error.message}`, 'error');
+            document.getElementById('calibrate-btn').disabled = false;
+        }
+    }
+    
+    displayResults() {
+        if (!this.calibrationResults) return;
+        
+        // Show metrics in control panel
+        const metricsDiv = document.getElementById('calibration-metrics');
+        metricsDiv.style.display = 'block';
+        
+        // Camera matrix
+        const cameraMatrix = this.calibrationResults.camera_matrix;
+        document.getElementById('camera-matrix-display').innerHTML = `
+            <pre>${this.formatMatrix(cameraMatrix)}</pre>
+        `;
+        
+        // Distortion coefficients - show only relevant ones based on model
+        const distCoeffs = this.calibrationResults.distortion_coefficients[0];
+        const distortionModel = document.getElementById('distortion-model').value;
+        
+        let relevantCoeffs;
+        let labels;
+        
+        switch(distortionModel) {
+            case 'standard':
+                relevantCoeffs = distCoeffs.slice(0, 5);
+                labels = ['k1', 'k2', 'p1', 'p2', 'k3'];
+                break;
+            case 'rational':
+                relevantCoeffs = distCoeffs.slice(0, 8);
+                labels = ['k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'k5', 'k6'];
+                break;
+            case 'thin_prism':
+                relevantCoeffs = distCoeffs.slice(0, 12);
+                labels = ['k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'k5', 'k6', 's1', 's2', 's3', 's4'];
+                break;
+            case 'tilted':
+                relevantCoeffs = distCoeffs;
+                labels = ['k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'k5', 'k6', 's1', 's2', 's3', 's4', 'τx', 'τy'];
+                break;
+            default:
+                relevantCoeffs = distCoeffs;
+                labels = distCoeffs.map((_, i) => `coeff${i+1}`);
+        }
+        
+        const coeffDisplay = relevantCoeffs.map((coeff, i) => 
+            `${labels[i]}: ${coeff.toFixed(6)}`
+        ).join('\n');
+        
+        document.getElementById('distortion-display').innerHTML = `
+            <pre>${coeffDisplay}</pre>
+        `;
+        
+        // Reprojection error
+        const errorDisplay = document.getElementById('error-display');
+        if (this.calibrationResults.reprojection_error !== undefined) {
+            errorDisplay.innerHTML = `<strong>${this.calibrationResults.reprojection_error.toFixed(4)} pixels</strong>`;
+        } else {
+            errorDisplay.innerHTML = '<em>Not calculated</em>';
+        }
+        
+        // Images count
+        document.getElementById('images-count-display').innerHTML = 
+            `<strong>${this.uploadedImages.length} images</strong>`;
+        
+        // Update progress info
+        const progressInfo = document.getElementById('progress-info');
+        progressInfo.innerHTML = `✅ Calibration complete with ${this.uploadedImages.length} images`;
+        
+        // Update table with corner detection and undistorted images
+        this.updateImageTable();
+    }
+    
+    updateImageTable() {
+        if (!this.calibrationResults || !this.calibrationResults.corner_images) return;
+        
+        const cornerImages = this.calibrationResults.corner_images || [];
+        const undistortedImages = this.calibrationResults.undistorted_images || [];
+        
+        // Create lookup maps by index
+        const cornerImageMap = {};
+        const undistortedImageMap = {};
+        
+        cornerImages.forEach(img => {
+            cornerImageMap[img.index] = img;
+        });
+        
+        undistortedImages.forEach(img => {
+            undistortedImageMap[img.index] = img;
+        });
+        
+        this.uploadedImages.forEach((file, index) => {
+            // Update corner detection column
+            const cornerCell = document.getElementById(`corner-cell-${index}`);
+            if (cornerImageMap[index]) {
+                cornerCell.innerHTML = `
+                    <div class="comparison-image-container">
+                        <img src="${cornerImageMap[index].url}" alt="Corners ${index + 1}" class="comparison-image" loading="lazy" onclick="intrinsicCalib.openModal('${cornerImageMap[index].url}', 'Corner Detection ${index + 1}')">
+                    </div>
+                `;
+            } else {
+                cornerCell.innerHTML = `
+                    <div style="color: #dc3545; padding: 2rem;">
+                        <div style="font-size: 2rem;">❌</div>
+                        <div>No corners detected</div>
+                    </div>
+                `;
+            }
+            
+            // Update undistorted column
+            const undistortedCell = document.getElementById(`undistorted-cell-${index}`);
+            if (undistortedImageMap[index]) {
+                undistortedCell.innerHTML = `
+                    <div class="comparison-image-container">
+                        <img src="${undistortedImageMap[index].url}" alt="Undistorted ${index + 1}" class="comparison-image" loading="lazy" onclick="intrinsicCalib.openModal('${undistortedImageMap[index].url}', 'Undistorted Image ${index + 1}')">
+                    </div>
+                `;
+            } else {
+                undistortedCell.innerHTML = `
+                    <div style="color: #666; padding: 2rem;">
+                        <div style="font-size: 2rem;">⚠️</div>
+                        <div>Undistortion failed</div>
+                    </div>
+                `;
+            }
+        });
+    }
+    
+    formatMatrix(matrix) {
+        if (!matrix || !Array.isArray(matrix)) return 'Matrix not available';
+        
+        // Ensure we have a proper 3x3 matrix format
+        if (matrix.length === 9) {
+            // Convert flat array to 3x3 matrix
+            const mat3x3 = [
+                matrix.slice(0, 3),
+                matrix.slice(3, 6),
+                matrix.slice(6, 9)
+            ];
+            return this.format3x3Matrix(mat3x3);
+        } else if (matrix.length === 3 && Array.isArray(matrix[0])) {
+            // Already in 3x3 format
+            return this.format3x3Matrix(matrix);
+        } else {
+            return 'Invalid matrix format';
+        }
+    }
+    
+    format3x3Matrix(matrix) {
+        return matrix.map(row => 
+            '[' + row.map(val => val.toFixed(2).padStart(10)).join('  ') + ']'
+        ).join('\n');
+    }
+    
+    loadImageDimensions(imageUrl, index) {
+        const img = new Image();
+        img.onload = () => {
+            const resolutionElement = document.getElementById(`resolution-${index}`);
+            if (resolutionElement) {
+                resolutionElement.textContent = `${img.width} × ${img.height}`;
+            }
+        };
+        img.onerror = () => {
+            const resolutionElement = document.getElementById(`resolution-${index}`);
+            if (resolutionElement) {
+                resolutionElement.textContent = 'Resolution unknown';
+            }
+        };
+        img.src = imageUrl;
+    }
+    
+    switchView(view) {
+        // Note: With the new table layout, view switching is no longer needed
+        // The table always shows all three views side by side
+        this.currentView = view;
+        console.log(`View switched to: ${view} (table layout shows all views)`);
+    }
+    
+    openChessboardModal() {
+        // Sync modal values with current settings
+        document.getElementById('modal-chessboard-x').value = document.getElementById('chessboard-x').value;
+        document.getElementById('modal-chessboard-y').value = document.getElementById('chessboard-y').value;
+        document.getElementById('modal-square-size').value = document.getElementById('square-size').value;
+        
+        // Update download preview
+        this.updateDownloadPreview();
+        
+        document.getElementById('chessboardModal').style.display = 'block';
+    }
+    
+    closeChessboardModal() {
+        document.getElementById('chessboardModal').style.display = 'none';
+    }
+    
+    saveChessboardConfig() {
+        // Get values from modal
+        const x = document.getElementById('modal-chessboard-x').value;
+        const y = document.getElementById('modal-chessboard-y').value;
+        const size = parseFloat(document.getElementById('modal-square-size').value);
+        
+        // Update hidden form inputs
+        document.getElementById('chessboard-x').value = x;
+        document.getElementById('chessboard-y').value = y;
+        document.getElementById('square-size').value = size;
+        
+        // Update display
+        this.updateChessboardDisplay();
+        
+        // Update parameters
+        this.updateParameters();
+        
+        // Close modal
+        this.closeChessboardModal();
+        
+        this.showStatus('Chessboard configuration updated', 'success');
+    }
+    
+    updateChessboardDisplay() {
+        const x = document.getElementById('chessboard-x').value;
+        const y = document.getElementById('chessboard-y').value;
+        const size = parseFloat(document.getElementById('square-size').value);
+        
+        document.getElementById('board-dimensions').textContent = `${x} × ${y} corners`;
+        document.getElementById('board-square-size').textContent = `${(size * 1000).toFixed(1)} mm`;
+        
+        // Draw chessboard preview
+        this.drawChessboardPreview(parseInt(x), parseInt(y));
+    }
+    
+    drawChessboardPreview(cornerX, cornerY) {
+        const canvas = document.getElementById('chessboard-canvas');
+        if (!canvas) return;
+        
+        const ctx = canvas.getContext('2d');
+        const canvasWidth = canvas.width;
+        const canvasHeight = canvas.height;
+        
+        // Clear canvas
+        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+        
+        // Calculate squares (corners + 1 for each dimension)
+        const squaresX = cornerX + 1;
+        const squaresY = cornerY + 1;
+        
+        // Calculate square size to fit in canvas with some padding
+        const padding = 10;
+        const availableWidth = canvasWidth - 2 * padding;
+        const availableHeight = canvasHeight - 2 * padding;
+        
+        const squareSize = Math.min(
+            availableWidth / squaresX,
+            availableHeight / squaresY
+        );
+        
+        // Center the chessboard
+        const boardWidth = squaresX * squareSize;
+        const boardHeight = squaresY * squareSize;
+        const startX = (canvasWidth - boardWidth) / 2;
+        const startY = (canvasHeight - boardHeight) / 2;
+        
+        // Draw chessboard pattern
+        for (let row = 0; row < squaresY; row++) {
+            for (let col = 0; col < squaresX; col++) {
+                const x = startX + col * squareSize;
+                const y = startY + row * squareSize;
+                
+                // Alternate colors (true chessboard pattern)
+                const isBlack = (row + col) % 2 === 0;
+                ctx.fillStyle = isBlack ? '#2c2c2c' : '#f8f8f8';
+                ctx.fillRect(x, y, squareSize, squareSize);
+                
+                // Add subtle border to squares
+                ctx.strokeStyle = '#ccc';
+                ctx.lineWidth = 0.5;
+                ctx.strokeRect(x, y, squareSize, squareSize);
+            }
+        }
+        
+        // Draw corner indicators (red dots where corners are detected)
+        ctx.fillStyle = '#dc3545';
+        const cornerRadius = Math.max(2, squareSize * 0.1);
+        
+        for (let row = 1; row < squaresY; row++) {
+            for (let col = 1; col < squaresX; col++) {
+                const x = startX + col * squareSize;
+                const y = startY + row * squareSize;
+                
+                ctx.beginPath();
+                ctx.arc(x, y, cornerRadius, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+        }
+        
+        // Add dimension labels
+        ctx.fillStyle = '#666';
+        ctx.font = '10px Arial';
+        ctx.textAlign = 'center';
+        
+        // Bottom label (X dimension)
+        ctx.fillText(`${cornerX} corners`, canvasWidth / 2, canvasHeight - 2);
+        
+        // Right label (Y dimension) - rotated
+        ctx.save();
+        ctx.translate(canvasWidth - 5, canvasHeight / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText(`${cornerY} corners`, 0, 0);
+        ctx.restore();
+    }
+    
+    async downloadResults() {
+        if (!this.calibrationResults) return;
+        
+        try {
+            const response = await fetch(`/api/export_results/${this.sessionId}`);
+            const blob = await response.blob();
+            
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `intrinsic_calibration_results_${this.sessionId}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            
+        } catch (error) {
+            this.showStatus(`Download failed: ${error.message}`, 'error');
+        }
+    }
+    
+    updateUI() {
+        const hasImages = this.uploadedImages.length > 0;
+        const hasResults = this.calibrationResults !== null;
+        
+        document.getElementById('calibrate-btn').disabled = !hasImages;
+        document.getElementById('download-btn').style.display = hasResults ? 'block' : 'none';
+        document.getElementById('clear-all-images-btn').style.display = hasImages ? 'block' : 'none';
+        
+        // Update calibrate button text
+        const calibrateBtn = document.getElementById('calibrate-btn');
+        if (hasResults) {
+            calibrateBtn.textContent = '🔄 Recalibrate';
+            calibrateBtn.disabled = false;
+        } else {
+            calibrateBtn.textContent = 'Start Calibration';
+        }
+    }
+    
+    async clearAllImages() {
+        if (this.uploadedImages.length === 0) return;
+        
+        if (!confirm(`Are you sure you want to remove all ${this.uploadedImages.length} images?`)) {
+            return;
+        }
+        
+        try {
+            // Clear from backend session
+            await fetch(`/api/clear_session/${this.sessionId}`, { method: 'POST' });
+            
+            // Reset local data
+            this.uploadedImages = [];
+            this.calibrationResults = null;
+            this.sessionId = this.generateSessionId();
+            
+            // Reset UI
+            document.getElementById('calibration-metrics').style.display = 'none';
+            
+            const placeholder = document.getElementById('results-placeholder');
+            const comparisonTable = document.getElementById('image-comparison-table');
+            placeholder.style.display = 'block';
+            comparisonTable.style.display = 'none';
+            
+            const progressInfo = document.getElementById('progress-info');
+            progressInfo.innerHTML = 'Upload images to see calibration results';
+            
+            this.updateUI();
+            this.showStatus('All images cleared', 'info');
+            
+        } catch (error) {
+            this.showStatus(`Failed to clear images: ${error.message}`, 'error');
+        }
+    }
+    
+    showStatus(message, type = 'info') {
+        const statusDiv = document.getElementById('calibration-status');
+        statusDiv.className = `status-display ${type}`;
+        statusDiv.innerHTML = `<p>${message}</p>`;
+        
+        console.log(`[${type.toUpperCase()}] ${message}`);
+    }
+    
+    initializeModal() {
+        const modal = document.getElementById('imageModal');
+        const modalClose = document.getElementById('modalClose');
+        
+        // Close modal when clicking the close button
+        modalClose.addEventListener('click', () => {
+            modal.style.display = 'none';
+        });
+        
+        // Close modal when clicking outside the image
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
+        
+        // Close modal with Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && modal.style.display === 'block') {
+                modal.style.display = 'none';
+            }
+        });
+        
+        // Initialize download section event listeners
+        this.initializeDownloadSection();
+    }
+    
+    initializeDownloadSection() {
+        // Download size change
+        document.getElementById('download-size').addEventListener('change', (e) => {
+            const customGroup = document.getElementById('custom-size-group');
+            customGroup.style.display = e.target.value === 'custom' ? 'block' : 'none';
+            this.updateDownloadPreview();
+        });
+        
+        // Download parameters change
+        ['custom-width', 'custom-height', 'download-format', 'download-resolution'].forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.addEventListener('change', () => this.updateDownloadPreview());
+            }
+        });
+        
+        // Modal chessboard parameters change - update download preview too
+        ['modal-chessboard-x', 'modal-chessboard-y', 'modal-square-size'].forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.addEventListener('input', () => this.updateDownloadPreview());
+            }
+        });
+    }
+    
+    openModal(imageSrc, title) {
+        const modal = document.getElementById('imageModal');
+        const modalImage = document.getElementById('modalImage');
+        const modalTitle = document.getElementById('modalTitle');
+        
+        modalImage.src = imageSrc;
+        modalTitle.textContent = title;
+        modal.style.display = 'block';
+        
+        // Prevent scrolling on the background
+        document.body.style.overflow = 'hidden';
+        
+        // Restore scrolling when modal is closed
+        const closeModal = () => {
+            document.body.style.overflow = '';
+            modal.style.display = 'none';
+        };
+        
+        // Update close functionality to restore scrolling
+        const modalClose = document.getElementById('modalClose');
+        modalClose.onclick = closeModal;
+        modal.onclick = (e) => {
+            if (e.target === modal) closeModal();
+        };
+    }
+    
+    updateSelectAllState() {
+        const selectAllCheckbox = document.getElementById('select-all-checkbox');
+        const imageCheckboxes = document.querySelectorAll('.image-checkbox');
+        
+        if (!selectAllCheckbox || imageCheckboxes.length === 0) return;
+        
+        const checkedCount = Array.from(imageCheckboxes).filter(cb => cb.checked).length;
+        
+        if (checkedCount === 0) {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = false;
+        } else if (checkedCount === imageCheckboxes.length) {
+            selectAllCheckbox.checked = true;
+            selectAllCheckbox.indeterminate = false;
+        } else {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = true;
+        }
+    }
+    
+    getSelectedImageIndices() {
+        const imageCheckboxes = document.querySelectorAll('.image-checkbox');
+        const selectedIndices = [];
+        
+        imageCheckboxes.forEach(checkbox => {
+            if (checkbox.checked) {
+                selectedIndices.push(parseInt(checkbox.dataset.index));
+            }
+        });
+        
+        return selectedIndices;
+    }
+    
+    updateDownloadPreview() {
+        // Get current parameters
+        const cornerX = parseInt(document.getElementById('modal-chessboard-x').value) || 11;
+        const cornerY = parseInt(document.getElementById('modal-chessboard-y').value) || 8;
+        const squareSize = parseFloat(document.getElementById('modal-square-size').value) || 0.02;
+        
+        // Get download settings
+        const sizeType = document.getElementById('download-size').value;
+        let width, height;
+        
+        switch (sizeType) {
+            case 'a4':
+                width = 210; height = 297;
+                break;
+            case 'letter':
+                width = 216; height = 279;
+                break;
+            case 'custom':
+                width = parseInt(document.getElementById('custom-width').value) || 210;
+                height = parseInt(document.getElementById('custom-height').value) || 297;
+                break;
+        }
+        
+        // Update info display
+        document.getElementById('download-squares').textContent = `${cornerX + 1}×${cornerY + 1}`;
+        document.getElementById('download-dimensions').textContent = `${width}×${height} mm`;
+        document.getElementById('download-square-size').textContent = `${(squareSize * 1000).toFixed(1)} mm`;
+        
+        // Draw preview
+        this.drawDownloadPreview(cornerX, cornerY, width, height);
+    }
+    
+    drawDownloadPreview(cornerX, cornerY, paperWidth, paperHeight) {
+        const canvas = document.getElementById('download-canvas');
+        if (!canvas) return;
+        
+        const ctx = canvas.getContext('2d');
+        const canvasWidth = canvas.width;
+        const canvasHeight = canvas.height;
+        
+        // Clear canvas
+        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+        
+        // Calculate squares (corners + 1 for each dimension)
+        const squaresX = cornerX + 1;
+        const squaresY = cornerY + 1;
+        
+        // Calculate aspect ratios
+        const paperAspect = paperWidth / paperHeight;
+        const canvasAspect = canvasWidth / canvasHeight;
+        
+        // Fit paper aspect ratio to canvas
+        let drawWidth, drawHeight, offsetX, offsetY;
+        
+        if (paperAspect > canvasAspect) {
+            // Paper is wider relative to height
+            drawWidth = canvasWidth - 20; // padding
+            drawHeight = drawWidth / paperAspect;
+            offsetX = 10;
+            offsetY = (canvasHeight - drawHeight) / 2;
+        } else {
+            // Paper is taller relative to width
+            drawHeight = canvasHeight - 20; // padding
+            drawWidth = drawHeight * paperAspect;
+            offsetX = (canvasWidth - drawWidth) / 2;
+            offsetY = 10;
+        }
+        
+        // Draw paper background
+        ctx.fillStyle = 'white';
+        ctx.fillRect(offsetX, offsetY, drawWidth, drawHeight);
+        ctx.strokeStyle = '#ddd';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(offsetX, offsetY, drawWidth, drawHeight);
+        
+        // Calculate chessboard size that fits on paper with margin
+        const margin = Math.min(drawWidth, drawHeight) * 0.1; // 10% margin
+        const availableWidth = drawWidth - 2 * margin;
+        const availableHeight = drawHeight - 2 * margin;
+        
+        const squareSize = Math.min(availableWidth / squaresX, availableHeight / squaresY);
+        const boardWidth = squaresX * squareSize;
+        const boardHeight = squaresY * squareSize;
+        
+        // Center chessboard on paper
+        const boardOffsetX = offsetX + (drawWidth - boardWidth) / 2;
+        const boardOffsetY = offsetY + (drawHeight - boardHeight) / 2;
+        
+        // Draw chessboard pattern (clean, no indicators)
+        for (let row = 0; row < squaresY; row++) {
+            for (let col = 0; col < squaresX; col++) {
+                const x = boardOffsetX + col * squareSize;
+                const y = boardOffsetY + row * squareSize;
+                
+                // Alternate colors (true chessboard pattern)
+                const isBlack = (row + col) % 2 === 0;
+                ctx.fillStyle = isBlack ? '#000000' : '#ffffff';
+                ctx.fillRect(x, y, squareSize, squareSize);
+            }
+        }
+        
+        // Draw border around chessboard
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 0.5;
+        ctx.strokeRect(boardOffsetX, boardOffsetY, boardWidth, boardHeight);
+    }
+    
+    downloadChessboard() {
+        // Get parameters
+        const cornerX = parseInt(document.getElementById('modal-chessboard-x').value) || 11;
+        const cornerY = parseInt(document.getElementById('modal-chessboard-y').value) || 8;
+        const squareSize = parseFloat(document.getElementById('modal-square-size').value) || 0.02;
+        
+        const sizeType = document.getElementById('download-size').value;
+        const format = document.getElementById('download-format').value;
+        const resolution = parseInt(document.getElementById('download-resolution').value) || 300;
+        
+        let width, height;
+        switch (sizeType) {
+            case 'a4':
+                width = 210; height = 297;
+                break;
+            case 'letter':
+                width = 216; height = 279;
+                break;
+            case 'custom':
+                width = parseInt(document.getElementById('custom-width').value) || 210;
+                height = parseInt(document.getElementById('custom-height').value) || 297;
+                break;
+        }
+        
+        // Create high-resolution canvas
+        const pixelWidth = Math.round((width / 25.4) * resolution); // mm to pixels
+        const pixelHeight = Math.round((height / 25.4) * resolution);
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = pixelWidth;
+        canvas.height = pixelHeight;
+        const ctx = canvas.getContext('2d');
+        
+        // Calculate squares and sizing
+        const squaresX = cornerX + 1;
+        const squaresY = cornerY + 1;
+        
+        // Calculate chessboard size with margin
+        const marginPixels = Math.min(pixelWidth, pixelHeight) * 0.1;
+        const availableWidth = pixelWidth - 2 * marginPixels;
+        const availableHeight = pixelHeight - 2 * marginPixels;
+        
+        const squarePixels = Math.min(availableWidth / squaresX, availableHeight / squaresY);
+        const boardWidth = squaresX * squarePixels;
+        const boardHeight = squaresY * squarePixels;
+        
+        // Center on canvas
+        const offsetX = (pixelWidth - boardWidth) / 2;
+        const offsetY = (pixelHeight - boardHeight) / 2;
+        
+        // Fill background white
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, pixelWidth, pixelHeight);
+        
+        // Draw chessboard
+        for (let row = 0; row < squaresY; row++) {
+            for (let col = 0; col < squaresX; col++) {
+                const x = offsetX + col * squarePixels;
+                const y = offsetY + row * squarePixels;
+                
+                const isBlack = (row + col) % 2 === 0;
+                ctx.fillStyle = isBlack ? '#000000' : '#ffffff';
+                ctx.fillRect(x, y, squarePixels, squarePixels);
+            }
+        }
+        
+        // Generate download
+        const filename = `chessboard_${cornerX + 1}x${cornerY + 1}_${(squareSize * 1000).toFixed(1)}mm.${format}`;
+        
+        if (format === 'png') {
+            canvas.toBlob((blob) => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                a.click();
+                URL.revokeObjectURL(url);
+            }, 'image/png');
+        } else if (format === 'svg') {
+            // For SVG, create vector representation
+            this.downloadChessboardSVG(cornerX, cornerY, width, height, squareSize, filename);
+        } else if (format === 'pdf') {
+            // For PDF, we'd need a PDF library - for now, download as high-res PNG
+            this.showStatus('PDF format coming soon. Downloading as high-resolution PNG instead.', 'info');
+            canvas.toBlob((blob) => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename.replace('.pdf', '.png');
+                a.click();
+                URL.revokeObjectURL(url);
+            }, 'image/png');
+        }
+        
+        this.showStatus('Chessboard pattern generated successfully!', 'success');
+    }
+    
+    downloadChessboardSVG(cornerX, cornerY, paperWidth, paperHeight, squareSize, filename) {
+        const squaresX = cornerX + 1;
+        const squaresY = cornerY + 1;
+        
+        // Calculate board size with margin
+        const margin = Math.min(paperWidth, paperHeight) * 0.1;
+        const availableWidth = paperWidth - 2 * margin;
+        const availableHeight = paperHeight - 2 * margin;
+        
+        const squareSize_mm = Math.min(availableWidth / squaresX, availableHeight / squaresY);
+        const boardWidth = squaresX * squareSize_mm;
+        const boardHeight = squaresY * squareSize_mm;
+        
+        const offsetX = (paperWidth - boardWidth) / 2;
+        const offsetY = (paperHeight - boardHeight) / 2;
+        
+        let svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${paperWidth}mm" height="${paperHeight}mm" viewBox="0 0 ${paperWidth} ${paperHeight}" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100%" height="100%" fill="white"/>`;
+        
+        // Generate squares
+        for (let row = 0; row < squaresY; row++) {
+            for (let col = 0; col < squaresX; col++) {
+                const x = offsetX + col * squareSize_mm;
+                const y = offsetY + row * squareSize_mm;
+                
+                const isBlack = (row + col) % 2 === 0;
+                if (isBlack) {
+                    svg += `\n  <rect x="${x}" y="${y}" width="${squareSize_mm}" height="${squareSize_mm}" fill="black"/>`;
+                }
+            }
+        }
+        
+        svg += '\n</svg>';
+        
+        const blob = new Blob([svg], { type: 'image/svg+xml' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+}
+
+// Initialize the application
+let intrinsicCalib;
+document.addEventListener('DOMContentLoaded', () => {
+    intrinsicCalib = new IntrinsicCalibration();
+});

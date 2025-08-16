@@ -29,6 +29,18 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
 
+# Template helper for shared components
+@app.context_processor
+def utility_processor():
+    def include_shared_template(template_name):
+        """Include a shared template component"""
+        try:
+            return render_template(f'shared/{template_name}')
+        except:
+            return f'<!-- Shared template {template_name} not found -->'
+    
+    return dict(include_shared_template=include_shared_template)
+
 # Configuration
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), '..', 'data', 'uploads')
 RESULTS_FOLDER = os.path.join(os.path.dirname(__file__), '..', 'data', 'results')
@@ -95,6 +107,18 @@ def intrinsic_calibration():
 def eye_in_hand_calibration():
     """Eye-in-hand calibration interface."""
     return render_template('eye_in_hand.html')
+
+
+@app.route('/chessboard-test')
+def chessboard_test():
+    """Chessboard configuration test page."""
+    return render_template('chessboard-test.html')
+
+
+@app.route('/simple-test')
+def simple_test():
+    """Simple chessboard configuration test page."""
+    return render_template('simple-test.html')
 
 
 @app.route('/api/upload_images', methods=['POST'])
@@ -201,13 +225,21 @@ def upload_poses():
 def set_parameters():
     """Set calibration parameters."""
     try:
-        session_id = request.json.get('session_id', 'default')
-        parameters = request.json.get('parameters', {})
+        data = request.get_json()
+        session_id = data.get('session_id', 'default')
+        
+        # Extract parameters directly from the request data
+        parameters = {
+            'chessboard_x': data.get('chessboard_x'),
+            'chessboard_y': data.get('chessboard_y'),
+            'square_size': data.get('square_size'),
+            'distortion_model': data.get('distortion_model', 'standard')
+        }
         
         # Validate parameters
         required_params = ['chessboard_x', 'chessboard_y', 'square_size']
         for param in required_params:
-            if param not in parameters:
+            if parameters[param] is None:
                 return jsonify({'error': f'Missing parameter: {param}'}), 400
         
         # Update session data
@@ -321,6 +353,7 @@ def calibrate():
                     'calibration_type': 'intrinsic',
                     'camera_matrix': camera_matrix.tolist(),
                     'distortion_coefficients': dist_coeffs.tolist(),
+                    'rms_error': float(ret),
                     'images_used': len(image_paths),
                     'corner_images': corner_images,
                     'undistorted_images': undistorted_images,
@@ -585,6 +618,36 @@ def get_undistorted_image(session_id, filename):
             return jsonify({'error': 'Undistorted image not found'}), 404
         
         return send_file(image_path)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/clear_images', methods=['POST'])
+def clear_images():
+    """Clear uploaded images for a session."""
+    try:
+        data = request.get_json()
+        session_id = data.get('session_id')
+        
+        if not session_id:
+            return jsonify({'error': 'Session ID required'}), 400
+        
+        # Remove session data
+        if session_id in session_data:
+            del session_data[session_id]
+        
+        # Remove session files
+        session_folder = get_session_folder(session_id)
+        if os.path.exists(session_folder):
+            shutil.rmtree(session_folder)
+        
+        # Remove results
+        results_folder = os.path.join(RESULTS_FOLDER, session_id)
+        if os.path.exists(results_folder):
+            shutil.rmtree(results_folder)
+        
+        return jsonify({'message': 'Images cleared successfully'})
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500

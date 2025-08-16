@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chessboard Configuration Test</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .test-container {
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 30px 0;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+        }
+        .debug-info {
+            background-color: #f0f0f0;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🧪 Chessboard Configuration Test</h1>
+        
+        <div class="test-section">
+            <h2>Debug Information</h2>
+            <div class="debug-info" id="debug-info">
+                Loading...
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>Chessboard Card Test</h2>
+            <p>Click the card below to test the chessboard configuration modal:</p>
+            {{ include_shared_template('chessboard-card.html') | safe }}
+        </div>
+
+        <div class="test-section">
+            <h2>Manual Modal Test</h2>
+            <button onclick="testOpenModal()">Open Modal Manually</button>
+            <button onclick="testDrawCanvas()">Test Canvas Drawing</button>
+        </div>
+
+        <!-- Hidden form inputs for testing -->
+        <input type="hidden" id="chessboard-x" value="11">
+        <input type="hidden" id="chessboard-y" value="8">
+        <input type="hidden" id="square-size" value="0.02">
+    </div>
+
+    <!-- Shared Chessboard Configuration Modal -->
+    {{ include_shared_template('chessboard-modal.html') | safe }}
+
+    <script src="{{ url_for('static', filename='js/chessboard-config.js') }}"></script>
+    <script>
+        // Test script
+        let testChessboardConfig;
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            updateDebugInfo('DOM loaded');
+            
+            // Initialize ChessboardConfig
+            try {
+                testChessboardConfig = new ChessboardConfig({
+                    statusCallback: (message, type) => {
+                        updateDebugInfo(`Status: [${type.toUpperCase()}] ${message}`);
+                    }
+                });
+                
+                testChessboardConfig.initialize();
+                
+                // Set up global callbacks
+                window.chessboardConfig = testChessboardConfig;
+                window.getCurrentChessboardConfig = () => {
+                    return {
+                        cornerX: parseInt(document.getElementById('chessboard-x').value) || 11,
+                        cornerY: parseInt(document.getElementById('chessboard-y').value) || 8,
+                        squareSize: parseFloat(document.getElementById('square-size').value) || 0.02
+                    };
+                };
+                
+                updateDebugInfo('ChessboardConfig initialized successfully');
+                
+                // Test initial display
+                const config = window.getCurrentChessboardConfig();
+                testChessboardConfig.setConfiguration(config);
+                updateDebugInfo(`Initial config set: ${JSON.stringify(config)}`);
+                
+            } catch (error) {
+                updateDebugInfo(`Error: ${error.message}`);
+                console.error('ChessboardConfig initialization error:', error);
+            }
+        });
+        
+        function testOpenModal() {
+            updateDebugInfo('Manual modal open test');
+            if (testChessboardConfig) {
+                const config = window.getCurrentChessboardConfig();
+                testChessboardConfig.openModal(config);
+            } else {
+                updateDebugInfo('ChessboardConfig not initialized');
+            }
+        }
+        
+        function testDrawCanvas() {
+            updateDebugInfo('Manual canvas draw test');
+            if (testChessboardConfig) {
+                testChessboardConfig.drawChessboardPreview(11, 8);
+            } else {
+                updateDebugInfo('ChessboardConfig not initialized');
+            }
+        }
+        
+        function updateDebugInfo(message) {
+            const debugDiv = document.getElementById('debug-info');
+            const timestamp = new Date().toLocaleTimeString();
+            debugDiv.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+            console.log(`[DEBUG] ${message}`);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,106 @@
+<!-- Shared Chessboard Configuration Modal -->
+<div id="chessboardModal" class="config-modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>📋 Configure Calibration Target</h3>
+            <span class="modal-close" onclick="if(window.chessboardConfig) window.chessboardConfig.closeModal()">&times;</span>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>Target Type:</label>
+                <select id="target-type">
+                    <option value="chessboard" selected>⬛ Chessboard</option>
+                    <option value="circles" disabled>⚪ Circle Grid (Coming Soon)</option>
+                    <option value="asymmetric" disabled>🔘 Asymmetric Circles (Coming Soon)</option>
+                </select>
+            </div>
+            
+            <div id="chessboard-config">
+                <div class="form-group">
+                    <label>Corners (X-axis):</label>
+                    <input type="number" id="modal-chessboard-x" value="11" min="3" max="20" oninput="if(window.chessboardConfig) window.chessboardConfig.drawChessboardPreview(this.value, document.getElementById('modal-chessboard-y').value)">
+                    <small>Number of internal corners along width</small>
+                </div>
+                
+                <div class="form-group">
+                    <label>Corners (Y-axis):</label>
+                    <input type="number" id="modal-chessboard-y" value="8" min="3" max="20" oninput="if(window.chessboardConfig) window.chessboardConfig.drawChessboardPreview(document.getElementById('modal-chessboard-x').value, this.value)">
+                    <small>Number of internal corners along height</small>
+                </div>
+                
+                <div class="form-group">
+                    <label>Square Size (meters):</label>
+                    <input type="number" id="modal-square-size" value="0.02" step="0.001" min="0.001" max="1">
+                    <small>Physical size of each chessboard square</small>
+                </div>
+            </div>
+            
+            <div class="modal-section">
+                <h4>📥 Download Chessboard</h4>
+                <p class="section-description">Generate a clean chessboard pattern for printing and calibration</p>
+                
+                <div class="download-options">
+                    <div class="form-group">
+                        <label>Image Size:</label>
+                        <select id="download-size">
+                            <option value="a4">A4 (210×297mm)</option>
+                            <option value="letter">Letter (216×279mm)</option>
+                            <option value="custom">Custom Size</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Output Format:</label>
+                        <select id="download-format">
+                            <option value="png">PNG (High Quality)</option>
+                            <option value="pdf">PDF (Print Ready)</option>
+                            <option value="svg">SVG (Vector)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Resolution:</label>
+                        <select id="download-resolution">
+                            <option value="300">300 DPI (High Quality)</option>
+                            <option value="600">600 DPI (Professional)</option>
+                            <option value="150">150 DPI (Standard)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group" id="custom-size-group" style="display: none;">
+                        <div class="input-row">
+                            <div>
+                                <label>Width (mm):</label>
+                                <input type="number" id="custom-width" value="210" min="50" max="500">
+                            </div>
+                            <div>
+                                <label>Height (mm):</label>
+                                <input type="number" id="custom-height" value="297" min="50" max="500">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="download-preview">
+                    <canvas id="download-canvas" width="200" height="280" style="border: 1px solid #ddd; background: white;"></canvas>
+                    <div class="preview-info">
+                        <small>Preview (not to scale)</small>
+                        <div id="download-info">
+                            <div>Squares: <span id="download-squares">12×9</span></div>
+                            <div>Size: <span id="download-dimensions">210×297 mm</span></div>
+                            <div>Square: <span id="download-square-size">20.0 mm</span></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <button class="download-btn" onclick="if(window.chessboardConfig) window.chessboardConfig.downloadChessboard()">
+                    📥 Generate & Download
+                </button>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="secondary-btn" onclick="if(window.chessboardConfig) window.chessboardConfig.closeModal()">Cancel</button>
+            <button class="primary-btn" onclick="if(window.chessboardConfig) window.chessboardConfig.saveConfiguration()">Apply Settings</button>
+        </div>
+    </div>
+</div>

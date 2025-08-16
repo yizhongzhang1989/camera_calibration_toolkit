@@ -1,0 +1,26 @@
+<!-- Shared Chessboard Info Card -->
+<div class="chessboard-info-card" onclick="if(window.chessboardConfig) window.chessboardConfig.openModal()">
+    <div class="chessboard-header">
+        <span class="chessboard-icon">⬛</span>
+        <div class="chessboard-title">
+            <h4>Calibration Target</h4>
+            <small>Click to configure</small>
+        </div>
+        <span class="config-arrow">⚙️</span>
+    </div>
+    
+    <div class="chessboard-details">
+        <div class="chessboard-row">
+            <span class="detail-label">Pattern:</span>
+            <span id="board-dimensions">11 × 8 corners</span>
+        </div>
+        <div class="chessboard-row">
+            <span class="detail-label">Square Size:</span>
+            <span id="board-square-size">20.0 mm</span>
+        </div>
+    </div>
+    
+    <div class="chessboard-preview">
+        <canvas id="chessboard-canvas" width="200" height="150"></canvas>
+    </div>
+</div>

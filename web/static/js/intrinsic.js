@@ -1,6 +1,6 @@
 /**
- * Intrinsic Camera Calibration Web Interface
- * Handles file uploads, parameter settings, and calibration workflow
+ * Intrinsic Camera Calibration Web Interface (Refactored)
+ * Uses shared ChessboardConfig module for chessboard functionality
  */
 
 class IntrinsicCalibration {
@@ -12,8 +12,52 @@ class IntrinsicCalibration {
         
         this.initializeEventListeners();
         this.initializeModal();
+        this.initializeChessboard();
         this.updateUI();
-        this.updateChessboardDisplay(); // Initialize chessboard display
+    }
+    
+    initializeChessboard() {
+        console.log('Initializing chessboard using shared ChessboardConfig module...');
+        
+        // Create instance of shared ChessboardConfig
+        this.chessboardConfig = new ChessboardConfig({
+            statusCallback: (message, type) => this.showStatus(message, type)
+        });
+        
+        // Initialize the chessboard config
+        this.chessboardConfig.initialize();
+        
+        // Set up global access for template onclick handlers
+        window.chessboardConfig = this.chessboardConfig;
+        
+        // Override saveConfiguration to integrate with intrinsic calibration
+        const originalSaveConfiguration = this.chessboardConfig.saveConfiguration.bind(this.chessboardConfig);
+        this.chessboardConfig.saveConfiguration = (callback) => {
+            originalSaveConfiguration((config) => {
+                // Update hidden form inputs for backward compatibility
+                document.getElementById('chessboard-x').value = config.cornerX;
+                document.getElementById('chessboard-y').value = config.cornerY;
+                document.getElementById('square-size').value = config.squareSize;
+                
+                // Update parameters on server
+                this.updateParameters();
+                
+                // Call provided callback if any
+                if (callback) callback(config);
+                
+                this.showStatus('Chessboard configuration updated', 'success');
+            });
+        };
+        
+        // Initial display update
+        this.updateChessboardDisplay();
+    }
+
+    updateChessboardDisplay() {
+        // Update the chessboard display using the shared module
+        if (this.chessboardConfig && this.chessboardConfig.updateChessboardDisplay) {
+            this.chessboardConfig.updateChessboardDisplay();
+        }
     }
     
     generateSessionId() {
@@ -25,33 +69,44 @@ class IntrinsicCalibration {
         const imageFiles = document.getElementById('image-files');
         const uploadArea = document.getElementById('image-upload-area');
         
-        imageFiles.addEventListener('change', (e) => this.handleImageUpload(e.target.files));
+        if (imageFiles) {
+            imageFiles.addEventListener('change', (e) => this.handleImageUpload(e.target.files));
+        }
         
-        // Drag and drop
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadArea.classList.add('dragover');
-        });
-        
-        uploadArea.addEventListener('dragleave', () => {
-            uploadArea.classList.remove('dragover');
-        });
-        
-        uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadArea.classList.remove('dragover');
-            this.handleImageUpload(e.dataTransfer.files);
-        });
+        if (uploadArea) {
+            // Drag and drop
+            uploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadArea.classList.add('dragover');
+            });
+            
+            uploadArea.addEventListener('dragleave', () => {
+                uploadArea.classList.remove('dragover');
+            });
+            
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+                this.handleImageUpload(e.dataTransfer.files);
+            });
+        }
         
         // Parameters change
         ['chessboard-x', 'chessboard-y', 'square-size', 'distortion-model'].forEach(id => {
-            document.getElementById(id).addEventListener('change', () => this.updateParameters());
+            const element = document.getElementById(id);
+            if (element) {
+                element.addEventListener('change', () => this.updateParameters());
+            }
         });
         
         // Buttons
-        document.getElementById('calibrate-btn').addEventListener('click', () => this.startCalibration());
-        document.getElementById('download-btn').addEventListener('click', () => this.downloadResults());
-        document.getElementById('clear-all-images-btn').addEventListener('click', () => this.clearAllImages());
+        const calibrateBtn = document.getElementById('calibrate-btn');
+        const downloadBtn = document.getElementById('download-btn');
+        const clearBtn = document.getElementById('clear-all-images-btn');
+        
+        if (calibrateBtn) calibrateBtn.addEventListener('click', () => this.startCalibration());
+        if (downloadBtn) downloadBtn.addEventListener('click', () => this.downloadResults());
+        if (clearBtn) clearBtn.addEventListener('click', () => this.clearAllImages());
         
         // View controls
         document.querySelectorAll('.view-btn').forEach(btn => {
@@ -105,13 +160,15 @@ class IntrinsicCalibration {
         
         // Update table display
         if (this.uploadedImages.length === 0) {
-            placeholder.style.display = 'block';
-            comparisonTable.style.display = 'none';
+            if (placeholder) placeholder.style.display = 'block';
+            if (comparisonTable) comparisonTable.style.display = 'none';
             return;
         }
         
-        placeholder.style.display = 'none';
-        comparisonTable.style.display = 'table';
+        if (placeholder) placeholder.style.display = 'none';
+        if (comparisonTable) comparisonTable.style.display = 'table';
+        
+        if (!tableBody) return;
         
         // Clear and populate table
         tableBody.innerHTML = '';
@@ -171,54 +228,151 @@ class IntrinsicCalibration {
             this.loadImageDimensions(file.url, index);
         });
         
-        // Add select all functionality
+        // Set up select all functionality
+        this.setupSelectAllFunctionality();
+    }
+    
+    loadImageDimensions(imageUrl, index) {
+        const img = new Image();
+        img.onload = () => {
+            const resolutionElement = document.getElementById(`resolution-${index}`);
+            if (resolutionElement) {
+                resolutionElement.textContent = `${img.width} × ${img.height} px`;
+            }
+        };
+        img.onerror = () => {
+            const resolutionElement = document.getElementById(`resolution-${index}`);
+            if (resolutionElement) {
+                resolutionElement.textContent = 'Unable to load';
+            }
+        };
+        img.src = imageUrl;
+    }
+    
+    setupSelectAllFunctionality() {
         const selectAllCheckbox = document.getElementById('select-all-checkbox');
+        const imageCheckboxes = document.querySelectorAll('.image-checkbox');
+        
         if (selectAllCheckbox) {
             selectAllCheckbox.addEventListener('change', (e) => {
-                const imageCheckboxes = document.querySelectorAll('.image-checkbox');
                 imageCheckboxes.forEach(checkbox => {
                     checkbox.checked = e.target.checked;
                 });
             });
         }
         
-        // Add individual checkbox listeners
-        const imageCheckboxes = document.querySelectorAll('.image-checkbox');
+        // Update select all when individual checkboxes change
         imageCheckboxes.forEach(checkbox => {
             checkbox.addEventListener('change', () => {
-                this.updateSelectAllState();
+                const allChecked = Array.from(imageCheckboxes).every(cb => cb.checked);
+                const noneChecked = Array.from(imageCheckboxes).every(cb => !cb.checked);
+                
+                if (selectAllCheckbox) {
+                    selectAllCheckbox.checked = allChecked;
+                    selectAllCheckbox.indeterminate = !allChecked && !noneChecked;
+                }
             });
         });
     }
     
-    removeImage(index) {
-        this.uploadedImages.splice(index, 1);
-        this.updateUI();
-        this.displayUploadedImages();
+    async removeImage(index) {
+        try {
+            const response = await fetch('/api/remove_image', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    session_id: this.sessionId,
+                    image_index: index
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.error) {
+                this.showStatus(`Error: ${result.error}`, 'error');
+                return;
+            }
+            
+            this.uploadedImages = result.files;
+            this.showStatus('Image removed', 'success');
+            this.updateUI();
+            this.displayUploadedImages();
+            
+        } catch (error) {
+            this.showStatus(`Remove failed: ${error.message}`, 'error');
+        }
+    }
+    
+    async clearAllImages() {
+        if (!confirm('Are you sure you want to clear all images?')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/clear_images', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    session_id: this.sessionId
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.error) {
+                this.showStatus(`Error: ${result.error}`, 'error');
+                return;
+            }
+            
+            this.uploadedImages = [];
+            this.calibrationResults = null;
+            this.showStatus('All images cleared', 'success');
+            this.updateUI();
+            this.displayUploadedImages();
+            
+        } catch (error) {
+            this.showStatus(`Clear failed: ${error.message}`, 'error');
+        }
     }
     
     async updateParameters() {
-        const parameters = {
-            chessboard_x: parseInt(document.getElementById('chessboard-x').value),
-            chessboard_y: parseInt(document.getElementById('chessboard-y').value),
-            square_size: parseFloat(document.getElementById('square-size').value),
-            distortion_model: document.getElementById('distortion-model').value
+        const chessboardX = document.getElementById('chessboard-x');
+        const chessboardY = document.getElementById('chessboard-y');
+        const squareSize = document.getElementById('square-size');
+        const distortionModel = document.getElementById('distortion-model');
+        
+        if (!chessboardX || !chessboardY || !squareSize || !distortionModel) {
+            throw new Error('Missing parameter input elements');
+        }
+        
+        const params = {
+            session_id: this.sessionId,
+            chessboard_x: parseInt(chessboardX.value),
+            chessboard_y: parseInt(chessboardY.value),
+            square_size: parseFloat(squareSize.value),
+            distortion_model: distortionModel.value
         };
         
         try {
             const response = await fetch('/api/set_parameters', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    session_id: this.sessionId,
-                    parameters: parameters
-                })
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(params)
             });
             
             const result = await response.json();
+            
             if (result.error) {
-                this.showStatus(`Parameter error: ${result.error}`, 'error');
+                throw new Error(`Parameter error: ${result.error}`);
             }
+            
+            console.log('Parameters set successfully:', params);
             
         } catch (error) {
             this.showStatus(`Parameter update failed: ${error.message}`, 'error');
@@ -229,52 +383,60 @@ class IntrinsicCalibration {
         const selectedIndices = this.getSelectedImageIndices();
         
         if (selectedIndices.length < 3) {
-            this.showStatus('Need at least 3 selected images for calibration', 'error');
+            this.showStatus('Please select at least 3 images for calibration', 'error');
             return;
         }
         
         try {
-            this.showStatus(`Starting intrinsic calibration with ${selectedIndices.length} selected images...`, 'info');
-            document.getElementById('calibrate-btn').disabled = true;
+            this.showStatus('Setting parameters and starting calibration...', 'info');
             
-            // Update parameters first
-            await this.updateParameters();
+            // First, ensure parameters are set
+            try {
+                await this.updateParameters();
+            } catch (paramError) {
+                this.showStatus(`Parameter setup failed: ${paramError.message}`, 'error');
+                return;
+            }
+            
+            this.showStatus('Starting calibration...', 'info');
             
             const response = await fetch('/api/calibrate', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                },
                 body: JSON.stringify({
                     session_id: this.sessionId,
-                    calibration_type: 'intrinsic',
-                    selected_indices: selectedIndices
+                    selected_indices: selectedIndices,
+                    distortion_model: document.getElementById('distortion-model').value
                 })
             });
             
             const result = await response.json();
             
             if (result.error) {
-                this.showStatus(`Calibration failed: ${result.error}`, 'error');
-                document.getElementById('calibrate-btn').disabled = false;
+                this.showStatus(`Calibration error: ${result.error}`, 'error');
                 return;
             }
             
             this.calibrationResults = result;
             this.showStatus(result.message, 'success');
-            this.displayResults();
             this.updateUI();
+            this.displayResults();
             
         } catch (error) {
             this.showStatus(`Calibration failed: ${error.message}`, 'error');
-            document.getElementById('calibrate-btn').disabled = false;
         }
     }
     
     displayResults() {
         if (!this.calibrationResults) return;
         
-        // Show metrics in control panel
-        const metricsDiv = document.getElementById('calibration-metrics');
-        metricsDiv.style.display = 'block';
+        // Show calibration metrics panel
+        const metricsPanel = document.getElementById('calibration-metrics');
+        if (metricsPanel) {
+            metricsPanel.style.display = 'block';
+        }
         
         // Camera matrix
         const cameraMatrix = this.calibrationResults.camera_matrix;
@@ -283,7 +445,7 @@ class IntrinsicCalibration {
         `;
         
         // Distortion coefficients - show only relevant ones based on model
-        const distCoeffs = this.calibrationResults.distortion_coefficients[0];
+        const distCoeffs = this.calibrationResults.distortion_coefficients[0] || this.calibrationResults.distortion_coefficients;
         const distortionModel = document.getElementById('distortion-model').value;
         
         let relevantCoeffs;
@@ -292,19 +454,19 @@ class IntrinsicCalibration {
         switch(distortionModel) {
             case 'standard':
                 relevantCoeffs = distCoeffs.slice(0, 5);
-                labels = ['k1', 'k2', 'p1', 'p2', 'k3'];
+                labels = ['k₁', 'k₂', 'p₁', 'p₂', 'k₃'];
                 break;
             case 'rational':
                 relevantCoeffs = distCoeffs.slice(0, 8);
-                labels = ['k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'k5', 'k6'];
+                labels = ['k₁', 'k₂', 'p₁', 'p₂', 'k₃', 'k₄', 'k₅', 'k₆'];
                 break;
             case 'thin_prism':
                 relevantCoeffs = distCoeffs.slice(0, 12);
-                labels = ['k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'k5', 'k6', 's1', 's2', 's3', 's4'];
+                labels = ['k₁', 'k₂', 'p₁', 'p₂', 'k₃', 'k₄', 'k₅', 'k₆', 's₁', 's₂', 's₃', 's₄'];
                 break;
             case 'tilted':
                 relevantCoeffs = distCoeffs;
-                labels = ['k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'k5', 'k6', 's1', 's2', 's3', 's4', 'τx', 'τy'];
+                labels = ['k₁', 'k₂', 'p₁', 'p₂', 'k₃', 'k₄', 'k₅', 'k₆', 's₁', 's₂', 's₃', 's₄', 'τₓ', 'τᵧ'];
                 break;
             default:
                 relevantCoeffs = distCoeffs;
@@ -319,21 +481,32 @@ class IntrinsicCalibration {
             <pre>${coeffDisplay}</pre>
         `;
         
-        // Reprojection error
+        // Reprojection error - check both possible field names
         const errorDisplay = document.getElementById('error-display');
-        if (this.calibrationResults.reprojection_error !== undefined) {
-            errorDisplay.innerHTML = `<strong>${this.calibrationResults.reprojection_error.toFixed(4)} pixels</strong>`;
+        const rmsError = this.calibrationResults.rms_error || this.calibrationResults.reprojection_error;
+        if (rmsError !== undefined) {
+            errorDisplay.innerHTML = `<strong>${rmsError.toFixed(4)} pixels</strong>`;
         } else {
             errorDisplay.innerHTML = '<em>Not calculated</em>';
         }
         
         // Images count
-        document.getElementById('images-count-display').innerHTML = 
-            `<strong>${this.uploadedImages.length} images</strong>`;
+        const imagesCountDisplay = document.getElementById('images-count-display');
+        if (imagesCountDisplay && this.calibrationResults.images_used !== undefined) {
+            imagesCountDisplay.innerHTML = `<strong>${this.calibrationResults.images_used} images</strong>`;
+        }
         
         // Update progress info
         const progressInfo = document.getElementById('progress-info');
-        progressInfo.innerHTML = `✅ Calibration complete with ${this.uploadedImages.length} images`;
+        if (progressInfo) {
+            progressInfo.innerHTML = `✅ Calibration complete with ${this.calibrationResults.images_used || this.uploadedImages.length} images`;
+        }
+        
+        // Show download button
+        const downloadBtn = document.getElementById('download-btn');
+        if (downloadBtn) {
+            downloadBtn.style.display = 'block';
+        }
         
         // Update table with corner detection and undistorted images
         this.updateImageTable();
@@ -420,170 +593,23 @@ class IntrinsicCalibration {
         ).join('\n');
     }
     
-    loadImageDimensions(imageUrl, index) {
-        const img = new Image();
-        img.onload = () => {
-            const resolutionElement = document.getElementById(`resolution-${index}`);
-            if (resolutionElement) {
-                resolutionElement.textContent = `${img.width} × ${img.height}`;
-            }
-        };
-        img.onerror = () => {
-            const resolutionElement = document.getElementById(`resolution-${index}`);
-            if (resolutionElement) {
-                resolutionElement.textContent = 'Resolution unknown';
-            }
-        };
-        img.src = imageUrl;
-    }
-    
-    switchView(view) {
-        // Note: With the new table layout, view switching is no longer needed
-        // The table always shows all three views side by side
-        this.currentView = view;
-        console.log(`View switched to: ${view} (table layout shows all views)`);
-    }
-    
-    openChessboardModal() {
-        // Sync modal values with current settings
-        document.getElementById('modal-chessboard-x').value = document.getElementById('chessboard-x').value;
-        document.getElementById('modal-chessboard-y').value = document.getElementById('chessboard-y').value;
-        document.getElementById('modal-square-size').value = document.getElementById('square-size').value;
-        
-        // Update download preview
-        this.updateDownloadPreview();
-        
-        document.getElementById('chessboardModal').style.display = 'block';
-    }
-    
-    closeChessboardModal() {
-        document.getElementById('chessboardModal').style.display = 'none';
-    }
-    
-    saveChessboardConfig() {
-        // Get values from modal
-        const x = document.getElementById('modal-chessboard-x').value;
-        const y = document.getElementById('modal-chessboard-y').value;
-        const size = parseFloat(document.getElementById('modal-square-size').value);
-        
-        // Update hidden form inputs
-        document.getElementById('chessboard-x').value = x;
-        document.getElementById('chessboard-y').value = y;
-        document.getElementById('square-size').value = size;
-        
-        // Update display
-        this.updateChessboardDisplay();
-        
-        // Update parameters
-        this.updateParameters();
-        
-        // Close modal
-        this.closeChessboardModal();
-        
-        this.showStatus('Chessboard configuration updated', 'success');
-    }
-    
-    updateChessboardDisplay() {
-        const x = document.getElementById('chessboard-x').value;
-        const y = document.getElementById('chessboard-y').value;
-        const size = parseFloat(document.getElementById('square-size').value);
-        
-        document.getElementById('board-dimensions').textContent = `${x} × ${y} corners`;
-        document.getElementById('board-square-size').textContent = `${(size * 1000).toFixed(1)} mm`;
-        
-        // Draw chessboard preview
-        this.drawChessboardPreview(parseInt(x), parseInt(y));
-    }
-    
-    drawChessboardPreview(cornerX, cornerY) {
-        const canvas = document.getElementById('chessboard-canvas');
-        if (!canvas) return;
-        
-        const ctx = canvas.getContext('2d');
-        const canvasWidth = canvas.width;
-        const canvasHeight = canvas.height;
-        
-        // Clear canvas
-        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-        
-        // Calculate squares (corners + 1 for each dimension)
-        const squaresX = cornerX + 1;
-        const squaresY = cornerY + 1;
-        
-        // Calculate square size to fit in canvas with some padding
-        const padding = 10;
-        const availableWidth = canvasWidth - 2 * padding;
-        const availableHeight = canvasHeight - 2 * padding;
-        
-        const squareSize = Math.min(
-            availableWidth / squaresX,
-            availableHeight / squaresY
-        );
-        
-        // Center the chessboard
-        const boardWidth = squaresX * squareSize;
-        const boardHeight = squaresY * squareSize;
-        const startX = (canvasWidth - boardWidth) / 2;
-        const startY = (canvasHeight - boardHeight) / 2;
-        
-        // Draw chessboard pattern
-        for (let row = 0; row < squaresY; row++) {
-            for (let col = 0; col < squaresX; col++) {
-                const x = startX + col * squareSize;
-                const y = startY + row * squareSize;
-                
-                // Alternate colors (true chessboard pattern)
-                const isBlack = (row + col) % 2 === 0;
-                ctx.fillStyle = isBlack ? '#2c2c2c' : '#f8f8f8';
-                ctx.fillRect(x, y, squareSize, squareSize);
-                
-                // Add subtle border to squares
-                ctx.strokeStyle = '#ccc';
-                ctx.lineWidth = 0.5;
-                ctx.strokeRect(x, y, squareSize, squareSize);
-            }
-        }
-        
-        // Draw corner indicators (red dots where corners are detected)
-        ctx.fillStyle = '#dc3545';
-        const cornerRadius = Math.max(2, squareSize * 0.1);
-        
-        for (let row = 1; row < squaresY; row++) {
-            for (let col = 1; col < squaresX; col++) {
-                const x = startX + col * squareSize;
-                const y = startY + row * squareSize;
-                
-                ctx.beginPath();
-                ctx.arc(x, y, cornerRadius, 0, 2 * Math.PI);
-                ctx.fill();
-            }
-        }
-        
-        // Add dimension labels
-        ctx.fillStyle = '#666';
-        ctx.font = '10px Arial';
-        ctx.textAlign = 'center';
-        
-        // Bottom label (X dimension)
-        ctx.fillText(`${cornerX} corners`, canvasWidth / 2, canvasHeight - 2);
-        
-        // Right label (Y dimension) - rotated
-        ctx.save();
-        ctx.translate(canvasWidth - 5, canvasHeight / 2);
-        ctx.rotate(-Math.PI / 2);
-        ctx.fillText(`${cornerY} corners`, 0, 0);
-        ctx.restore();
-    }
-    
     async downloadResults() {
-        if (!this.calibrationResults) return;
+        if (!this.calibrationResults) {
+            this.showStatus('No calibration results to download', 'error');
+            return;
+        }
         
         try {
             const response = await fetch(`/api/export_results/${this.sessionId}`);
-            const blob = await response.blob();
             
+            if (!response.ok) {
+                throw new Error('Download failed');
+            }
+            
+            const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
+            a.style.display = 'none';
             a.href = url;
             a.download = `intrinsic_calibration_results_${this.sessionId}.zip`;
             document.body.appendChild(a);
@@ -591,122 +617,50 @@ class IntrinsicCalibration {
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
             
+            this.showStatus('Results downloaded successfully', 'success');
+            
         } catch (error) {
             this.showStatus(`Download failed: ${error.message}`, 'error');
         }
     }
     
     updateUI() {
-        const hasImages = this.uploadedImages.length > 0;
+        const imageCount = this.uploadedImages.length;
         const hasResults = this.calibrationResults !== null;
         
-        document.getElementById('calibrate-btn').disabled = !hasImages;
-        document.getElementById('download-btn').style.display = hasResults ? 'block' : 'none';
-        document.getElementById('clear-all-images-btn').style.display = hasImages ? 'block' : 'none';
-        
-        // Update calibrate button text
+        // Update button states
         const calibrateBtn = document.getElementById('calibrate-btn');
-        if (hasResults) {
-            calibrateBtn.textContent = '🔄 Recalibrate';
-            calibrateBtn.disabled = false;
-        } else {
-            calibrateBtn.textContent = 'Start Calibration';
+        const downloadBtn = document.getElementById('download-btn');
+        const clearBtn = document.getElementById('clear-all-images-btn');
+        
+        if (calibrateBtn) calibrateBtn.disabled = imageCount < 3;
+        if (downloadBtn) {
+            downloadBtn.disabled = !hasResults;
+            downloadBtn.style.display = hasResults ? 'block' : 'none';
         }
-    }
-    
-    async clearAllImages() {
-        if (this.uploadedImages.length === 0) return;
+        if (clearBtn) clearBtn.style.display = imageCount > 0 ? 'block' : 'none';
         
-        if (!confirm(`Are you sure you want to remove all ${this.uploadedImages.length} images?`)) {
-            return;
+        // Show/hide calibration metrics panel
+        const metricsPanel = document.getElementById('calibration-metrics');
+        if (metricsPanel) {
+            metricsPanel.style.display = hasResults ? 'block' : 'none';
         }
         
-        try {
-            // Clear from backend session
-            await fetch(`/api/clear_session/${this.sessionId}`, { method: 'POST' });
-            
-            // Reset local data
-            this.uploadedImages = [];
-            this.calibrationResults = null;
-            this.sessionId = this.generateSessionId();
-            
-            // Reset UI
-            document.getElementById('calibration-metrics').style.display = 'none';
-            
-            const placeholder = document.getElementById('results-placeholder');
-            const comparisonTable = document.getElementById('image-comparison-table');
-            placeholder.style.display = 'block';
-            comparisonTable.style.display = 'none';
-            
-            const progressInfo = document.getElementById('progress-info');
-            progressInfo.innerHTML = 'Upload images to see calibration results';
-            
-            this.updateUI();
-            this.showStatus('All images cleared', 'info');
-            
-        } catch (error) {
-            this.showStatus(`Failed to clear images: ${error.message}`, 'error');
-        }
+        // Update counters and status
+        const statusElements = document.querySelectorAll('.image-count');
+        statusElements.forEach(el => el.textContent = imageCount);
     }
     
-    showStatus(message, type = 'info') {
-        const statusDiv = document.getElementById('calibration-status');
-        statusDiv.className = `status-display ${type}`;
-        statusDiv.innerHTML = `<p>${message}</p>`;
+    switchView(view) {
+        this.currentView = view;
         
-        console.log(`[${type.toUpperCase()}] ${message}`);
-    }
-    
-    initializeModal() {
-        const modal = document.getElementById('imageModal');
-        const modalClose = document.getElementById('modalClose');
-        
-        // Close modal when clicking the close button
-        modalClose.addEventListener('click', () => {
-            modal.style.display = 'none';
+        // Update button states
+        document.querySelectorAll('.view-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.view === view);
         });
         
-        // Close modal when clicking outside the image
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.style.display = 'none';
-            }
-        });
-        
-        // Close modal with Escape key
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && modal.style.display === 'block') {
-                modal.style.display = 'none';
-            }
-        });
-        
-        // Initialize download section event listeners
-        this.initializeDownloadSection();
-    }
-    
-    initializeDownloadSection() {
-        // Download size change
-        document.getElementById('download-size').addEventListener('change', (e) => {
-            const customGroup = document.getElementById('custom-size-group');
-            customGroup.style.display = e.target.value === 'custom' ? 'block' : 'none';
-            this.updateDownloadPreview();
-        });
-        
-        // Download parameters change
-        ['custom-width', 'custom-height', 'download-format', 'download-resolution'].forEach(id => {
-            const element = document.getElementById(id);
-            if (element) {
-                element.addEventListener('change', () => this.updateDownloadPreview());
-            }
-        });
-        
-        // Modal chessboard parameters change - update download preview too
-        ['modal-chessboard-x', 'modal-chessboard-y', 'modal-square-size'].forEach(id => {
-            const element = document.getElementById(id);
-            if (element) {
-                element.addEventListener('input', () => this.updateDownloadPreview());
-            }
-        });
+        // Show/hide content based on view
+        // Add view switching logic here if needed
     }
     
     openModal(imageSrc, title) {
@@ -714,306 +668,61 @@ class IntrinsicCalibration {
         const modalImage = document.getElementById('modalImage');
         const modalTitle = document.getElementById('modalTitle');
         
-        modalImage.src = imageSrc;
-        modalTitle.textContent = title;
-        modal.style.display = 'block';
-        
-        // Prevent scrolling on the background
-        document.body.style.overflow = 'hidden';
-        
-        // Restore scrolling when modal is closed
-        const closeModal = () => {
-            document.body.style.overflow = '';
-            modal.style.display = 'none';
-        };
-        
-        // Update close functionality to restore scrolling
-        const modalClose = document.getElementById('modalClose');
-        modalClose.onclick = closeModal;
-        modal.onclick = (e) => {
-            if (e.target === modal) closeModal();
-        };
-    }
-    
-    updateSelectAllState() {
-        const selectAllCheckbox = document.getElementById('select-all-checkbox');
-        const imageCheckboxes = document.querySelectorAll('.image-checkbox');
-        
-        if (!selectAllCheckbox || imageCheckboxes.length === 0) return;
-        
-        const checkedCount = Array.from(imageCheckboxes).filter(cb => cb.checked).length;
-        
-        if (checkedCount === 0) {
-            selectAllCheckbox.checked = false;
-            selectAllCheckbox.indeterminate = false;
-        } else if (checkedCount === imageCheckboxes.length) {
-            selectAllCheckbox.checked = true;
-            selectAllCheckbox.indeterminate = false;
-        } else {
-            selectAllCheckbox.checked = false;
-            selectAllCheckbox.indeterminate = true;
+        if (modal && modalImage && modalTitle) {
+            modalImage.src = imageSrc;
+            modalTitle.textContent = title;
+            modal.style.display = 'block';
         }
     }
     
-    getSelectedImageIndices() {
-        const imageCheckboxes = document.querySelectorAll('.image-checkbox');
-        const selectedIndices = [];
+    initializeModal() {
+        const modal = document.getElementById('imageModal');
+        const modalClose = document.getElementById('modalClose');
         
-        imageCheckboxes.forEach(checkbox => {
+        if (modalClose) {
+            // Close modal when clicking the close button
+            modalClose.addEventListener('click', () => {
+                if (modal) modal.style.display = 'none';
+            });
+        }
+        
+        if (modal) {
+            // Close modal when clicking outside the image
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.style.display = 'none';
+                }
+            });
+        }
+        
+        // Close modal with Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && modal && modal.style.display === 'block') {
+                modal.style.display = 'none';
+            }
+        });
+    }
+    
+    showStatus(message, type = 'info') {
+        const statusDiv = document.getElementById('calibration-status');
+        if (statusDiv) {
+            statusDiv.className = `status-display ${type}`;
+            statusDiv.innerHTML = `<p>${message}</p>`;
+        }
+        console.log(`[${type.toUpperCase()}] ${message}`);
+    }
+    
+    getSelectedImageIndices() {
+        const selectedIndices = [];
+        const checkboxes = document.querySelectorAll('.image-checkbox');
+        
+        checkboxes.forEach(checkbox => {
             if (checkbox.checked) {
                 selectedIndices.push(parseInt(checkbox.dataset.index));
             }
         });
         
         return selectedIndices;
-    }
-    
-    updateDownloadPreview() {
-        // Get current parameters
-        const cornerX = parseInt(document.getElementById('modal-chessboard-x').value) || 11;
-        const cornerY = parseInt(document.getElementById('modal-chessboard-y').value) || 8;
-        const squareSize = parseFloat(document.getElementById('modal-square-size').value) || 0.02;
-        
-        // Get download settings
-        const sizeType = document.getElementById('download-size').value;
-        let width, height;
-        
-        switch (sizeType) {
-            case 'a4':
-                width = 210; height = 297;
-                break;
-            case 'letter':
-                width = 216; height = 279;
-                break;
-            case 'custom':
-                width = parseInt(document.getElementById('custom-width').value) || 210;
-                height = parseInt(document.getElementById('custom-height').value) || 297;
-                break;
-        }
-        
-        // Update info display
-        document.getElementById('download-squares').textContent = `${cornerX + 1}×${cornerY + 1}`;
-        document.getElementById('download-dimensions').textContent = `${width}×${height} mm`;
-        document.getElementById('download-square-size').textContent = `${(squareSize * 1000).toFixed(1)} mm`;
-        
-        // Draw preview
-        this.drawDownloadPreview(cornerX, cornerY, width, height);
-    }
-    
-    drawDownloadPreview(cornerX, cornerY, paperWidth, paperHeight) {
-        const canvas = document.getElementById('download-canvas');
-        if (!canvas) return;
-        
-        const ctx = canvas.getContext('2d');
-        const canvasWidth = canvas.width;
-        const canvasHeight = canvas.height;
-        
-        // Clear canvas
-        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-        
-        // Calculate squares (corners + 1 for each dimension)
-        const squaresX = cornerX + 1;
-        const squaresY = cornerY + 1;
-        
-        // Calculate aspect ratios
-        const paperAspect = paperWidth / paperHeight;
-        const canvasAspect = canvasWidth / canvasHeight;
-        
-        // Fit paper aspect ratio to canvas
-        let drawWidth, drawHeight, offsetX, offsetY;
-        
-        if (paperAspect > canvasAspect) {
-            // Paper is wider relative to height
-            drawWidth = canvasWidth - 20; // padding
-            drawHeight = drawWidth / paperAspect;
-            offsetX = 10;
-            offsetY = (canvasHeight - drawHeight) / 2;
-        } else {
-            // Paper is taller relative to width
-            drawHeight = canvasHeight - 20; // padding
-            drawWidth = drawHeight * paperAspect;
-            offsetX = (canvasWidth - drawWidth) / 2;
-            offsetY = 10;
-        }
-        
-        // Draw paper background
-        ctx.fillStyle = 'white';
-        ctx.fillRect(offsetX, offsetY, drawWidth, drawHeight);
-        ctx.strokeStyle = '#ddd';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(offsetX, offsetY, drawWidth, drawHeight);
-        
-        // Calculate chessboard size that fits on paper with margin
-        const margin = Math.min(drawWidth, drawHeight) * 0.1; // 10% margin
-        const availableWidth = drawWidth - 2 * margin;
-        const availableHeight = drawHeight - 2 * margin;
-        
-        const squareSize = Math.min(availableWidth / squaresX, availableHeight / squaresY);
-        const boardWidth = squaresX * squareSize;
-        const boardHeight = squaresY * squareSize;
-        
-        // Center chessboard on paper
-        const boardOffsetX = offsetX + (drawWidth - boardWidth) / 2;
-        const boardOffsetY = offsetY + (drawHeight - boardHeight) / 2;
-        
-        // Draw chessboard pattern (clean, no indicators)
-        for (let row = 0; row < squaresY; row++) {
-            for (let col = 0; col < squaresX; col++) {
-                const x = boardOffsetX + col * squareSize;
-                const y = boardOffsetY + row * squareSize;
-                
-                // Alternate colors (true chessboard pattern)
-                const isBlack = (row + col) % 2 === 0;
-                ctx.fillStyle = isBlack ? '#000000' : '#ffffff';
-                ctx.fillRect(x, y, squareSize, squareSize);
-            }
-        }
-        
-        // Draw border around chessboard
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 0.5;
-        ctx.strokeRect(boardOffsetX, boardOffsetY, boardWidth, boardHeight);
-    }
-    
-    downloadChessboard() {
-        // Get parameters
-        const cornerX = parseInt(document.getElementById('modal-chessboard-x').value) || 11;
-        const cornerY = parseInt(document.getElementById('modal-chessboard-y').value) || 8;
-        const squareSize = parseFloat(document.getElementById('modal-square-size').value) || 0.02;
-        
-        const sizeType = document.getElementById('download-size').value;
-        const format = document.getElementById('download-format').value;
-        const resolution = parseInt(document.getElementById('download-resolution').value) || 300;
-        
-        let width, height;
-        switch (sizeType) {
-            case 'a4':
-                width = 210; height = 297;
-                break;
-            case 'letter':
-                width = 216; height = 279;
-                break;
-            case 'custom':
-                width = parseInt(document.getElementById('custom-width').value) || 210;
-                height = parseInt(document.getElementById('custom-height').value) || 297;
-                break;
-        }
-        
-        // Create high-resolution canvas
-        const pixelWidth = Math.round((width / 25.4) * resolution); // mm to pixels
-        const pixelHeight = Math.round((height / 25.4) * resolution);
-        
-        const canvas = document.createElement('canvas');
-        canvas.width = pixelWidth;
-        canvas.height = pixelHeight;
-        const ctx = canvas.getContext('2d');
-        
-        // Calculate squares and sizing
-        const squaresX = cornerX + 1;
-        const squaresY = cornerY + 1;
-        
-        // Calculate chessboard size with margin
-        const marginPixels = Math.min(pixelWidth, pixelHeight) * 0.1;
-        const availableWidth = pixelWidth - 2 * marginPixels;
-        const availableHeight = pixelHeight - 2 * marginPixels;
-        
-        const squarePixels = Math.min(availableWidth / squaresX, availableHeight / squaresY);
-        const boardWidth = squaresX * squarePixels;
-        const boardHeight = squaresY * squarePixels;
-        
-        // Center on canvas
-        const offsetX = (pixelWidth - boardWidth) / 2;
-        const offsetY = (pixelHeight - boardHeight) / 2;
-        
-        // Fill background white
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, pixelWidth, pixelHeight);
-        
-        // Draw chessboard
-        for (let row = 0; row < squaresY; row++) {
-            for (let col = 0; col < squaresX; col++) {
-                const x = offsetX + col * squarePixels;
-                const y = offsetY + row * squarePixels;
-                
-                const isBlack = (row + col) % 2 === 0;
-                ctx.fillStyle = isBlack ? '#000000' : '#ffffff';
-                ctx.fillRect(x, y, squarePixels, squarePixels);
-            }
-        }
-        
-        // Generate download
-        const filename = `chessboard_${cornerX + 1}x${cornerY + 1}_${(squareSize * 1000).toFixed(1)}mm.${format}`;
-        
-        if (format === 'png') {
-            canvas.toBlob((blob) => {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = filename;
-                a.click();
-                URL.revokeObjectURL(url);
-            }, 'image/png');
-        } else if (format === 'svg') {
-            // For SVG, create vector representation
-            this.downloadChessboardSVG(cornerX, cornerY, width, height, squareSize, filename);
-        } else if (format === 'pdf') {
-            // For PDF, we'd need a PDF library - for now, download as high-res PNG
-            this.showStatus('PDF format coming soon. Downloading as high-resolution PNG instead.', 'info');
-            canvas.toBlob((blob) => {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = filename.replace('.pdf', '.png');
-                a.click();
-                URL.revokeObjectURL(url);
-            }, 'image/png');
-        }
-        
-        this.showStatus('Chessboard pattern generated successfully!', 'success');
-    }
-    
-    downloadChessboardSVG(cornerX, cornerY, paperWidth, paperHeight, squareSize, filename) {
-        const squaresX = cornerX + 1;
-        const squaresY = cornerY + 1;
-        
-        // Calculate board size with margin
-        const margin = Math.min(paperWidth, paperHeight) * 0.1;
-        const availableWidth = paperWidth - 2 * margin;
-        const availableHeight = paperHeight - 2 * margin;
-        
-        const squareSize_mm = Math.min(availableWidth / squaresX, availableHeight / squaresY);
-        const boardWidth = squaresX * squareSize_mm;
-        const boardHeight = squaresY * squareSize_mm;
-        
-        const offsetX = (paperWidth - boardWidth) / 2;
-        const offsetY = (paperHeight - boardHeight) / 2;
-        
-        let svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="${paperWidth}mm" height="${paperHeight}mm" viewBox="0 0 ${paperWidth} ${paperHeight}" xmlns="http://www.w3.org/2000/svg">
-  <rect width="100%" height="100%" fill="white"/>`;
-        
-        // Generate squares
-        for (let row = 0; row < squaresY; row++) {
-            for (let col = 0; col < squaresX; col++) {
-                const x = offsetX + col * squareSize_mm;
-                const y = offsetY + row * squareSize_mm;
-                
-                const isBlack = (row + col) % 2 === 0;
-                if (isBlack) {
-                    svg += `\n  <rect x="${x}" y="${y}" width="${squareSize_mm}" height="${squareSize_mm}" fill="black"/>`;
-                }
-            }
-        }
-        
-        svg += '\n</svg>';
-        
-        const blob = new Blob([svg], { type: 'image/svg+xml' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
     }
 }
 
