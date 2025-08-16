@@ -24,6 +24,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from core.intrinsic_calibration import IntrinsicCalibrator
 from core.eye_in_hand_calibration import EyeInHandCalibrator
+from web.visualization_utils import create_calibration_results, trim_distortion_coefficients
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
@@ -315,68 +316,36 @@ def calibrate():
                 results_folder = os.path.join(RESULTS_FOLDER, session_id)
                 intrinsic_calibrator.save_parameters(results_folder)
                 
-                # Generate corner detection and undistorted images
-                corner_images = []
-                undistorted_images = []
+                # Save additional JSON with trimmed distortion coefficients
+                trimmed_dist_coeffs = trim_distortion_coefficients(dist_coeffs, distortion_model)
                 
-                # Create visualization directories
-                corner_viz_dir = os.path.join(results_folder, 'corner_detection')
-                undistorted_dir = os.path.join(results_folder, 'undistorted')
-                os.makedirs(corner_viz_dir, exist_ok=True)
-                os.makedirs(undistorted_dir, exist_ok=True)
-                
-                for i, img_path in enumerate(image_paths):
-                    original_index = selected_indices[i]
-                    
-                    # Generate corner detection visualization
-                    img = cv2.imread(img_path)
-                    if img is not None:
-                        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                        
-                        # Use the same function as in the intrinsic calibrator
-                        from core.utils import find_chessboard_corners
-                        find_corners_ret, corners = find_chessboard_corners(gray, XX, YY)
-                        
-                        if find_corners_ret:
-                            # Draw corners on the image
-                            img_with_corners = img.copy()
-                            cv2.drawChessboardCorners(img_with_corners, (XX, YY), corners, find_corners_ret)
-                            
-                            corner_filename = f"{original_index}.jpg"
-                            corner_path = os.path.join(corner_viz_dir, corner_filename)
-                            cv2.imwrite(corner_path, img_with_corners)
-                            
-                            corner_images.append({
-                                'name': corner_filename,
-                                'path': corner_path,
-                                'url': url_for('get_corner_image', session_id=session_id, filename=corner_filename),
-                                'index': original_index
-                            })
-                        
-                        # Generate undistorted image
-                        undistorted_img = intrinsic_calibrator.undistort_image(img_path)
-                        undistorted_filename = f"{original_index}.jpg"
-                        undistorted_path = os.path.join(undistorted_dir, undistorted_filename)
-                        cv2.imwrite(undistorted_path, undistorted_img)
-                        
-                        undistorted_images.append({
-                            'name': undistorted_filename,
-                            'path': undistorted_path,
-                            'url': url_for('get_undistorted_image', session_id=session_id, filename=undistorted_filename),
-                            'index': original_index
-                        })
-                
-                results = {
-                    'success': True,
-                    'calibration_type': 'intrinsic',
-                    'camera_matrix': camera_matrix.tolist(),
-                    'distortion_coefficients': dist_coeffs.tolist(),
-                    'rms_error': float(ret),
-                    'images_used': len(image_paths),
-                    'corner_images': corner_images,
-                    'undistorted_images': undistorted_images,
-                    'message': f'Intrinsic calibration completed successfully using {len(image_paths)} images'
+                # Save complete calibration results with trimmed coefficients
+                calibration_data = {
+                    "camera_matrix": camera_matrix.tolist(),
+                    "distortion_coefficients": trimmed_dist_coeffs.tolist(),
+                    "distortion_model": distortion_model,
+                    "rms_error": float(ret),
+                    "images_used": len(image_paths)
                 }
+                
+                with open(os.path.join(results_folder, 'calibration_results.json'), 'w') as f:
+                    json.dump(calibration_data, f, indent=4)
+                
+                # Also save trimmed distortion coefficients separately
+                trimmed_dist_dict = {
+                    "distortion_coefficients": trimmed_dist_coeffs.tolist(),
+                    "distortion_model": distortion_model,
+                    "note": f"Trimmed to {len(trimmed_dist_coeffs)} coefficients for {distortion_model} model"
+                }
+                with open(os.path.join(results_folder, 'dist_trimmed.json'), 'w') as f:
+                    json.dump(trimmed_dist_dict, f, indent=4)
+                
+                # Use shared visualization utility
+                results = create_calibration_results(
+                    'intrinsic', session_id, image_paths, selected_indices,
+                    camera_matrix, dist_coeffs, results_folder, XX, YY,
+                    rms_error=float(ret), distortion_model=distortion_model
+                )
             else:
                 results = {
                     'success': False,
@@ -514,93 +483,19 @@ def calibrate():
                 results_folder = os.path.join(RESULTS_FOLDER, session_id)
                 eye_in_hand_calibrator.save_results(results_folder)
                 
-                # Generate corner detection and undistorted images (similar to intrinsic calibration)
-                corner_images = []
-                undistorted_images = []
-                reprojected_images = []
-                
-                # Create visualization directories
-                corner_viz_dir = os.path.join(results_folder, 'corner_visualizations')
-                undistorted_dir = os.path.join(results_folder, 'undistorted_images')
-                reprojection_dir = os.path.join(results_folder, 'visualizations')
-                
-                os.makedirs(corner_viz_dir, exist_ok=True)
-                os.makedirs(undistorted_dir, exist_ok=True)
-                os.makedirs(reprojection_dir, exist_ok=True)
-                
-                from core.utils import find_chessboard_corners
-                
-                for i, image_path in enumerate(image_paths_sorted):
-                    original_index = selected_indices[i] if i < len(selected_indices) else i
-                    
-                    # Read image
-                    img = cv2.imread(image_path)
-                    if img is None:
-                        continue
-                        
-                    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                    
-                    # Corner detection
-                    find_corners_ret, corners = find_chessboard_corners(gray, XX, YY)
-                    
-                    if find_corners_ret:
-                        # Draw corners on the image
-                        img_with_corners = img.copy()
-                        cv2.drawChessboardCorners(img_with_corners, (XX, YY), corners, find_corners_ret)
-                        
-                        corner_filename = f"{original_index}.jpg"
-                        corner_path = os.path.join(corner_viz_dir, corner_filename)
-                        cv2.imwrite(corner_path, img_with_corners)
-                        
-                        corner_images.append({
-                            'name': corner_filename,
-                            'path': corner_path,
-                            'url': url_for('get_corner_image', session_id=session_id, filename=corner_filename),
-                            'index': original_index
-                        })
-                    
-                    # Generate undistorted image
-                    undistorted_img = cv2.undistort(img, camera_matrix, dist_coeffs)
-                    undistorted_filename = f"{original_index}.jpg"
-                    undistorted_path = os.path.join(undistorted_dir, undistorted_filename)
-                    cv2.imwrite(undistorted_path, undistorted_img)
-                    
-                    undistorted_images.append({
-                        'name': undistorted_filename,
-                        'path': undistorted_path,
-                        'url': url_for('get_undistorted_image', session_id=session_id, filename=undistorted_filename),
-                        'index': original_index
-                    })
-                    
-                    # Look for reprojected visualization files
-                    reprojected_filename = f"{i}_optimized.jpg"  # Backend uses 0-based index for reprojection files
-                    reprojected_path = os.path.join(reprojection_dir, reprojected_filename)
-                    
-                    if os.path.exists(reprojected_path):
-                        reprojected_images.append({
-                            'name': reprojected_filename,
-                            'path': reprojected_path,
-                            'url': url_for('get_visualization_image', session_id=session_id, filename=reprojected_filename),
-                            'index': original_index
-                        })
-                
-                results = {
-                    'success': True,
-                    'calibration_type': 'eye_in_hand',
-                    'handeye_transform': optimized_cam2end.tolist(),  # Expected by JavaScript
-                    'cam2end_matrix': optimized_cam2end.tolist(),     # For compatibility
-                    'reprojection_error': optimized_mean_error,       # Expected by JavaScript
-                    'initial_reprojection_errors': errors.tolist(),
-                    'optimized_reprojection_errors': final_errors.tolist(),
-                    'initial_mean_error': initial_mean_error,
-                    'optimized_mean_error': optimized_mean_error,
-                    'improvement_percentage': float((initial_mean_error - optimized_mean_error) / initial_mean_error * 100),
-                    'corner_images': corner_images,
-                    'undistorted_images': undistorted_images,
-                    'reprojected_images': reprojected_images,
-                    'images_used': len(image_paths_sorted),
-                    'message': f'Eye-in-hand calibration completed with optimization. Initial error: {initial_mean_error:.4f} pixels, Optimized error: {optimized_mean_error:.4f} pixels ({(initial_mean_error - optimized_mean_error) / initial_mean_error * 100:.1f}% improvement)'
-                }
+                # Use shared visualization utility
+                results = create_calibration_results(
+                    'eye_in_hand', session_id, image_paths_sorted, selected_indices,
+                    camera_matrix, dist_coeffs, results_folder, XX, YY,
+                    handeye_transform=optimized_cam2end,
+                    cam2end_matrix=optimized_cam2end,
+                    reprojection_error=optimized_mean_error,
+                    initial_reprojection_errors=errors.tolist(),
+                    optimized_reprojection_errors=final_errors.tolist(),
+                    initial_mean_error=initial_mean_error,
+                    optimized_mean_error=optimized_mean_error,
+                    improvement_percentage=float((initial_mean_error - optimized_mean_error) / initial_mean_error * 100)
+                )
                 
             except Exception as e:
                 return jsonify({'error': f'Eye-in-hand calibration failed: {str(e)}'}), 500
@@ -712,12 +607,17 @@ def get_corner_image(session_id, filename):
     """Serve corner detection visualization images."""
     try:
         results_folder = os.path.join(RESULTS_FOLDER, session_id)
-        image_path = os.path.join(results_folder, 'corner_detection', filename)
+        # Try both naming schemes for backward compatibility
+        paths_to_try = [
+            os.path.join(results_folder, 'corner_visualizations', filename),
+            os.path.join(results_folder, 'corner_detection', filename)
+        ]
         
-        if not os.path.exists(image_path):
-            return jsonify({'error': 'Corner image not found'}), 404
+        for image_path in paths_to_try:
+            if os.path.exists(image_path):
+                return send_file(image_path)
         
-        return send_file(image_path)
+        return jsonify({'error': 'Corner image not found'}), 404
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -728,12 +628,17 @@ def get_undistorted_image(session_id, filename):
     """Serve undistorted images."""
     try:
         results_folder = os.path.join(RESULTS_FOLDER, session_id)
-        image_path = os.path.join(results_folder, 'undistorted_images', filename)
+        # Try both naming schemes for backward compatibility
+        paths_to_try = [
+            os.path.join(results_folder, 'undistorted_images', filename),
+            os.path.join(results_folder, 'undistorted', filename)
+        ]
         
-        if not os.path.exists(image_path):
-            return jsonify({'error': 'Undistorted image not found'}), 404
+        for image_path in paths_to_try:
+            if os.path.exists(image_path):
+                return send_file(image_path)
         
-        return send_file(image_path)
+        return jsonify({'error': 'Undistorted image not found'}), 404
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500

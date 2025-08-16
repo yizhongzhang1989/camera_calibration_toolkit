@@ -76,15 +76,15 @@
                             </div>
                             <div class="metric-card">
                                 <h5>Distortion Coefficients</h5>
-                                <div id="distortion-display"></div>
+                                <div id="distortion-coeffs-display"></div>
                             </div>
                             <div class="metric-card">
-                                <h5>Reprojection Error</h5>
-                                <div id="error-display"></div>
+                                <h5>RMS Error</h5>
+                                <div id="rms-error-display"></div>
                             </div>
                             <div class="metric-card">
                                 <h5>Images Used</h5>
-                                <div id="images-count-display"></div>
+                                <div id="images-used-display"></div>
                             </div>
                         </div>
                     </div>
@@ -144,7 +144,13 @@
         </div>
     </div>
 
+    <!-- Chessboard configuration script -->
     <script src="{{ url_for('static', filename='js/chessboard-config.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/intrinsic.js') }}"></script>
+    
+    <!-- Base calibration class -->
+    <script src="{{ url_for('static', filename='js/base-calibration.js') }}"></script>
+    
+    <!-- Intrinsic calibration script -->  
+    <script src="{{ url_for('static', filename='js/intrinsic-refactored.js') }}"></script>
 </body>
 </html>
