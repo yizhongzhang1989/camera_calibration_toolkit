@@ -16,10 +16,10 @@
             </div>
         </div>
 
-        <!-- Main Content -->
-        <div class="main-content">
-            <!-- Control Panel -->
-            <div class="control-panel">
+        <!-- Main Content - Intrinsic Layout -->
+        <div class="intrinsic-layout">
+            <!-- Left Control Panel -->
+            <div class="intrinsic-control-panel">
                 <div class="panel-section">
                     <h3>📋 Calibration Parameters</h3>
                     
@@ -65,58 +65,76 @@
                 </div>
 
                 <div class="panel-section">
-                    <h3>📊 Results</h3>
-                    <div id="results-summary" class="results-display">
-                        <p>No calibration results yet</p>
+                    <h3>📊 Calibration Metrics</h3>
+                    <div id="calibration-metrics" class="metrics-display" style="display: none;">
+                        <div class="metrics-grid">
+                            <div class="metric-card">
+                                <h5>Camera Matrix</h5>
+                                <div id="camera-matrix-display"></div>
+                            </div>
+                            <div class="metric-card">
+                                <h5>Distortion Coefficients</h5>
+                                <div id="distortion-display"></div>
+                            </div>
+                            <div class="metric-card">
+                                <h5>Reprojection Error</h5>
+                                <div id="error-display"></div>
+                            </div>
+                            <div class="metric-card">
+                                <h5>Images Used</h5>
+                                <div id="images-count-display"></div>
+                            </div>
+                        </div>
                     </div>
-                    
+                </div>
+
+                <div class="panel-section">
+                    <h3>📥 Download Results</h3>
                     <button id="download-btn" class="primary-btn" style="display: none;">
-                        📥 Download Results
+                        📥 Download Results ZIP
                     </button>
                 </div>
             </div>
 
-            <!-- Results Display -->
-            <div class="results-panel">
-                <div class="panel-header">
-                    <h3>📈 Calibration Results</h3>
-                    <div class="view-controls">
-                        <button class="view-btn active" data-view="images">Original Images</button>
-                        <button class="view-btn" data-view="corners">Corner Detection</button>
-                        <button class="view-btn" data-view="undistorted">Undistorted</button>
+            <!-- Right Results Panel -->
+            <div class="intrinsic-results-panel">
+                <div class="intrinsic-results-header">
+                    <h3>📈 Image Processing Results</h3>
+                    <div id="progress-info" style="color: #666; font-size: 0.9rem;">
+                        Upload images to see calibration results
                     </div>
                 </div>
                 
-                <div class="image-grid" id="results-grid">
-                    <div class="placeholder-message">
-                        <div class="placeholder-icon">📷</div>
-                        <h4>Upload Images to Start</h4>
-                        <p>Upload chessboard calibration images to see results here</p>
+                <div class="intrinsic-results-content">
+                    <div id="results-placeholder" style="text-align: center; padding: 3rem; color: #666;">
+                        <div style="font-size: 4rem; margin-bottom: 1rem; opacity: 0.5;">📷</div>
+                        <h4>Upload Chessboard Images</h4>
+                        <p>Images will appear here with original, corner detection, and undistorted versions</p>
                     </div>
-                </div>
-                
-                <div id="calibration-metrics" class="metrics-display" style="display: none;">
-                    <h4>📊 Calibration Metrics</h4>
-                    <div class="metrics-grid">
-                        <div class="metric-card">
-                            <h5>Camera Matrix</h5>
-                            <div id="camera-matrix-display"></div>
-                        </div>
-                        <div class="metric-card">
-                            <h5>Distortion Coefficients</h5>
-                            <div id="distortion-display"></div>
-                        </div>
-                        <div class="metric-card">
-                            <h5>Reprojection Error</h5>
-                            <div id="error-display"></div>
-                        </div>
-                        <div class="metric-card">
-                            <h5>Images Used</h5>
-                            <div id="images-count-display"></div>
-                        </div>
-                    </div>
+                    
+                    <table id="image-comparison-table" class="image-comparison-table" style="display: none;">
+                        <thead>
+                            <tr>
+                                <th style="width: 33.33%;">📷 Original Image</th>
+                                <th style="width: 33.33%;">🎯 Corner Detection</th>
+                                <th style="width: 33.33%;">✨ Undistorted Image</th>
+                            </tr>
+                        </thead>
+                        <tbody id="image-comparison-body">
+                            <!-- Dynamic content will be inserted here -->
+                        </tbody>
+                    </table>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Image Modal -->
+    <div id="imageModal" class="image-modal">
+        <span class="modal-close" id="modalClose">&times;</span>
+        <div class="image-modal-content">
+            <img id="modalImage" class="modal-image" alt="Enlarged view">
+            <div id="modalTitle" class="modal-title"></div>
         </div>
     </div>
 

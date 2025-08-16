@@ -11,6 +11,7 @@ class IntrinsicCalibration {
         this.currentView = 'images';
         
         this.initializeEventListeners();
+        this.initializeModal();
         this.updateUI();
     }
     
@@ -95,9 +96,11 @@ class IntrinsicCalibration {
     
     displayUploadedImages() {
         const imageList = document.getElementById('image-list');
-        const resultsGrid = document.getElementById('results-grid');
+        const placeholder = document.getElementById('results-placeholder');
+        const comparisonTable = document.getElementById('image-comparison-table');
+        const tableBody = document.getElementById('image-comparison-body');
         
-        // Update file list
+        // Update file list in control panel
         imageList.innerHTML = '';
         this.uploadedImages.forEach((file, index) => {
             const fileItem = document.createElement('div');
@@ -109,19 +112,40 @@ class IntrinsicCalibration {
             imageList.appendChild(fileItem);
         });
         
-        // Update results grid with original images
-        resultsGrid.innerHTML = '';
+        // Update table display
+        if (this.uploadedImages.length === 0) {
+            placeholder.style.display = 'block';
+            comparisonTable.style.display = 'none';
+            return;
+        }
+        
+        placeholder.style.display = 'none';
+        comparisonTable.style.display = 'table';
+        
+        // Clear and populate table
+        tableBody.innerHTML = '';
         this.uploadedImages.forEach((file, index) => {
-            const imageDiv = document.createElement('div');
-            imageDiv.className = 'result-image';
-            imageDiv.innerHTML = `
-                <img src="${file.url}" alt="Image ${index}" loading="lazy">
-                <div class="image-info">
-                    <span class="image-index">${index + 1}</span>
-                    <span class="image-name">${file.name}</span>
-                </div>
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>
+                    <div class="comparison-image-container">
+                        <img src="${file.url}" alt="Original ${index + 1}" class="comparison-image" loading="lazy" onclick="intrinsicCalib.openModal('${file.url}', 'Original Image ${index + 1}')">
+                    </div>
+                </td>
+                <td id="corner-cell-${index}">
+                    <div style="color: #999; padding: 2rem;">
+                        <div style="font-size: 2rem;">⏳</div>
+                        <div>Corner detection pending</div>
+                    </div>
+                </td>
+                <td id="undistorted-cell-${index}">
+                    <div style="color: #999; padding: 2rem;">
+                        <div style="font-size: 2rem;">⏳</div>
+                        <div>Calibration needed</div>
+                    </div>
+                </td>
             `;
-            resultsGrid.appendChild(imageDiv);
+            tableBody.appendChild(row);
         });
     }
     
@@ -202,7 +226,7 @@ class IntrinsicCalibration {
     displayResults() {
         if (!this.calibrationResults) return;
         
-        // Show metrics
+        // Show metrics in control panel
         const metricsDiv = document.getElementById('calibration-metrics');
         metricsDiv.style.display = 'block';
         
@@ -215,10 +239,10 @@ class IntrinsicCalibration {
         // Distortion coefficients
         const distCoeffs = this.calibrationResults.distortion_coefficients[0];
         document.getElementById('distortion-display').innerHTML = `
-            <pre>[${distCoeffs.map(x => x.toFixed(6)).join(',\\n ')}]</pre>
+            <pre>[${distCoeffs.map(x => x.toFixed(6)).join(',\n ')}]</pre>
         `;
         
-        // Reprojection error (if available)
+        // Reprojection error
         const errorDisplay = document.getElementById('error-display');
         if (this.calibrationResults.reprojection_error !== undefined) {
             errorDisplay.innerHTML = `<strong>${this.calibrationResults.reprojection_error.toFixed(4)} pixels</strong>`;
@@ -229,14 +253,56 @@ class IntrinsicCalibration {
         // Images count
         document.getElementById('images-count-display').innerHTML = 
             `<strong>${this.uploadedImages.length} images</strong>`;
+        
+        // Update progress info
+        const progressInfo = document.getElementById('progress-info');
+        progressInfo.innerHTML = `✅ Calibration complete with ${this.uploadedImages.length} images`;
+        
+        // Update table with corner detection and undistorted images
+        this.updateImageTable();
+    }
+    
+    updateImageTable() {
+        if (!this.calibrationResults || !this.calibrationResults.corner_images) return;
+        
+        const cornerImages = this.calibrationResults.corner_images || [];
+        const undistortedImages = this.calibrationResults.undistorted_images || [];
+        
+        this.uploadedImages.forEach((file, index) => {
+            // Update corner detection column
+            const cornerCell = document.getElementById(`corner-cell-${index}`);
+            if (cornerImages[index]) {
+                cornerCell.innerHTML = `
+                    <div class="comparison-image-container">
+                        <img src="${cornerImages[index].url}" alt="Corners ${index + 1}" class="comparison-image" loading="lazy" onclick="intrinsicCalib.openModal('${cornerImages[index].url}', 'Corner Detection ${index + 1}')">
+                    </div>
+                `;
+            } else {
+                cornerCell.innerHTML = `
+                    <div style="color: #dc3545; padding: 2rem;">
+                        <div style="font-size: 2rem;">❌</div>
+                        <div>No corners detected</div>
+                    </div>
+                `;
+            }
             
-        // Update results summary
-        document.getElementById('results-summary').innerHTML = `
-            <div class="success-message">
-                <strong>✅ Calibration Complete!</strong><br>
-                <small>${this.calibrationResults.message}</small>
-            </div>
-        `;
+            // Update undistorted column
+            const undistortedCell = document.getElementById(`undistorted-cell-${index}`);
+            if (undistortedImages[index]) {
+                undistortedCell.innerHTML = `
+                    <div class="comparison-image-container">
+                        <img src="${undistortedImages[index].url}" alt="Undistorted ${index + 1}" class="comparison-image" loading="lazy" onclick="intrinsicCalib.openModal('${undistortedImages[index].url}', 'Undistorted Image ${index + 1}')">
+                    </div>
+                `;
+            } else {
+                undistortedCell.innerHTML = `
+                    <div style="color: #666; padding: 2rem;">
+                        <div style="font-size: 2rem;">⚠️</div>
+                        <div>Undistortion failed</div>
+                    </div>
+                `;
+            }
+        });
     }
     
     formatMatrix(matrix) {
@@ -246,16 +312,10 @@ class IntrinsicCalibration {
     }
     
     switchView(view) {
+        // Note: With the new table layout, view switching is no longer needed
+        // The table always shows all three views side by side
         this.currentView = view;
-        
-        // Update active button
-        document.querySelectorAll('.view-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.view === view);
-        });
-        
-        // Update view content (implementation depends on available data)
-        // For now, just show the original images
-        this.displayUploadedImages();
+        console.log(`View switched to: ${view} (table layout shows all views)`);
     }
     
     async downloadResults() {
@@ -289,15 +349,17 @@ class IntrinsicCalibration {
             this.sessionId = this.generateSessionId();
             
             document.getElementById('image-list').innerHTML = '';
-            document.getElementById('results-grid').innerHTML = `
-                <div class="placeholder-message">
-                    <div class="placeholder-icon">📷</div>
-                    <h4>Upload Images to Start</h4>
-                    <p>Upload chessboard calibration images to see results here</p>
-                </div>
-            `;
             document.getElementById('calibration-metrics').style.display = 'none';
-            document.getElementById('results-summary').innerHTML = '<p>No calibration results yet</p>';
+            
+            // Reset table view
+            const placeholder = document.getElementById('results-placeholder');
+            const comparisonTable = document.getElementById('image-comparison-table');
+            placeholder.style.display = 'block';
+            comparisonTable.style.display = 'none';
+            
+            // Reset progress info
+            const progressInfo = document.getElementById('progress-info');
+            progressInfo.innerHTML = 'Upload images to see calibration results';
             
             this.updateUI();
             this.showStatus('Session cleared', 'info');
@@ -330,6 +392,56 @@ class IntrinsicCalibration {
         statusDiv.innerHTML = `<p>${message}</p>`;
         
         console.log(`[${type.toUpperCase()}] ${message}`);
+    }
+    
+    initializeModal() {
+        const modal = document.getElementById('imageModal');
+        const modalClose = document.getElementById('modalClose');
+        
+        // Close modal when clicking the close button
+        modalClose.addEventListener('click', () => {
+            modal.style.display = 'none';
+        });
+        
+        // Close modal when clicking outside the image
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
+        
+        // Close modal with Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && modal.style.display === 'block') {
+                modal.style.display = 'none';
+            }
+        });
+    }
+    
+    openModal(imageSrc, title) {
+        const modal = document.getElementById('imageModal');
+        const modalImage = document.getElementById('modalImage');
+        const modalTitle = document.getElementById('modalTitle');
+        
+        modalImage.src = imageSrc;
+        modalTitle.textContent = title;
+        modal.style.display = 'block';
+        
+        // Prevent scrolling on the background
+        document.body.style.overflow = 'hidden';
+        
+        // Restore scrolling when modal is closed
+        const closeModal = () => {
+            document.body.style.overflow = '';
+            modal.style.display = 'none';
+        };
+        
+        // Update close functionality to restore scrolling
+        const modalClose = document.getElementById('modalClose');
+        modalClose.onclick = closeModal;
+        modal.onclick = (e) => {
+            if (e.target === modal) closeModal();
+        };
     }
 }
 

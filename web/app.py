@@ -255,12 +255,61 @@ def calibrate():
                 results_folder = os.path.join(RESULTS_FOLDER, session_id)
                 intrinsic_calibrator.save_parameters(results_folder)
                 
+                # Generate corner detection and undistorted images
+                corner_images = []
+                undistorted_images = []
+                
+                # Create visualization directories
+                corner_viz_dir = os.path.join(results_folder, 'corner_detection')
+                undistorted_dir = os.path.join(results_folder, 'undistorted')
+                os.makedirs(corner_viz_dir, exist_ok=True)
+                os.makedirs(undistorted_dir, exist_ok=True)
+                
+                for i, img_path in enumerate(image_paths):
+                    # Generate corner detection visualization
+                    img = cv2.imread(img_path)
+                    if img is not None:
+                        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                        
+                        # Use the same function as in the intrinsic calibrator
+                        from core.utils import find_chessboard_corners
+                        find_corners_ret, corners = find_chessboard_corners(gray, XX, YY)
+                        
+                        if find_corners_ret:
+                            # Draw corners on the image
+                            img_with_corners = img.copy()
+                            cv2.drawChessboardCorners(img_with_corners, (XX, YY), corners, find_corners_ret)
+                            
+                            corner_filename = f"{i}.jpg"
+                            corner_path = os.path.join(corner_viz_dir, corner_filename)
+                            cv2.imwrite(corner_path, img_with_corners)
+                            
+                            corner_images.append({
+                                'name': corner_filename,
+                                'path': corner_path,
+                                'url': url_for('get_corner_image', session_id=session_id, filename=corner_filename)
+                            })
+                        
+                        # Generate undistorted image
+                        undistorted_img = intrinsic_calibrator.undistort_image(img_path)
+                        undistorted_filename = f"{i}.jpg"
+                        undistorted_path = os.path.join(undistorted_dir, undistorted_filename)
+                        cv2.imwrite(undistorted_path, undistorted_img)
+                        
+                        undistorted_images.append({
+                            'name': undistorted_filename,
+                            'path': undistorted_path,
+                            'url': url_for('get_undistorted_image', session_id=session_id, filename=undistorted_filename)
+                        })
+                
                 results = {
                     'success': True,
                     'calibration_type': 'intrinsic',
                     'camera_matrix': camera_matrix.tolist(),
                     'distortion_coefficients': dist_coeffs.tolist(),
                     'images_used': len(image_paths),
+                    'corner_images': corner_images,
+                    'undistorted_images': undistorted_images,
                     'message': f'Intrinsic calibration completed successfully using {len(image_paths)} images'
                 }
             else:
@@ -488,6 +537,38 @@ def get_image(session_id, filename):
         
         if not os.path.exists(image_path):
             return jsonify({'error': 'Image not found'}), 404
+        
+        return send_file(image_path)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/corner_image/<session_id>/<filename>')
+def get_corner_image(session_id, filename):
+    """Serve corner detection visualization images."""
+    try:
+        results_folder = os.path.join(RESULTS_FOLDER, session_id)
+        image_path = os.path.join(results_folder, 'corner_detection', filename)
+        
+        if not os.path.exists(image_path):
+            return jsonify({'error': 'Corner image not found'}), 404
+        
+        return send_file(image_path)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/undistorted_image/<session_id>/<filename>')
+def get_undistorted_image(session_id, filename):
+    """Serve undistorted images."""
+    try:
+        results_folder = os.path.join(RESULTS_FOLDER, session_id)
+        image_path = os.path.join(results_folder, 'undistorted', filename)
+        
+        if not os.path.exists(image_path):
+            return jsonify({'error': 'Undistorted image not found'}), 404
         
         return send_file(image_path)
         
