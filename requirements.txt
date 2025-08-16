@@ -1,0 +1,27 @@
+# Requirements for Camera Calibration Toolkit
+
+# Core dependencies
+numpy>=1.21.0
+opencv-python>=4.5.0
+scipy>=1.7.0
+
+# Web framework
+Flask>=2.0.0
+Werkzeug>=2.0.0
+
+# Optimization (for eye-in-hand calibration)
+nlopt>=2.7.0
+
+# File handling and data processing
+Pillow>=8.0.0
+
+# Optional: for development and testing
+pytest>=6.0.0
+pytest-cov>=2.0.0
+
+# Optional: for advanced visualizations
+matplotlib>=3.3.0
+plotly>=5.0.0
+
+# Optional: for performance improvements
+numba>=0.54.0
