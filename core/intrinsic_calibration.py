@@ -342,3 +342,147 @@ class IntrinsicCalibrator:
     def is_calibrated(self) -> bool:
         """Check if calibration has been completed successfully."""
         return self.calibration_completed
+    
+    # I/O methods for saving and loading calibration data
+    def save_calibration(self, filepath: str, include_extrinsics: bool = True) -> None:
+        """
+        Save calibration results to JSON file.
+        
+        Args:
+            filepath: Path to save the calibration data (should end with .json)
+            include_extrinsics: Whether to include per-image extrinsics data
+        """
+        if not self.calibration_completed:
+            raise ValueError("No calibration data to save. Run calibration first.")
+        
+        # Create calibration data dictionary
+        calibration_data = {
+            "calibration_info": {
+                "timestamp": __import__('datetime').datetime.now().isoformat(),
+                "image_count": len(self.image_points) if self.image_points else 0,
+                "pattern_type": self.pattern_type,
+                "rms_error": float(self.rms_error)
+            },
+            "camera_matrix": self.camera_matrix.tolist(),
+            "distortion_coefficients": self.distortion_coefficients.tolist(),
+            "image_size": list(self.image_size) if self.image_size else None,
+            "per_image_errors": [float(err) for err in self.per_image_errors] if self.per_image_errors else None
+        }
+        
+        # Add pattern information if available
+        if self.calibration_pattern:
+            calibration_data["pattern_info"] = {
+                "name": self.calibration_pattern.name,
+                "is_planar": self.calibration_pattern.is_planar,
+                "info": self.calibration_pattern.get_info()
+            }
+        
+        # Add extrinsics if requested and available
+        if include_extrinsics and self.rvecs is not None and self.tvecs is not None:
+            calibration_data["extrinsics"] = {
+                "rotation_vectors": [rvec.tolist() for rvec in self.rvecs],
+                "translation_vectors": [tvec.tolist() for tvec in self.tvecs]
+            }
+            
+            # Add image paths if available
+            if self.image_paths:
+                calibration_data["image_paths"] = self.image_paths
+        
+        # Save to file
+        os.makedirs(os.path.dirname(filepath) if os.path.dirname(filepath) else '.', exist_ok=True)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(calibration_data, f, indent=2, ensure_ascii=False)
+        
+        print(f"✅ Calibration data saved to: {filepath}")
+    
+    def load_calibration(self, filepath: str) -> bool:
+        """
+        Load calibration results from JSON file.
+        
+        Args:
+            filepath: Path to the calibration data file
+            
+        Returns:
+            bool: True if loaded successfully
+        """
+        if not os.path.exists(filepath):
+            print(f"❌ Calibration file not found: {filepath}")
+            return False
+        
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                calibration_data = json.load(f)
+            
+            # Load required calibration results
+            self.camera_matrix = np.array(calibration_data["camera_matrix"], dtype=np.float32)
+            self.distortion_coefficients = np.array(calibration_data["distortion_coefficients"], dtype=np.float32)
+            self.rms_error = calibration_data["calibration_info"]["rms_error"]
+            
+            # Load optional data
+            if "image_size" in calibration_data and calibration_data["image_size"]:
+                self.image_size = tuple(calibration_data["image_size"])
+            
+            if "per_image_errors" in calibration_data and calibration_data["per_image_errors"]:
+                self.per_image_errors = calibration_data["per_image_errors"]
+            
+            if "pattern_info" in calibration_data:
+                self.pattern_type = calibration_data["pattern_info"]["name"]
+            
+            # Load extrinsics if available
+            if "extrinsics" in calibration_data:
+                extrinsics = calibration_data["extrinsics"]
+                self.rvecs = [np.array(rvec, dtype=np.float32) for rvec in extrinsics["rotation_vectors"]]
+                self.tvecs = [np.array(tvec, dtype=np.float32) for tvec in extrinsics["translation_vectors"]]
+                
+                if "image_paths" in calibration_data:
+                    self.image_paths = calibration_data["image_paths"]
+            
+            self.calibration_completed = True
+            
+            print(f"✅ Calibration data loaded from: {filepath}")
+            print(f"   RMS Error: {self.rms_error:.4f} pixels")
+            print(f"   Image count: {calibration_data['calibration_info']['image_count']}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ Failed to load calibration data: {e}")
+            return False
+    
+    def export_opencv_yaml(self, filepath: str) -> None:
+        """
+        Export calibration data in OpenCV YAML format for compatibility.
+        
+        Args:
+            filepath: Path to save the YAML file (should end with .yml or .yaml)
+        """
+        if not self.calibration_completed:
+            raise ValueError("No calibration data to export. Run calibration first.")
+        
+        import yaml
+        
+        # Create OpenCV-compatible data structure
+        opencv_data = {
+            "image_width": int(self.image_size[0]) if self.image_size else 0,
+            "image_height": int(self.image_size[1]) if self.image_size else 0,
+            "camera_matrix": {
+                "rows": 3,
+                "cols": 3,
+                "dt": "d",
+                "data": self.camera_matrix.flatten().tolist()
+            },
+            "distortion_coefficients": {
+                "rows": 1,
+                "cols": len(self.distortion_coefficients),
+                "dt": "d", 
+                "data": self.distortion_coefficients.flatten().tolist()
+            },
+            "avg_reprojection_error": float(self.rms_error)
+        }
+        
+        # Save to YAML file
+        os.makedirs(os.path.dirname(filepath) if os.path.dirname(filepath) else '.', exist_ok=True)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            yaml.dump(opencv_data, f, default_flow_style=False)
+        
+        print(f"✅ OpenCV YAML data exported to: {filepath}")
