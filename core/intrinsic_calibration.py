@@ -18,7 +18,7 @@ from .utils import (
     find_chessboard_corners,
     load_images_from_directory
 )
-from .chessboard_patterns import ChessboardPattern, create_chessboard_pattern
+from .calibration_patterns import CalibrationPattern, create_chessboard_pattern
 
 
 class IntrinsicCalibrator:
@@ -260,15 +260,15 @@ class IntrinsicCalibrator:
         return undistorted
     
     def calibrate_with_pattern(self, image_paths: List[str], 
-                              chessboard_pattern: ChessboardPattern,
+                              calibration_pattern: CalibrationPattern,
                               distortion_model: str = 'standard', 
                               verbose: bool = False) -> Tuple[bool, np.ndarray, np.ndarray]:
         """
-        Calibrate camera using a specific chessboard pattern abstraction.
+        Calibrate camera using a specific calibration pattern abstraction.
         
         Args:
             image_paths: List of calibration image file paths
-            chessboard_pattern: ChessboardPattern instance defining the pattern
+            calibration_pattern: CalibrationPattern instance defining the pattern
             distortion_model: Distortion model to use ('standard', 'rational', 'thin_prism', 'tilted')
             verbose: Whether to print detailed information
             
@@ -283,12 +283,14 @@ class IntrinsicCalibrator:
         objpoints = []
         valid_image_paths = []
         
-        # Generate object points for this pattern
-        pattern_objpoints = chessboard_pattern.generate_object_points()
+        # Generate base object points for this pattern
+        if calibration_pattern.is_planar:
+            # For planar patterns, generate once
+            pattern_objpoints = calibration_pattern.generate_object_points()
         
         if verbose:
-            print(f"Using pattern: {chessboard_pattern.name}")
-            print(f"Pattern info: {chessboard_pattern.get_info()}")
+            print(f"Using pattern: {calibration_pattern.name}")
+            print(f"Pattern info: {calibration_pattern.get_info()}")
         
         for image_path in image_paths:
             img = cv2.imread(image_path)
@@ -303,12 +305,26 @@ class IntrinsicCalibrator:
                 else:
                     self.image_size = (img.shape[1], img.shape[0])
             
-            # Detect corners using the pattern
-            success, corners = chessboard_pattern.detect_corners(img)
+            # Detect corners/features using the pattern
+            success, corners, point_ids = calibration_pattern.detect_corners(img)
             
             if success and corners is not None:
                 imgpoints.append(corners)
-                objpoints.append(pattern_objpoints)
+                
+                # Generate corresponding object points
+                if calibration_pattern.is_planar:
+                    # For planar patterns, use the same object points for all images
+                    if point_ids is not None:
+                        # For patterns with non-sequential detection (e.g., ChArUco)
+                        objp = calibration_pattern.generate_object_points(point_ids)
+                    else:
+                        # For patterns with sequential detection (e.g., standard chessboard)
+                        objp = pattern_objpoints
+                else:
+                    # For 3D patterns, generate object points based on detected features
+                    objp = calibration_pattern.generate_object_points(point_ids)
+                
+                objpoints.append(objp)
                 valid_image_paths.append(image_path)
                 
                 if verbose:

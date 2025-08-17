@@ -18,8 +18,8 @@ import cv2
 # Add the toolkit to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.chessboard_patterns import (
-    ChessboardManager, 
+from core.calibration_patterns import (
+    CalibrationPatternManager, 
     create_chessboard_pattern,
     get_common_pattern,
     COMMON_PATTERNS
@@ -32,8 +32,8 @@ def demonstrate_pattern_creation():
     print("📋 Chessboard Pattern Examples")
     print("="*50)
     
-    # Create chessboard manager
-    manager = ChessboardManager()
+    # Create calibration pattern manager
+    manager = CalibrationPatternManager()
     
     print(f"Available pattern types: {manager.get_available_patterns()}")
     print()
@@ -95,7 +95,7 @@ def test_pattern_detection(image_path: str):
         square_size=0.020
     )
     
-    success, corners = standard_pattern.detect_corners(image)
+    success, corners, point_ids = standard_pattern.detect_corners(image)
     print(f"   Detection result: {'✅ Success' if success else '❌ Failed'}")
     if success:
         print(f"   Detected {len(corners)} corners")
@@ -147,7 +147,7 @@ def calibrate_with_patterns(sample_data_dir: str):
     try:
         success1, mtx1, dist1 = calibrator1.calibrate_with_pattern(
             image_paths=image_paths,
-            chessboard_pattern=standard_pattern,
+            calibration_pattern=standard_pattern,
             verbose=True
         )
         

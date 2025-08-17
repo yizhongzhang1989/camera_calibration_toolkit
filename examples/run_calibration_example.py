@@ -27,7 +27,7 @@ from datetime import datetime
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.intrinsic_calibration import IntrinsicCalibrator
-from core.chessboard_patterns import create_chessboard_pattern
+from core.calibration_patterns import create_chessboard_pattern
 
 
 def load_sample_images(sample_data_dir=None):
@@ -176,7 +176,7 @@ def main():
         # Perform calibration using pattern abstraction
         success, camera_matrix, distortion_coeffs = calibrator.calibrate_with_pattern(
             image_paths=image_paths,
-            chessboard_pattern=chessboard_pattern,
+            calibration_pattern=chessboard_pattern,
             distortion_model=distortion_model,
             verbose=True
         )
