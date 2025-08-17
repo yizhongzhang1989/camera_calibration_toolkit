@@ -1067,3 +1067,143 @@ body {
 .control-group {
     margin-bottom: 20px;
 }
+
+/* Console Output Styles - Split Layout */
+.intrinsic-results-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.results-upper-area {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 300px;
+}
+
+.console-resizer {
+    height: 4px;
+    background: #e0e0e0;
+    cursor: row-resize;
+    border-top: 1px solid #ccc;
+    border-bottom: 1px solid #ccc;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.console-resizer:hover {
+    background: #007acc;
+}
+
+.console-resizer::after {
+    content: '⋯';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    color: #999;
+    font-size: 12px;
+    letter-spacing: 2px;
+}
+
+.console-area {
+    height: 100px; /* Reduced from 120px to save space */
+    min-height: 80px;
+    max-height: 400px;
+    display: flex;
+    flex-direction: column;
+    background: #f8f9fa;
+    border-top: 1px solid #dee2e6;
+    flex-shrink: 0;
+}
+
+.console-content {
+    flex: 1;
+    display: flex;
+    padding: 8px;
+    background: #ffffff;
+    min-height: 0;
+    gap: 8px;
+}
+
+#console-output {
+    flex: 1;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    background-color: #fafafa;
+    color: #333;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 8px;
+    resize: none;
+    white-space: pre-wrap;
+    overflow-y: auto;
+    line-height: 1.4;
+    min-height: 0;
+}
+
+#console-output:focus {
+    outline: none;
+    border-color: #007acc;
+    box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.1);
+}
+
+#console-output::-webkit-scrollbar {
+    width: 8px;
+}
+
+#console-output::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+#console-output::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+#console-output::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+.console-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    justify-content: flex-start;
+    flex-shrink: 0;
+    min-width: 80px;
+}
+
+.console-btn {
+    padding: 6px 12px;
+    font-size: 12px;
+    border: 1px solid #ccc;
+    background: white;
+    color: #333;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    height: fit-content;
+}
+
+.console-btn:hover {
+    background: #f0f0f0;
+    border-color: #999;
+}
+
+/* Remove old styles */
+.console-header {
+    display: none;
+}
+
+/* Remove old floating console styles */
+.floating-console {
+    display: none;
+}
+
+/* Legacy Console Styles - Remove these */
+.console-container {
+    display: none;
+}

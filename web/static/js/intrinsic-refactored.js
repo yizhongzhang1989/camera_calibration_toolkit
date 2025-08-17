@@ -9,6 +9,7 @@ class IntrinsicCalibration extends BaseCalibration {
     constructor() {
         super('intrinsic');
         this.initializeEventListeners();
+        this.initializeConsole();
         this.updateUI();
     }
     
@@ -133,6 +134,10 @@ class IntrinsicCalibration extends BaseCalibration {
             const calibrateBtn = document.getElementById('calibrate-btn');
             if (calibrateBtn) calibrateBtn.disabled = true;
             
+            // Clear console and start polling
+            await this.clearConsole();
+            this.startConsolePolling();
+            
             // Update parameters first
             await this.updateParameters();
             
@@ -151,12 +156,14 @@ class IntrinsicCalibration extends BaseCalibration {
             if (result.error) {
                 this.showStatus(`Calibration failed: ${result.error}`, 'error');
                 if (calibrateBtn) calibrateBtn.disabled = false;
+                this.stopConsolePolling();
                 return;
             }
             
             if (!result.success) {
                 this.showStatus('Calibration failed: Unknown error', 'error');
                 if (calibrateBtn) calibrateBtn.disabled = false;
+                this.stopConsolePolling();
                 return;
             }
             
@@ -165,10 +172,16 @@ class IntrinsicCalibration extends BaseCalibration {
             this.displayResults();
             this.updateUI();
             
+            // Stop console polling after successful calibration
+            this.stopConsolePolling();
+            // Do one final refresh to get any remaining messages
+            setTimeout(() => this.refreshConsole(), 500);
+            
         } catch (error) {
             this.showStatus(`Calibration failed: ${error.message}`, 'error');
             const calibrateBtn = document.getElementById('calibrate-btn');
             if (calibrateBtn) calibrateBtn.disabled = false;
+            this.stopConsolePolling();
         }
     }
     
@@ -380,6 +393,122 @@ class IntrinsicCalibration extends BaseCalibration {
         const metricsDiv = document.getElementById('calibration-metrics');
         if (metricsDiv) {
             metricsDiv.style.display = 'none';
+        }
+    }
+    
+    // ========================================
+    // Console Output Management
+    // ========================================
+    
+    initializeConsole() {
+        // Set up console refresh polling
+        this.consolePolling = null;
+        
+        // Add initial message to console
+        const consoleOutput = document.getElementById('console-output');
+        if (consoleOutput) {
+            consoleOutput.textContent = 'Console initialized. Ready for calibration...\n';
+        }
+        
+        // Set up console controls
+        const clearBtn = document.getElementById('clear-console-btn');
+        const refreshBtn = document.getElementById('refresh-console-btn');
+        
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => this.clearConsole());
+        }
+        
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => this.refreshConsole());
+        }
+        
+        // Initialize console resizer
+        this.initializeConsoleResizer();
+    }
+    
+    initializeConsoleResizer() {
+        const resizer = document.getElementById('console-resizer');
+        const consoleArea = document.getElementById('console-area');
+        const resultsPanel = document.querySelector('.intrinsic-results-panel');
+        
+        if (!resizer || !consoleArea || !resultsPanel) return;
+        
+        let isResizing = false;
+        let startY = 0;
+        let startHeight = 0;
+        
+        resizer.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            startY = e.clientY;
+            startHeight = parseInt(document.defaultView.getComputedStyle(consoleArea).height, 10);
+            
+            // Prevent text selection during drag
+            document.body.style.userSelect = 'none';
+            resizer.style.background = '#007acc';
+            
+            e.preventDefault();
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            
+            const deltaY = startY - e.clientY; // Reversed because we're resizing from bottom
+            const newHeight = Math.max(80, Math.min(400, startHeight + deltaY));
+            
+            consoleArea.style.height = newHeight + 'px';
+        });
+        
+        document.addEventListener('mouseup', () => {
+            if (isResizing) {
+                isResizing = false;
+                document.body.style.userSelect = '';
+                resizer.style.background = '';
+            }
+        });
+    }
+    
+    startConsolePolling() {
+        this.stopConsolePolling(); // Stop any existing polling
+        
+        this.consolePolling = setInterval(() => {
+            this.refreshConsole();
+        }, 1000); // Poll every second during calibration
+    }
+    
+    stopConsolePolling() {
+        if (this.consolePolling) {
+            clearInterval(this.consolePolling);
+            this.consolePolling = null;
+        }
+    }
+    
+    async refreshConsole() {
+        try {
+            const response = await fetch(`/api/console/${this.sessionId}`);
+            const data = await response.json();
+            
+            if (data.console_output) {
+                const consoleOutput = document.getElementById('console-output');
+                if (consoleOutput) {
+                    consoleOutput.textContent = data.console_output.join('\n');
+                    // Auto-scroll to bottom
+                    consoleOutput.scrollTop = consoleOutput.scrollHeight;
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching console output:', error);
+        }
+    }
+    
+    async clearConsole() {
+        try {
+            await fetch(`/api/console/${this.sessionId}/clear`, { method: 'GET' });
+            const consoleOutput = document.getElementById('console-output');
+            if (consoleOutput) {
+                consoleOutput.textContent = '';
+            }
+        } catch (error) {
+            console.error('Error clearing console:', error);
         }
     }
 }

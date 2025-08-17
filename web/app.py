@@ -18,6 +18,7 @@ from datetime import datetime
 import zipfile
 import tempfile
 import base64
+import sys
 
 # Import core calibration modules
 import sys
@@ -55,6 +56,35 @@ os.makedirs(RESULTS_FOLDER, exist_ok=True)
 
 # Session data storage (in production, use proper session management)
 session_data = {}
+
+# Console output storage
+console_outputs = {}
+
+class ConsoleCapture:
+    def __init__(self, session_id):
+        self.session_id = session_id
+        self.original_stdout = sys.stdout
+        if session_id not in console_outputs:
+            console_outputs[session_id] = []
+    
+    def write(self, text):
+        self.original_stdout.write(text)
+        self.original_stdout.flush()
+        if text.strip():
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            console_outputs[self.session_id].append(f"[{timestamp}] {text.strip()}")
+            if len(console_outputs[self.session_id]) > 100:
+                console_outputs[self.session_id] = console_outputs[self.session_id][-100:]
+    
+    def flush(self):
+        self.original_stdout.flush()
+    
+    def __enter__(self):
+        sys.stdout = self
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stdout = self.original_stdout
 
 
 def allowed_file(filename, extensions=ALLOWED_EXTENSIONS):
@@ -105,6 +135,19 @@ def intrinsic_calibration():
 def eye_in_hand_calibration():
     """Eye-in-hand calibration interface."""
     return render_template('eye_in_hand.html')
+
+
+@app.route('/api/console/<session_id>')
+def get_console_output(session_id):
+    output = console_outputs.get(session_id, [])
+    return jsonify({'console_output': output})
+
+
+@app.route('/api/console/<session_id>/clear')
+def clear_console_output(session_id):
+    if session_id in console_outputs:
+        console_outputs[session_id] = []
+    return jsonify({'success': True})
 
 
 @app.route('/chessboard-test')
@@ -275,25 +318,40 @@ def calibrate():
     try:
         session_id = request.json.get('session_id', 'default')
         
-        if session_id not in session_data:
-            return jsonify({'error': 'No session data found'}), 400
+        # Initialize console
+        console_outputs[session_id] = []
         
-        session_info = session_data[session_id]
-        
-        # Check required data
-        if 'images' not in session_info or 'parameters' not in session_info:
-            return jsonify({'error': 'Missing images or parameters'}), 400
-        
-        images = session_info['images']
-        parameters = session_info['parameters']
-        calibration_type = request.json.get('calibration_type', session_info.get('calibration_type', 'intrinsic'))
-        selected_indices = request.json.get('selected_indices', list(range(len(images))))
-        
-        # Extract parameters
-        XX = int(parameters['chessboard_x'])
-        YY = int(parameters['chessboard_y'])
-        L = float(parameters['square_size'])
-        distortion_model = parameters.get('distortion_model', 'standard')
+        with ConsoleCapture(session_id):
+            print(f"Starting calibration for session: {session_id}")
+            
+            if session_id not in session_data:
+                print("ERROR: No session data found")
+                return jsonify({'error': 'No session data found'}), 400
+            
+            session_info = session_data[session_id]
+            
+            # Check required data
+            if 'images' not in session_info or 'parameters' not in session_info:
+                print("ERROR: Missing images or parameters")
+                return jsonify({'error': 'Missing images or parameters'}), 400
+            
+            print(f"Session data validated - images: {len(session_info.get('images', []))}")
+            
+            images = session_info['images']
+            parameters = session_info['parameters']
+            calibration_type = request.json.get('calibration_type', session_info.get('calibration_type', 'intrinsic'))
+            selected_indices = request.json.get('selected_indices', list(range(len(images))))
+            
+            print(f"Calibration type: {calibration_type}")
+            print(f"Selected {len(selected_indices)} images for processing")
+            
+            # Extract parameters
+            XX = int(parameters['chessboard_x'])
+            YY = int(parameters['chessboard_y'])
+            L = float(parameters['square_size'])
+            distortion_model = parameters.get('distortion_model', 'standard')
+            
+            print(f"Chessboard: {XX}x{YY}, Square size: {L}mm")
         
         # Get image paths - only selected ones
         image_paths = [images[i]['path'] for i in selected_indices if i < len(images)]
