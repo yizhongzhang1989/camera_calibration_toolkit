@@ -274,19 +274,8 @@ class BaseCalibration {
     }
     
     addSelectAllRow(tableBody) {
-        const selectAllRow = document.createElement('tr');
-        selectAllRow.innerHTML = `
-            <td class="image-selection-cell">
-                <div class="select-all-container">
-                    <input type="checkbox" id="select-all-checkbox" class="select-all-checkbox" checked>
-                    <label for="select-all-checkbox" class="select-all-label">Select All</label>
-                </div>
-            </td>
-            <td colspan="${this.getTableColumnCount() - 1}" style="text-align: center; color: #666; font-style: italic; padding: 1rem;">
-                Use checkboxes to select images for calibration, or × button to remove images
-            </td>
-        `;
-        tableBody.appendChild(selectAllRow);
+        // No longer needed - select all functionality moved to header
+        // This method is kept for compatibility but does nothing
     }
     
     addImageRow(tableBody, file, index) {

@@ -110,19 +110,26 @@
                         <p>Images will appear here with original, corner detection, and undistorted versions</p>
                     </div>
                     
-                    <table id="image-comparison-table" class="image-comparison-table" style="display: none;">
-                        <thead>
-                            <tr>
-                                <th style="width: 12%;"></th>
-                                <th style="width: 29.33%;">📷 Original Image</th>
-                                <th style="width: 29.33%;">🎯 Corner Detection</th>
-                                <th style="width: 29.33%;">✨ Undistorted Image</th>
-                            </tr>
-                        </thead>
-                        <tbody id="image-comparison-body">
-                            <!-- Dynamic content will be inserted here -->
-                        </tbody>
-                    </table>
+                    <div class="table-container">
+                        <table id="image-comparison-table" class="image-comparison-table" style="display: none;">
+                            <thead>
+                                <tr>
+                                    <th style="width: 8%;">
+                                        <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                                            <input type="checkbox" id="select-all-checkbox" class="select-all-checkbox" checked title="Select/Deselect All">
+                                            <span style="font-size: 0.9rem;">Select</span>
+                                        </div>
+                                    </th>
+                                    <th style="width: 30.67%;">📷 Original Image</th>
+                                    <th style="width: 30.67%;">🎯 Corner Detection</th>
+                                    <th style="width: 30.67%;">✨ Undistorted Image</th>
+                                </tr>
+                            </thead>
+                            <tbody id="image-comparison-body">
+                                <!-- Dynamic content will be inserted here -->
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
                 </div>
                 

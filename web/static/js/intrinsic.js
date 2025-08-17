@@ -85,6 +85,8 @@ class IntrinsicCalibration extends BaseCalibration {
         document.querySelectorAll('.view-btn').forEach(btn => {
             btn.addEventListener('click', (e) => this.switchView(e.target.dataset.view));
         });
+        
+        // Image actions bar setup - removed (no longer needed)
     }
     
     // ========================================
@@ -295,6 +297,50 @@ class IntrinsicCalibration extends BaseCalibration {
         }).join(',\n') + '\n]</pre>';
     }
     
+    
+    // ========================================
+    // Image Actions and Selection Management - Simplified
+    // ========================================
+    
+    // Override displayUploadedImages to setup selection events after images are added
+    displayUploadedImages() {
+        super.displayUploadedImages();
+        
+        // Set up event listeners after images are displayed
+        setTimeout(() => {
+            this.setupImageTableEventListeners();
+        }, 50);
+    }
+    
+    // Override to add selected count updates
+    setupImageTableEventListeners() {
+        // Call parent implementation first
+        if (super.setupImageTableEventListeners) {
+            super.setupImageTableEventListeners();
+        }
+        
+        // Add select all functionality with count updates
+        const selectAllCheckbox = document.getElementById('select-all-checkbox');
+        if (selectAllCheckbox) {
+            selectAllCheckbox.addEventListener('change', (e) => {
+                const imageCheckboxes = document.querySelectorAll('.image-checkbox');
+                imageCheckboxes.forEach(checkbox => {
+                    checkbox.checked = e.target.checked;
+                });
+                this.updateSelectedCount();
+            });
+        }
+        
+        // Add individual checkbox listeners with count updates
+        const imageCheckboxes = document.querySelectorAll('.image-checkbox');
+        imageCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                this.updateSelectAllState();
+                this.updateSelectedCount();
+            });
+        });
+    }
+
     updateImageTable() {
         if (!this.calibrationResults) return;
         
