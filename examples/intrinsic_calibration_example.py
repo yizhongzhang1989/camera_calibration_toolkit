@@ -13,6 +13,7 @@ and organized member variables.
 """
 
 import os
+import cv2
 import sys
 import cv2
 import numpy as np
@@ -36,7 +37,7 @@ def test_chessboard_calibration():
         print(f"❌ Sample data directory not found: {sample_dir}")
         return
     
-    image_paths = load_images_from_directory(sample_dir)[:5]
+    image_paths = load_images_from_directory(sample_dir)
     print(f"Using {len(image_paths)} sample images")
     
     # Create calibration pattern
@@ -76,13 +77,38 @@ def test_chessboard_calibration():
             print(f"   Principal Point: cx={camera_matrix[0,2]:.1f}, cy={camera_matrix[1,2]:.1f}")
             
             # Save calibration data to JSON
-            output_dir = "results"
+            output_dir = "results/chessboard_calibration"
             os.makedirs(output_dir, exist_ok=True)
             calibrator.save_calibration(
-                os.path.join(output_dir, "chessboard_calibration.json"),
+                os.path.join(output_dir, "calibration_results.json"),
                 include_extrinsics=True
             )
-            print(f"   Calibration data saved to: results/chessboard_calibration.json")
+            print(f"   Calibration data saved to: {output_dir}/calibration_results.json")
+            
+            # Generate debug images
+            print(f"\n🔍 Generating debug images...")
+            
+            # Draw detected patterns on original images
+            pattern_debug_dir = os.path.join(output_dir, "pattern_detection")
+            os.makedirs(pattern_debug_dir, exist_ok=True)
+            pattern_images = calibrator.draw_pattern_on_images()
+            
+            for filename, debug_img in pattern_images:
+                output_path = os.path.join(pattern_debug_dir, f"{filename}.jpg")
+                cv2.imwrite(output_path, debug_img)
+            
+            print(f"   Pattern detection images: {len(pattern_images)} images in {pattern_debug_dir}")
+            
+            # Draw 3D axes on undistorted images
+            axes_debug_dir = os.path.join(output_dir, "undistorted_axes")
+            os.makedirs(axes_debug_dir, exist_ok=True)
+            axes_images = calibrator.draw_axes_on_undistorted_images()
+            
+            for filename, debug_img in axes_images:
+                output_path = os.path.join(axes_debug_dir, f"{filename}.jpg")
+                cv2.imwrite(output_path, debug_img)
+            
+            print(f"   Undistorted axes images: {len(axes_images)} images in {axes_debug_dir}")
 
 
 def test_charuco_calibration():
@@ -145,13 +171,38 @@ def test_charuco_calibration():
             print(f"   Principal Point: cx={camera_matrix[0,2]:.1f}, cy={camera_matrix[1,2]:.1f}")
             
             # Save calibration data to JSON
-            output_dir = "results"
+            output_dir = "results/charuco_calibration"
             os.makedirs(output_dir, exist_ok=True)
             calibrator.save_calibration(
-                os.path.join(output_dir, "charuco_calibration.json"),
+                os.path.join(output_dir, "calibration_results.json"),
                 include_extrinsics=True
             )
-            print(f"   Calibration data saved to: results/charuco_calibration.json")
+            print(f"   Calibration data saved to: {output_dir}/calibration_results.json")
+            
+            # Generate debug images
+            print(f"\n🔍 Generating debug images...")
+            
+            # Draw detected patterns on original images
+            pattern_debug_dir = os.path.join(output_dir, "pattern_detection")
+            os.makedirs(pattern_debug_dir, exist_ok=True)
+            pattern_images = calibrator.draw_pattern_on_images()
+            
+            for filename, debug_img in pattern_images:
+                output_path = os.path.join(pattern_debug_dir, f"{filename}.jpg")
+                cv2.imwrite(output_path, debug_img)
+            
+            print(f"   Pattern detection images: {len(pattern_images)} images in {pattern_debug_dir}")
+            
+            # Draw 3D axes on undistorted images
+            axes_debug_dir = os.path.join(output_dir, "undistorted_axes")
+            os.makedirs(axes_debug_dir, exist_ok=True)
+            axes_images = calibrator.draw_axes_on_undistorted_images()
+            
+            for filename, debug_img in axes_images:
+                output_path = os.path.join(axes_debug_dir, f"{filename}.jpg")
+                cv2.imwrite(output_path, debug_img)
+            
+            print(f"   Undistorted axes images: {len(axes_images)} images in {axes_debug_dir}")
 
 
 if __name__ == "__main__":
@@ -164,5 +215,5 @@ if __name__ == "__main__":
     test_charuco_calibration()
     
     print(f"\n✨ All calibrations completed!")
-    print(f"   Chessboard results: results/chessboard_calibration.json")
-    print(f"   ChArUco results: results/charuco_calibration.json")
+    print(f"   Chessboard results: results/chessboard_calibration/")
+    print(f"   ChArUco results: results/charuco_calibration/")
