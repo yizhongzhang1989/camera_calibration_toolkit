@@ -17,6 +17,9 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from core.intrinsic_calibration import IntrinsicCalibrator
 from core.eye_in_hand_calibration import EyeInHandCalibrator
 
+from core.intrinsic_calibration import IntrinsicCalibrator
+from core.eye_in_hand_calibration import EyeInHandCalibrator
+
 
 def main():
     parser = argparse.ArgumentParser(description="Camera Calibration Toolkit")
@@ -49,13 +52,43 @@ def main():
             print("Required: --calib_data_dir, --xx, --yy, --square_size, --calib_out_dir")
             return 1
             
-        calibrator = IntrinsicCalibrator()
-        success, camera_matrix, dist_coeffs = calibrator.calibrate_from_directory(
-            args.calib_data_dir, args.xx, args.yy, args.square_size, verbose=True)
+        # Create calibration pattern
+        from core.calibration_patterns import create_chessboard_pattern
+        from core.utils import load_images_from_directory
         
-        if success:
-            calibrator.save_parameters(args.calib_out_dir)
+        pattern = create_chessboard_pattern(
+            pattern_type='standard',
+            width=args.xx,
+            height=args.yy,
+            square_size=args.square_size
+        )
+        
+        # Load images from directory
+        image_paths = load_images_from_directory(args.calib_data_dir)
+        if not image_paths:
+            print(f"Error: No valid images found in {args.calib_data_dir}")
+            return 1
+            
+        calibrator = IntrinsicCalibrator(
+            image_paths=image_paths,
+            calibration_pattern=pattern,
+            pattern_type='standard'
+        )
+        
+        # Run calibration
+        if not calibrator.detect_pattern_points(verbose=True):
+            print("Error: Pattern detection failed!")
+            return 1
+            
+        rms_error = calibrator.calibrate_camera(verbose=True)
+        
+        if rms_error > 0:
+            calibrator.save_calibration(
+                os.path.join(args.calib_out_dir, 'calibration_results.json'),
+                include_extrinsics=True
+            )
             print(f"Intrinsic calibration completed successfully!")
+            print(f"RMS Error: {rms_error:.4f} pixels")
             print(f"Results saved to: {args.calib_out_dir}")
         else:
             print("Intrinsic calibration failed!")
@@ -69,16 +102,47 @@ def main():
             return 1
             
         # First run intrinsic calibration
-        intrinsic_cal = IntrinsicCalibrator()
         print("Running intrinsic calibration...")
-        success, camera_matrix, dist_coeffs = intrinsic_cal.calibrate_from_directory(
-            args.calib_data_dir, args.xx, args.yy, args.square_size, verbose=True)
         
-        if not success:
+        # Create calibration pattern
+        pattern = create_chessboard_pattern(
+            pattern_type='standard',
+            width=args.xx,
+            height=args.yy,
+            square_size=args.square_size
+        )
+        
+        # Load images from directory
+        image_paths = load_images_from_directory(args.calib_data_dir)
+        if not image_paths:
+            print(f"Error: No valid images found in {args.calib_data_dir}")
+            return 1
+            
+        intrinsic_cal = IntrinsicCalibrator(
+            image_paths=image_paths,
+            calibration_pattern=pattern,
+            pattern_type='standard'
+        )
+        
+        # Run calibration
+        if not intrinsic_cal.detect_pattern_points(verbose=True):
+            print("Error: Pattern detection failed!")
+            return 1
+            
+        rms_error = intrinsic_cal.calibrate_camera(verbose=True)
+        
+        if rms_error <= 0:
             print("Intrinsic calibration failed!")
             return 1
             
-        intrinsic_cal.save_parameters(args.calib_out_dir)
+        # Get calibration results
+        camera_matrix = intrinsic_cal.get_camera_matrix()
+        dist_coeffs = intrinsic_cal.get_distortion_coefficients()
+        
+        intrinsic_cal.save_calibration(
+            os.path.join(args.calib_out_dir, 'calibration_results.json'),
+            include_extrinsics=True
+        )
         
         # Run eye-in-hand calibration
         print("Running eye-in-hand calibration...")

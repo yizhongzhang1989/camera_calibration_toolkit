@@ -23,6 +23,7 @@ import base64
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from core.intrinsic_calibration import IntrinsicCalibrator
+from core.calibration_patterns import create_chessboard_pattern
 from core.eye_in_hand_calibration import EyeInHandCalibrator
 from web.visualization_utils import create_calibration_results, trim_distortion_coefficients
 
@@ -51,10 +52,6 @@ ALLOWED_POSE_EXTENSIONS = {'json'}
 # Ensure directories exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(RESULTS_FOLDER, exist_ok=True)
-
-# Global calibration objects
-intrinsic_calibrator = IntrinsicCalibrator()
-eye_in_hand_calibrator = EyeInHandCalibrator()
 
 # Session data storage (in production, use proper session management)
 session_data = {}
@@ -307,29 +304,56 @@ def calibrate():
         results = {}
         
         if calibration_type == 'intrinsic':
-            # Intrinsic calibration only
-            ret, camera_matrix, dist_coeffs = intrinsic_calibrator.calibrate_from_images(
-                image_paths, XX, YY, L, distortion_model, verbose=True)
+            # Create calibration pattern
+            pattern = create_chessboard_pattern(
+                pattern_type='standard',
+                width=XX,
+                height=YY,
+                square_size=L
+            )
             
-            if ret:
+            # Create new calibrator instance for this session
+            calibrator = IntrinsicCalibrator(
+                image_paths=image_paths,
+                calibration_pattern=pattern,
+                pattern_type='standard'
+            )
+            
+            # Run pattern detection
+            if not calibrator.detect_pattern_points(verbose=True):
+                return jsonify({'error': 'Pattern detection failed. Check your images and parameters.'}), 400
+            
+            # Run calibration
+            rms_error = calibrator.calibrate_camera(verbose=True)
+            
+            if rms_error > 0:
+                # Get results
+                camera_matrix = calibrator.get_camera_matrix()
+                dist_coeffs = calibrator.get_distortion_coefficients()
+                
                 # Save results
                 results_folder = os.path.join(RESULTS_FOLDER, session_id)
-                intrinsic_calibrator.save_parameters(results_folder)
+                os.makedirs(results_folder, exist_ok=True)
                 
-                # Save additional JSON with trimmed distortion coefficients
+                calibrator.save_calibration(
+                    os.path.join(results_folder, 'calibration_results.json'),
+                    include_extrinsics=True
+                )
+                
+                # Save additional JSON with trimmed distortion coefficients for backward compatibility
                 trimmed_dist_coeffs = trim_distortion_coefficients(dist_coeffs, distortion_model)
                 
-                # Save complete calibration results with trimmed coefficients
-                calibration_data = {
+                # Save additional legacy format for backward compatibility
+                legacy_calibration_data = {
                     "camera_matrix": camera_matrix.tolist(),
                     "distortion_coefficients": trimmed_dist_coeffs.tolist(),
                     "distortion_model": distortion_model,
-                    "rms_error": float(ret),
+                    "rms_error": float(rms_error),
                     "images_used": len(image_paths)
                 }
                 
-                with open(os.path.join(results_folder, 'calibration_results.json'), 'w') as f:
-                    json.dump(calibration_data, f, indent=4)
+                with open(os.path.join(results_folder, 'legacy_calibration_results.json'), 'w') as f:
+                    json.dump(legacy_calibration_data, f, indent=4)
                 
                 # Also save trimmed distortion coefficients separately
                 trimmed_dist_dict = {
@@ -340,12 +364,15 @@ def calibrate():
                 with open(os.path.join(results_folder, 'dist_trimmed.json'), 'w') as f:
                     json.dump(trimmed_dist_dict, f, indent=4)
                 
+                # Get extrinsics for visualization
+                rvecs, tvecs = calibrator.get_extrinsics()
+                
                 # Use shared visualization utility
                 results = create_calibration_results(
                     'intrinsic', session_id, image_paths, selected_indices,
                     camera_matrix, dist_coeffs, results_folder, XX, YY, L,
-                    rms_error=float(ret), distortion_model=distortion_model,
-                    rvecs=intrinsic_calibrator.rvecs, tvecs=intrinsic_calibrator.tvecs
+                    rms_error=float(rms_error), distortion_model=distortion_model,
+                    rvecs=rvecs, tvecs=tvecs
                 )
             else:
                 results = {
@@ -379,14 +406,30 @@ def calibrate():
                 
             else:
                 # Use intrinsic calibration results
-                if not intrinsic_calibrator.calibration_completed:
-                    ret, camera_matrix, dist_coeffs = intrinsic_calibrator.calibrate_from_images(
-                        image_paths, XX, YY, L, distortion_model, verbose=True)
-                    if not ret:
-                        return jsonify({'error': 'Intrinsic calibration failed'}), 500
-                else:
-                    # Load camera intrinsics from previous calibration
-                    camera_matrix, dist_coeffs = intrinsic_calibrator.get_parameters()
+                # Create a new calibrator for intrinsic calculation if needed
+                intrinsic_cal = IntrinsicCalibrator(
+                    image_paths=image_paths,
+                    calibration_pattern=create_chessboard_pattern(
+                        pattern_type='standard',
+                        width=XX,
+                        height=YY,
+                        square_size=L
+                    ),
+                    pattern_type='standard'
+                )
+                
+                if not intrinsic_cal.detect_pattern_points(verbose=True):
+                    return jsonify({'error': 'Pattern detection failed for eye-in-hand calibration'}), 400
+                
+                rms_error = intrinsic_cal.calibrate_camera(verbose=True)
+                if rms_error <= 0:
+                    return jsonify({'error': 'Intrinsic calibration failed'}), 500
+                
+                camera_matrix = intrinsic_cal.get_camera_matrix()
+                dist_coeffs = intrinsic_cal.get_distortion_coefficients()
+            
+            # Create eye-in-hand calibrator instance
+            eye_in_hand_calibrator = EyeInHandCalibrator()
             
             # Load camera intrinsics into eye-in-hand calibrator
             eye_in_hand_calibrator.load_camera_intrinsics(camera_matrix, dist_coeffs)

@@ -38,17 +38,51 @@ def main(CALIBRATION_DATA_DIR, CALIBRATION_PARAMETER_OUTPUT_DIR, XX, YY, L, REPR
     try:
         # Step 1: Intrinsic calibration
         print("Starting intrinsic calibration...")
-        intrinsic_cal = IntrinsicCalibrator()
         
-        success, camera_matrix, dist_coeffs = intrinsic_cal.calibrate_from_directory(
-            CALIBRATION_DATA_DIR, XX, YY, L, verbose=True)
+        # Create calibration pattern
+        from core.calibration_patterns import create_chessboard_pattern
+        from core.utils import load_images_from_directory
         
-        if success:
-            intrinsic_cal.save_parameters(CALIBRATION_PARAMETER_OUTPUT_DIR)
+        pattern = create_chessboard_pattern(
+            pattern_type='standard',
+            width=XX,
+            height=YY,
+            square_size=L
+        )
+        
+        # Load images from directory
+        image_paths = load_images_from_directory(CALIBRATION_DATA_DIR)
+        if not image_paths:
+            print(f"Error: No valid images found in {CALIBRATION_DATA_DIR}")
+            return
+            
+        intrinsic_cal = IntrinsicCalibrator(
+            image_paths=image_paths,
+            calibration_pattern=pattern,
+            pattern_type='standard'
+        )
+        
+        # Run calibration
+        if not intrinsic_cal.detect_pattern_points(verbose=True):
+            print("Error: Pattern detection failed!")
+            return
+            
+        rms_error = intrinsic_cal.calibrate_camera(verbose=True)
+        
+        if rms_error > 0:
+            # Get calibration results
+            camera_matrix = intrinsic_cal.get_camera_matrix()
+            dist_coeffs = intrinsic_cal.get_distortion_coefficients()
+            
+            intrinsic_cal.save_calibration(
+                os.path.join(CALIBRATION_PARAMETER_OUTPUT_DIR, 'calibration_results.json'),
+                include_extrinsics=True
+            )
             print("Intrinsic calibration completed successfully")
+            print(f"RMS Error: {rms_error:.4f} pixels")
         else:
             print("Error: Intrinsic calibration failed!")
-            return 1
+            return
         
         # Step 2: Eye-in-hand calibration
         print("Starting eye-in-hand calibration...")

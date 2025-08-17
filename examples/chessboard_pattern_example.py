@@ -134,7 +134,6 @@ def calibrate_with_patterns(sample_data_dir: str):
     
     # Test 1: Standard chessboard calibration
     print("\n1. Calibrating with Standard Chessboard (11x8):")
-    calibrator1 = IntrinsicCalibrator()
     
     # Create standard chessboard pattern
     standard_pattern = create_chessboard_pattern(
@@ -144,49 +143,77 @@ def calibrate_with_patterns(sample_data_dir: str):
         square_size=0.020
     )
     
+    calibrator1 = IntrinsicCalibrator(
+        image_paths=image_paths,
+        calibration_pattern=standard_pattern,
+        pattern_type='standard'
+    )
+    
     try:
-        success1, mtx1, dist1 = calibrator1.calibrate_with_pattern(
-            image_paths=image_paths,
-            calibration_pattern=standard_pattern,
-            verbose=True
-        )
-        
-        if success1:
-            print("   ✅ Standard chessboard calibration successful!")
-            print(f"   Camera focal lengths: fx={mtx1[0,0]:.2f}, fy={mtx1[1,1]:.2f}")
+        if calibrator1.detect_pattern_points(verbose=True):
+            rms_error = calibrator1.calibrate_camera(verbose=True)
+            
+            if rms_error > 0:
+                success1 = True
+                mtx1 = calibrator1.get_camera_matrix()
+                dist1 = calibrator1.get_distortion_coefficients()
+                print("   ✅ Standard chessboard calibration successful!")
+                print(f"   Camera focal lengths: fx={mtx1[0,0]:.2f}, fy={mtx1[1,1]:.2f}")
+                print(f"   RMS Error: {rms_error:.4f}")
+            else:
+                success1 = False
+                print("   ❌ Standard chessboard calibration failed")
         else:
-            print("   ❌ Standard chessboard calibration failed")
+            success1 = False
+            print("   ❌ Pattern detection failed")
             
     except Exception as e:
+        success1 = False
         print(f"   ❌ Error during standard calibration: {e}")
     
     print()
     
-    # Test 2: Compare with legacy method
-    print("2. Comparing with Legacy Method:")
-    calibrator2 = IntrinsicCalibrator()
+    # Test 2: Compare with new API method
+    print("2. Testing new API method:")
     
     try:
-        success2, mtx2, dist2 = calibrator2.calibrate_from_images(
-            image_paths=image_paths,
-            XX=11,
-            YY=8,
-            L=0.020,
-            verbose=True
+        # Create calibration pattern
+        pattern = create_chessboard_pattern(
+            pattern_type='standard',
+            width=11,
+            height=8,
+            square_size=0.020
         )
         
-        if success2:
-            print("   ✅ Legacy method calibration successful!")
-            print(f"   Camera focal lengths: fx={mtx2[0,0]:.2f}, fy={mtx2[1,1]:.2f}")
+        calibrator2 = IntrinsicCalibrator(
+            image_paths=image_paths,
+            calibration_pattern=pattern,
+            pattern_type='standard'
+        )
+        
+        if calibrator2.detect_pattern_points(verbose=True):
+            rms_error = calibrator2.calibrate_camera(verbose=True)
             
-            # Compare results
-            if success1:
-                mtx_diff = np.abs(mtx1 - mtx2).max()
-                dist_diff = np.abs(dist1 - dist2).max()
-                print(f"   📊 Comparison - Max matrix diff: {mtx_diff:.6f}, Max dist diff: {dist_diff:.6f}")
+            if rms_error > 0:
+                mtx2 = calibrator2.get_camera_matrix()
+                dist2 = calibrator2.get_distortion_coefficients()
+                print("   ✅ New API method calibration successful!")
+                print(f"   Camera focal lengths: fx={mtx2[0,0]:.2f}, fy={mtx2[1,1]:.2f}")
+                print(f"   RMS Error: {rms_error:.4f}")
                 
+                # Compare results
+                if success1:
+                    mtx_diff = np.abs(mtx1 - mtx2).max()
+                    dist_diff = np.abs(dist1 - dist2).max()
+                    print(f"   📊 Comparison - Max matrix diff: {mtx_diff:.6f}, Max dist diff: {dist_diff:.6f}")
+                    
+            else:
+                print("   ❌ New API method calibration failed")
         else:
-            print("   ❌ Legacy method calibration failed")
+            print("   ❌ Pattern detection failed with new API method")
+            
+    except Exception as e:
+        print(f"   ❌ Error during new API calibration: {e}")
             
     except Exception as e:
         print(f"   ❌ Error during legacy calibration: {e}")
@@ -223,7 +250,8 @@ def main():
     print("\n🎉 Demo completed!")
     print("\nNext steps:")
     print("- Use create_chessboard_pattern() to create pattern objects")
-    print("- Use calibrator.calibrate_with_pattern() for calibration")  
+    print("- Use the new API with pattern creation and calibrator constructor")  
+    print("- Call detect_pattern_points() then calibrate_camera() for calibration")  
     print("- Extend ChessboardPattern for custom pattern types")
 
 

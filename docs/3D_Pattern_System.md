@@ -88,15 +88,25 @@ cube_pattern = Custom3DPattern(
 ### Calibration
 
 ```python
-calibrator = IntrinsicCalibrator()
-
-# Use with any pattern type
-success, mtx, dist = calibrator.calibrate_with_pattern(
+# Create calibrator with constructor
+calibrator = IntrinsicCalibrator(
     image_paths=images,
     calibration_pattern=pattern,
-    distortion_model='standard',
-    verbose=True
+    pattern_type='standard'  # or '3d' for 3D patterns
 )
+
+# Detect pattern points
+if calibrator.detect_pattern_points(verbose=True):
+    # Calibrate camera
+    rms_error = calibrator.calibrate_camera(verbose=True)
+    
+    if rms_error > 0:
+        # Get results
+        mtx = calibrator.get_camera_matrix()
+        dist = calibrator.get_distortion_coefficients()
+        
+        # Save results
+        calibrator.save_calibration("calibration_results.json")
 ```
 
 ## Key Features
@@ -168,18 +178,28 @@ pyramid_pattern = Custom3DPattern(
 
 ### From Legacy Interface
 ```python
-# Old way
+# Old way - deprecated
 success, mtx, dist = calibrator.calibrate_from_images(
     images, XX=11, YY=8, L=0.02
 )
 
-# New way (backward compatible)
+# New way - current API
 pattern = create_chessboard_pattern(
     "standard", width=11, height=8, square_size=0.02
 )
-success, mtx, dist = calibrator.calibrate_with_pattern(
-    images, pattern
+
+calibrator = IntrinsicCalibrator(
+    image_paths=images,
+    calibration_pattern=pattern,
+    pattern_type='standard'
 )
+
+if calibrator.detect_pattern_points(verbose=True):
+    rms_error = calibrator.calibrate_camera(verbose=True)
+    if rms_error > 0:
+        mtx = calibrator.get_camera_matrix()
+        dist = calibrator.get_distortion_coefficients()
+        calibrator.save_calibration("results.json")
 ```
 
 ### Adding Custom Patterns
