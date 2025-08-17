@@ -4,19 +4,21 @@ Intrinsic Camera Calibration Module
 
 This module handles single camera intrinsic parameter calibration.
 It can calibrate camera matrix and distortion coefficients from chessboard images.
+Supports multiple chessboard pattern types through abstraction.
 """
 
 import os
 import json
 import numpy as np
 import cv2
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Union
 from .utils import (
     get_objpoints, 
     get_chessboard_corners,
     find_chessboard_corners,
     load_images_from_directory
 )
+from .chessboard_patterns import ChessboardPattern, create_chessboard_pattern
 
 
 class IntrinsicCalibrator:
@@ -256,3 +258,92 @@ class IntrinsicCalibrator:
             cv2.imwrite(output_path, undistorted)
             
         return undistorted
+    
+    def calibrate_with_pattern(self, image_paths: List[str], 
+                              chessboard_pattern: ChessboardPattern,
+                              distortion_model: str = 'standard', 
+                              verbose: bool = False) -> Tuple[bool, np.ndarray, np.ndarray]:
+        """
+        Calibrate camera using a specific chessboard pattern abstraction.
+        
+        Args:
+            image_paths: List of calibration image file paths
+            chessboard_pattern: ChessboardPattern instance defining the pattern
+            distortion_model: Distortion model to use ('standard', 'rational', 'thin_prism', 'tilted')
+            verbose: Whether to print detailed information
+            
+        Returns:
+            Tuple of (success, camera_matrix, distortion_coefficients)
+        """
+        if not image_paths:
+            raise ValueError("No image paths provided")
+        
+        # Collect corner detections and object points
+        imgpoints = []
+        objpoints = []
+        valid_image_paths = []
+        
+        # Generate object points for this pattern
+        pattern_objpoints = chessboard_pattern.generate_object_points()
+        
+        if verbose:
+            print(f"Using pattern: {chessboard_pattern.name}")
+            print(f"Pattern info: {chessboard_pattern.get_info()}")
+        
+        for image_path in image_paths:
+            img = cv2.imread(image_path)
+            if img is None:
+                if verbose:
+                    print(f"Could not load image: {image_path}")
+                continue
+            
+            if self.image_size is None:
+                if len(img.shape) == 3:
+                    self.image_size = (img.shape[1], img.shape[0])
+                else:
+                    self.image_size = (img.shape[1], img.shape[0])
+            
+            # Detect corners using the pattern
+            success, corners = chessboard_pattern.detect_corners(img)
+            
+            if success and corners is not None:
+                imgpoints.append(corners)
+                objpoints.append(pattern_objpoints)
+                valid_image_paths.append(image_path)
+                
+                if verbose:
+                    print(f"Found corners in {image_path}")
+            else:
+                if verbose:
+                    print(f"Cannot find pattern corners in {image_path}, skip.")
+        
+        if len(imgpoints) < 3:
+            raise ValueError(f"Need at least 3 images with detected corners, got {len(imgpoints)}")
+        
+        # Set calibration flags based on distortion model
+        flags = 0
+        if distortion_model == 'rational':
+            flags = cv2.CALIB_RATIONAL_MODEL
+        elif distortion_model == 'thin_prism':
+            flags = cv2.CALIB_RATIONAL_MODEL | cv2.CALIB_THIN_PRISM_MODEL
+        elif distortion_model == 'tilted':
+            flags = cv2.CALIB_RATIONAL_MODEL | cv2.CALIB_THIN_PRISM_MODEL | cv2.CALIB_TILTED_MODEL
+        
+        # Calibrate camera
+        ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(
+            objpoints, imgpoints, self.image_size, None, None, flags=flags)
+        
+        if ret:
+            self.camera_matrix = mtx
+            self.distortion_coefficients = dist
+            self.rvecs = rvecs
+            self.tvecs = tvecs
+            self.valid_image_paths = valid_image_paths
+            self.calibration_completed = True
+            
+            if verbose:
+                print(f"Calibration successful with {len(imgpoints)} images")
+                print(f"Camera matrix:\n{mtx}")
+                print(f"Distortion coefficients:\n{dist}")
+        
+        return ret, mtx, dist

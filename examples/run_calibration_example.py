@@ -27,6 +27,7 @@ from datetime import datetime
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.intrinsic_calibration import IntrinsicCalibrator
+from core.chessboard_patterns import create_chessboard_pattern
 
 
 def load_sample_images(sample_data_dir=None):
@@ -88,7 +89,16 @@ def save_results(results, output_dir="results"):
         f.write("Camera Intrinsic Calibration Results\n")
         f.write("="*40 + "\n\n")
         f.write(f"Calibration Date: {results['calibration_timestamp']}\n")
-        f.write(f"Chessboard Pattern: {results['parameters']['chessboard_pattern']}\n")
+        
+        # Handle both old and new result formats
+        if 'pattern_info' in results['parameters']:
+            pattern_info = results['parameters']['pattern_info']
+            f.write(f"Pattern Type: {results['parameters']['pattern_type']}\n")
+            f.write(f"Pattern Size: {pattern_info.get('pattern_size', 'Unknown')}\n")
+        else:
+            # Legacy format
+            f.write(f"Chessboard Pattern: {results['parameters'].get('chessboard_pattern', 'Unknown')}\n")
+        
         f.write(f"Square Size: {results['parameters']['square_size_meters']}m\n")
         f.write(f"Images Used: {results['parameters']['valid_images_used']}/{results['parameters']['total_input_images']}\n\n")
         
@@ -110,14 +120,19 @@ def main():
     print()
     
     # Configuration
-    chessboard_x = 11      # Chessboard corners along x-axis
-    chessboard_y = 8       # Chessboard corners along y-axis 
+    pattern_type = "standard"     # Pattern type: 'standard' or 'charuco'
+    chessboard_x = 11      # Chessboard corners along x-axis (for standard) or squares (for charuco)
+    chessboard_y = 8       # Chessboard corners along y-axis (for standard) or squares (for charuco) 
     square_size = 0.02     # Size of each chessboard square in meters
+    marker_size = 0.01     # Size of ArUco markers in meters (for charuco only)
     distortion_model = 'standard'  # Distortion model
     
     print("📋 Configuration:")
-    print(f"   Chessboard pattern: {chessboard_x}x{chessboard_y}")
+    print(f"   Pattern type: {pattern_type}")
+    print(f"   Pattern size: {chessboard_x}x{chessboard_y}")
     print(f"   Square size: {square_size}m")
+    if pattern_type == "charuco":
+        print(f"   Marker size: {marker_size}m")
     print(f"   Distortion model: {distortion_model}")
     print()
     
@@ -129,18 +144,39 @@ def main():
         if not image_paths:
             raise ValueError("No images found in sample data directory")
         
-        # Step 2: Calibrate
-        print(f"\nStep 2: Running calibration with {len(image_paths)} images...")
+        # Step 2: Create chessboard pattern
+        print(f"\nStep 2: Creating {pattern_type} chessboard pattern...")
+        
+        if pattern_type == "standard":
+            chessboard_pattern = create_chessboard_pattern(
+                "standard",
+                width=chessboard_x,
+                height=chessboard_y,
+                square_size=square_size
+            )
+        elif pattern_type == "charuco":
+            chessboard_pattern = create_chessboard_pattern(
+                "charuco",
+                width=chessboard_x,
+                height=chessboard_y,
+                square_size=square_size,
+                marker_size=marker_size
+            )
+        else:
+            raise ValueError(f"Unsupported pattern type: {pattern_type}")
+        
+        print(f"✅ Created pattern: {chessboard_pattern.name}")
+        
+        # Step 3: Calibrate
+        print(f"\nStep 3: Running calibration with {len(image_paths)} images...")
         
         # Initialize calibrator
         calibrator = IntrinsicCalibrator()
         
-        # Perform calibration
-        success, camera_matrix, distortion_coeffs = calibrator.calibrate_from_images(
+        # Perform calibration using pattern abstraction
+        success, camera_matrix, distortion_coeffs = calibrator.calibrate_with_pattern(
             image_paths=image_paths,
-            XX=chessboard_x,
-            YY=chessboard_y,
-            L=square_size,
+            chessboard_pattern=chessboard_pattern,
             distortion_model=distortion_model,
             verbose=True
         )
@@ -159,7 +195,8 @@ def main():
                 'success': True,
                 'calibration_timestamp': datetime.now().isoformat(),
                 'parameters': {
-                    'chessboard_pattern': f"{chessboard_x}x{chessboard_y}",
+                    'pattern_type': pattern_type,
+                    'pattern_info': chessboard_pattern.get_info(),
                     'square_size_meters': square_size,
                     'distortion_model': distortion_model,
                     'total_input_images': len(image_paths),
@@ -170,8 +207,8 @@ def main():
                 'image_size': list(calibrator.image_size) if calibrator.image_size else None
             }
             
-            # Step 3: Save results
-            print("\nStep 3: Saving results...")
+            # Step 4: Save results
+            print("\nStep 4: Saving results...")
             output_dir = save_results(results)
             print(f"📁 Results saved to: {output_dir}")
             
@@ -184,6 +221,8 @@ def main():
     except Exception as e:
         print(f"\n❌ Error: {str(e)}")
         print(f"Please check that sample images exist in sample_data/intrinsic_calib_test_images/")
+        if pattern_type == "charuco":
+            print("Note: ChArUco patterns require OpenCV with ArUco module support")
 
 
 if __name__ == "__main__":
