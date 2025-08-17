@@ -59,12 +59,20 @@ python duco_camera_calibrate_new.py \
 
 ```python
 from core.intrinsic_calibration import IntrinsicCalibrator
-from core.eye_in_hand_calibration import EyeInHandCalibrator
+from core.calibration_patterns import create_chessboard_pattern
 
-# Intrinsic calibration
-intrinsic_cal = IntrinsicCalibrator()
-success, camera_matrix, dist_coeffs = intrinsic_cal.calibrate_from_directory(
-    'path/to/images', XX=11, YY=8, L=0.02)
+# Create calibration pattern
+pattern = create_chessboard_pattern('standard', width=11, height=8, square_size=0.02)
+
+# Smart constructor - set member parameters directly  
+intrinsic_cal = IntrinsicCalibrator(
+    image_paths=['img1.jpg', 'img2.jpg', 'img3.jpg'],
+    calibration_pattern=pattern
+)
+
+# Detect pattern points and calibrate
+intrinsic_cal.detect_pattern_points(verbose=True)
+rms_error = intrinsic_cal.calibrate_camera(verbose=True)
 
 # Eye-in-hand calibration
 eye_in_hand_cal = EyeInHandCalibrator()
@@ -91,7 +99,9 @@ camera-calibration-toolkit/
 │   ├── uploads/            # Uploaded images and poses
 │   └── results/            # Calibration results
 ├── examples/               # Usage examples
-│   └── usage_example.py   # Complete API usage examples
+│   ├── intrinsic_calibration_example.py  # Primary intrinsic calibration example
+│   ├── 3d_pattern_example.py            # 3D pattern calibration
+│   └── chessboard_pattern_example.py    # Pattern abstraction demo
 ├── tests/                  # Unit tests
 ├── main.py                # Main entry point
 ├── duco_camera_calibrate_new.py  # Legacy compatibility script
@@ -178,11 +188,36 @@ Where:
 
 #### IntrinsicCalibrator
 ```python
-calibrator = IntrinsicCalibrator()
-success, camera_matrix, dist_coeffs = calibrator.calibrate_from_directory(
-    image_directory, chessboard_x, chessboard_y, square_size)
-calibrator.save_parameters(output_directory)
+# Modern smart constructor interface
+from core.intrinsic_calibration import IntrinsicCalibrator
+from core.calibration_patterns import create_chessboard_pattern
+
+# Smart constructor approach - set member parameters directly
+pattern = create_chessboard_pattern('standard', width=11, height=8, square_size=0.02)
+calibrator = IntrinsicCalibrator(
+    image_paths=image_paths,           # Member parameter
+    calibration_pattern=pattern       # Member parameter
+)
+
+# Clean workflow: detect points then calibrate
+calibrator.detect_pattern_points(verbose=True)
+rms_error = calibrator.calibrate_camera(
+    cameraMatrix=None,      # Function parameter (initial guess)
+    distCoeffs=None,        # Function parameter (initial guess)
+    flags=0,                # Function parameter
+    verbose=True
+)
+
+# Get results
+camera_matrix = calibrator.get_camera_matrix()
+dist_coeffs = calibrator.get_distortion_coefficients()
 ```
+
+**New Interface Benefits:**
+- **Smart Constructor**: Set images and patterns directly during initialization
+- **OpenCV-Style**: `calibrate_camera()` method matches OpenCV's interface exactly  
+- **Organized Members**: Clean separation of data (members) vs processing options (function args)
+- **Multiple Workflows**: Supports image paths, arrays, initial parameters, manual setup
 
 #### EyeInHandCalibrator
 ```python

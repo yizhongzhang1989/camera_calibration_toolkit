@@ -3,8 +3,22 @@ Intrinsic Camera Calibration Module
 ===================================
 
 This module handles single camera intrinsic parameter calibration.
-It can calibrate camera matrix and distortion coefficients from chessboard images.
-Supports multiple chessboard pattern types through abstraction.
+It can calibrate camera matrix and distortion coefficients from calibration images.
+Supports multiple calibration pattern types through abstraction.
+
+Key Methods in IntrinsicCalibrator class:
+- Smart constructor: Initialize with images and patterns directly
+- calibrate_camera(): OpenCV-style calibration with organized member variables
+- detect_pattern_points(): Pattern detection with automatic point collection
+
+The new interface provides clean separation of data and processing:
+    # Smart constructor approach
+    calibrator = IntrinsicCalibrator(
+        image_paths=paths,
+        calibration_pattern=pattern
+    )
+    calibrator.detect_pattern_points()
+    rms_error = calibrator.calibrate_camera(cameraMatrix=None, distCoeffs=None)
 """
 
 import os
@@ -25,341 +39,306 @@ class IntrinsicCalibrator:
     """
     Camera intrinsic parameter calibration class.
     
-    This class provides methods to calibrate camera intrinsic parameters
-    (camera matrix and distortion coefficients) from chessboard calibration images.
+    This class provides methods to calibrate camera intrinsic parameters following
+    OpenCV's calibrateCamera interface design with organized member variables:
+    
+    - Images and related: images, image_paths, image_points, object_points, image_size
+    - Pattern and related: calibration_pattern, pattern_type, pattern_params
+    - Output values: camera_matrix, distortion_coefficients, rvecs, tvecs, rms_error
+    - Function args: cameraMatrix (initial), distCoeffs (initial), flags, criteria
     """
     
-    def __init__(self):
-        self.camera_matrix = None
-        self.distortion_coefficients = None
-        self.image_size = None
-        self.calibration_completed = False
-        self.rvecs = None  # Rotation vectors for each image (extrinsics)
-        self.tvecs = None  # Translation vectors for each image (extrinsics)
-        self.valid_image_paths = None  # Paths of images with successful corner detection
-    
-    def calibrate_from_images(self, image_paths: List[str], XX: int, YY: int, L: float,
-                            distortion_model: str = 'standard', verbose: bool = False) -> Tuple[bool, np.ndarray, np.ndarray]:
+    def __init__(self, images=None, image_paths=None, calibration_pattern=None, pattern_type=None):
         """
-        Calibrate camera intrinsic parameters from a list of chessboard images.
+        Initialize IntrinsicCalibrator with smart constructor arguments.
         
         Args:
-            image_paths: List of calibration image file paths
-            XX: Number of chessboard corners along x-axis
-            YY: Number of chessboard corners along y-axis
-            L: Size of chessboard squares in meters
-            distortion_model: Distortion model to use ('standard', 'rational', 'thin_prism', 'tilted')
-            verbose: Whether to print detailed information
+            images: List of image arrays (numpy arrays) or None
+            image_paths: List of image file paths or None  
+            calibration_pattern: CalibrationPattern instance or None
+            pattern_type: Pattern type string for backwards compatibility or None
+        """
+        # Images and related parameters (set as members)
+        self.images = None                    # List of image arrays
+        self.image_paths = None              # List of image file paths  
+        self.image_points = None             # List of detected 2D points for each image
+        self.object_points = None            # List of corresponding 3D object points
+        self.image_size = None               # Image size (width, height)
+        
+        # Calibration pattern and related parameters (set as members)
+        self.calibration_pattern = None      # CalibrationPattern instance
+        self.pattern_type = None             # Pattern type string
+        self.pattern_params = None           # Pattern-specific parameters dict
+        
+        # Output values and results (set as members)
+        self.camera_matrix = None            # Calibrated camera matrix
+        self.distortion_coefficients = None  # Calibrated distortion coefficients
+        self.rvecs = None                    # Rotation vectors for each image (extrinsics)
+        self.tvecs = None                    # Translation vectors for each image (extrinsics)
+        self.rms_error = None                # Overall RMS reprojection error
+        self.per_image_errors = None         # RMS error for each image
+        self.calibration_completed = False   # Whether calibration has been completed successfully
+        
+        # Initialize with provided data using smart constructor
+        if image_paths is not None:
+            self.set_images_from_paths(image_paths)
+        elif images is not None:
+            self.set_images_from_arrays(images)
+        
+        if calibration_pattern is not None:
+            self.set_calibration_pattern(calibration_pattern, pattern_type)
+    
+    def set_images_from_paths(self, image_paths: List[str]) -> bool:
+        """
+        Set images from file paths.
+        
+        Args:
+            image_paths: List of image file paths
             
         Returns:
-            Tuple of (success, camera_matrix, distortion_coefficients)
+            bool: True if all images loaded successfully
         """
-        if not image_paths:
-            raise ValueError("No image paths provided")
+        self.image_paths = image_paths
+        self.images = []
         
-        # Generate 3D object points
-        objpoints = get_objpoints(len(image_paths), XX, YY, L)
-        
-        # Find chessboard corners in all images
-        imgpoints = []
-        valid_objpoints = []
-        valid_image_paths = []
-        
-        for i, image_path in enumerate(image_paths):
-            img = cv2.imread(image_path)
+        for path in image_paths:
+            img = cv2.imread(path)
             if img is None:
-                print(f"Could not load image: {image_path}")
-                continue
-                
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                print(f"Failed to load image: {path}")
+                return False
+            self.images.append(img)
+        
+        if self.images:
+            self.image_size = (self.images[0].shape[1], self.images[0].shape[0])
             
-            if self.image_size is None:
-                self.image_size = gray.shape[::-1]
-            
-            find_corners_ret, corners = find_chessboard_corners(gray, XX, YY)
-            
-            if find_corners_ret:
-                imgpoints.append(corners)
-                valid_objpoints.append(objpoints[i])
-                valid_image_paths.append(image_path)
-                
-                if verbose:
-                    print(f"Found corners in {image_path}")
-            else:
-                print(f"Cannot find chessboard corners in {image_path}, skip.")
-        
-        if len(imgpoints) < 3:
-            raise ValueError(f"Need at least 3 images with detected corners, got {len(imgpoints)}")
-        
-        # Set calibration flags based on distortion model
-        flags = 0
-        if distortion_model == 'rational':
-            flags = cv2.CALIB_RATIONAL_MODEL
-        elif distortion_model == 'thin_prism':
-            flags = cv2.CALIB_RATIONAL_MODEL | cv2.CALIB_THIN_PRISM_MODEL
-        elif distortion_model == 'tilted':
-            flags = cv2.CALIB_RATIONAL_MODEL | cv2.CALIB_THIN_PRISM_MODEL | cv2.CALIB_TILTED_MODEL
-        # 'standard' uses flags = 0 (default)
-        
-        # Calibrate camera
-        ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(
-            valid_objpoints, imgpoints, self.image_size, None, None, flags=flags)
-        
-        if ret:
-            self.camera_matrix = mtx
-            self.distortion_coefficients = dist
-            self.rvecs = rvecs
-            self.tvecs = tvecs
-            self.valid_image_paths = valid_image_paths
-            self.calibration_completed = True
-            
-            if verbose:
-                print(f"Calibration successful with {len(imgpoints)} images")
-                print(f"Camera matrix:\n{mtx}")
-                print(f"Distortion coefficients:\n{dist}")
-        
-        return ret, mtx, dist
+        return True
     
-    def calibrate_from_directory(self, directory_path: str, XX: int, YY: int, L: float,
-                               selected_indices: Optional[List[int]] = None,
-                               distortion_model: str = 'standard', verbose: bool = False) -> Tuple[bool, np.ndarray, np.ndarray]:
+    def set_images_from_arrays(self, images: List[np.ndarray]) -> bool:
         """
-        Calibrate camera from all images in a directory.
+        Set images from numpy arrays.
         
         Args:
-            directory_path: Path to directory containing calibration images
-            XX: Number of chessboard corners along x-axis
-            YY: Number of chessboard corners along y-axis
-            L: Size of chessboard squares in meters
-            selected_indices: Optional list of image indices to use (0-based)
-            distortion_model: Distortion model to use ('standard', 'rational', 'thin_prism', 'tilted')
-            verbose: Whether to print detailed information
+            images: List of image arrays
             
         Returns:
-            Tuple of (success, camera_matrix, distortion_coefficients)
+            bool: True if all images are valid
         """
-        image_paths = load_images_from_directory(directory_path)
+        if not images:
+            return False
+            
+        self.images = images
+        self.image_paths = None  # Clear paths since we're using arrays
         
-        if selected_indices is not None:
-            image_paths = [image_paths[i] for i in selected_indices if i < len(image_paths)]
+        # Validate all images have same size
+        first_size = (images[0].shape[1], images[0].shape[0])
+        for i, img in enumerate(images):
+            if img is None:
+                print(f"Image {i} is None")
+                return False
+            current_size = (img.shape[1], img.shape[0])
+            if current_size != first_size:
+                print(f"Image {i} size mismatch: expected {first_size}, got {current_size}")
+                return False
         
-        return self.calibrate_from_images(image_paths, XX, YY, L, distortion_model, verbose)
+        self.image_size = first_size
+        return True
     
-    def save_parameters(self, save_directory: str) -> None:
+    def set_calibration_pattern(self, pattern: CalibrationPattern, pattern_type: str = None, **pattern_params):
         """
-        Save calibrated intrinsic parameters to JSON files.
+        Set calibration pattern and related parameters.
         
         Args:
-            save_directory: Directory to save the parameter files
+            pattern: CalibrationPattern instance
+            pattern_type: Pattern type string (optional)
+            **pattern_params: Additional pattern parameters
         """
-        if not self.calibration_completed:
-            raise ValueError("Calibration has not been completed yet")
-        
-        if not os.path.exists(save_directory):
-            os.makedirs(save_directory)
-        
-        # Save camera matrix
-        mtx_dict = {"camera_matrix": self.camera_matrix.tolist()}
-        with open(os.path.join(save_directory, 'mtx.json'), 'w', encoding='utf-8') as f:
-            json.dump(mtx_dict, f, indent=4, ensure_ascii=False)
-        
-        # Save distortion coefficients
-        dist_dict = {"distortion_coefficients": self.distortion_coefficients.tolist()}
-        with open(os.path.join(save_directory, 'dist.json'), 'w', encoding='utf-8') as f:
-            json.dump(dist_dict, f, indent=4, ensure_ascii=False)
-        
-        # Save extrinsic parameters (pose of each image relative to chessboard)
-        if self.rvecs is not None and self.tvecs is not None and self.valid_image_paths is not None:
-            extrinsics_dict = {}
-            for i, (rvec, tvec, image_path) in enumerate(zip(self.rvecs, self.tvecs, self.valid_image_paths)):
-                image_name = os.path.splitext(os.path.basename(image_path))[0]
-                # Convert rotation vector to rotation matrix for easier interpretation
-                rmat, _ = cv2.Rodrigues(rvec)
-                extrinsics_dict[image_name] = {
-                    "rotation_vector": rvec.flatten().tolist(),
-                    "translation_vector": tvec.flatten().tolist(),
-                    "rotation_matrix": rmat.tolist(),
-                    "image_path": image_path
-                }
-            
-            with open(os.path.join(save_directory, 'extrinsics.json'), 'w', encoding='utf-8') as f:
-                json.dump(extrinsics_dict, f, indent=4, ensure_ascii=False)
-        
-        print(f"Camera intrinsic parameters saved to: {save_directory}")
+        self.calibration_pattern = pattern
+        self.pattern_type = pattern_type
+        self.pattern_params = pattern_params
     
-    def load_parameters(self, save_directory: str) -> Tuple[np.ndarray, np.ndarray]:
+    def detect_pattern_points(self, verbose: bool = False) -> bool:
         """
-        Load calibrated intrinsic parameters from JSON files.
+        Detect calibration pattern in all images and extract point correspondences.
         
         Args:
-            save_directory: Directory containing the parameter files
+            verbose: Whether to print progress information
             
         Returns:
-            Tuple of (camera_matrix, distortion_coefficients)
+            bool: True if successful detection in at least 3 images
         """
-        camera_matrix_path = os.path.join(save_directory, 'mtx.json')
-        distortion_path = os.path.join(save_directory, 'dist.json')
+        if self.images is None or self.calibration_pattern is None:
+            raise ValueError("Images and calibration pattern must be set first")
         
-        if not os.path.exists(camera_matrix_path):
-            raise FileNotFoundError(f"Camera matrix file not found: {camera_matrix_path}")
-        
-        if not os.path.exists(distortion_path):
-            raise FileNotFoundError(f"Distortion coefficients file not found: {distortion_path}")
-        
-        # Load camera matrix
-        with open(camera_matrix_path, 'r', encoding='utf-8') as f:
-            mtx_dict = json.load(f)
-            camera_matrix = np.array(mtx_dict["camera_matrix"])
-        
-        # Load distortion coefficients
-        with open(distortion_path, 'r', encoding='utf-8') as f:
-            dist_dict = json.load(f)
-            distortion_coefficients = np.array(dist_dict["distortion_coefficients"])
-        
-        self.camera_matrix = camera_matrix
-        self.distortion_coefficients = distortion_coefficients
-        self.calibration_completed = True
-        
-        return camera_matrix, distortion_coefficients
-    
-    def get_parameters(self) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Get the calibrated camera parameters.
-        
-        Returns:
-            Tuple of (camera_matrix, distortion_coefficients)
-        """
-        if not self.calibration_completed:
-            raise ValueError("Calibration has not been completed yet")
-        
-        return self.camera_matrix, self.distortion_coefficients
-    
-    def undistort_image(self, image_path: str, output_path: Optional[str] = None) -> np.ndarray:
-        """
-        Undistort an image using the calibrated parameters.
-        
-        Args:
-            image_path: Path to the input image
-            output_path: Optional path to save the undistorted image
-            
-        Returns:
-            Undistorted image
-        """
-        if not self.calibration_completed:
-            raise ValueError("Calibration has not been completed yet")
-        
-        img = cv2.imread(image_path)
-        if img is None:
-            raise ValueError(f"Could not load image: {image_path}")
-        
-        undistorted = cv2.undistort(img, self.camera_matrix, self.distortion_coefficients, None, None)
-        
-        if output_path:
-            cv2.imwrite(output_path, undistorted)
-            
-        return undistorted
-    
-    def calibrate_with_pattern(self, image_paths: List[str], 
-                              calibration_pattern: CalibrationPattern,
-                              distortion_model: str = 'standard', 
-                              verbose: bool = False) -> Tuple[bool, np.ndarray, np.ndarray]:
-        """
-        Calibrate camera using a specific calibration pattern abstraction.
-        
-        Args:
-            image_paths: List of calibration image file paths
-            calibration_pattern: CalibrationPattern instance defining the pattern
-            distortion_model: Distortion model to use ('standard', 'rational', 'thin_prism', 'tilted')
-            verbose: Whether to print detailed information
-            
-        Returns:
-            Tuple of (success, camera_matrix, distortion_coefficients)
-        """
-        if not image_paths:
-            raise ValueError("No image paths provided")
-        
-        # Collect corner detections and object points
-        imgpoints = []
-        objpoints = []
-        valid_image_paths = []
-        
-        # Generate base object points for this pattern
-        if calibration_pattern.is_planar:
-            # For planar patterns, generate once
-            pattern_objpoints = calibration_pattern.generate_object_points()
+        self.image_points = []
+        self.object_points = []
+        successful_detections = 0
         
         if verbose:
-            print(f"Using pattern: {calibration_pattern.name}")
-            print(f"Pattern info: {calibration_pattern.get_info()}")
+            print(f"Detecting patterns in {len(self.images)} images...")
         
-        for image_path in image_paths:
-            img = cv2.imread(image_path)
-            if img is None:
-                if verbose:
-                    print(f"Could not load image: {image_path}")
-                continue
+        for i, img in enumerate(self.images):
+            success, img_pts, point_ids = self.calibration_pattern.detect_corners(img)
             
-            if self.image_size is None:
-                if len(img.shape) == 3:
-                    self.image_size = (img.shape[1], img.shape[0])
-                else:
-                    self.image_size = (img.shape[1], img.shape[0])
-            
-            # Detect corners/features using the pattern
-            success, corners, point_ids = calibration_pattern.detect_corners(img)
-            
-            if success and corners is not None:
-                imgpoints.append(corners)
+            if success:
+                self.image_points.append(img_pts)
                 
                 # Generate corresponding object points
-                if calibration_pattern.is_planar:
-                    # For planar patterns, use the same object points for all images
+                if self.calibration_pattern.is_planar:
                     if point_ids is not None:
-                        # For patterns with non-sequential detection (e.g., ChArUco)
-                        objp = calibration_pattern.generate_object_points(point_ids)
+                        obj_pts = self.calibration_pattern.generate_object_points(point_ids)
                     else:
-                        # For patterns with sequential detection (e.g., standard chessboard)
-                        objp = pattern_objpoints
+                        obj_pts = self.calibration_pattern.generate_object_points()
                 else:
-                    # For 3D patterns, generate object points based on detected features
-                    objp = calibration_pattern.generate_object_points(point_ids)
+                    obj_pts = self.calibration_pattern.generate_object_points(point_ids)
                 
-                objpoints.append(objp)
-                valid_image_paths.append(image_path)
+                self.object_points.append(obj_pts)
+                successful_detections += 1
                 
                 if verbose:
-                    print(f"Found corners in {image_path}")
+                    print(f"Image {i}: ✅ Detected {len(img_pts)} features")
             else:
                 if verbose:
-                    print(f"Cannot find pattern corners in {image_path}, skip.")
+                    print(f"Image {i}: ❌ Pattern detection failed")
         
-        if len(imgpoints) < 3:
-            raise ValueError(f"Need at least 3 images with detected corners, got {len(imgpoints)}")
+        if successful_detections < 3:
+            print(f"Insufficient detections: need at least 3, got {successful_detections}")
+            return False
         
-        # Set calibration flags based on distortion model
-        flags = 0
-        if distortion_model == 'rational':
-            flags = cv2.CALIB_RATIONAL_MODEL
-        elif distortion_model == 'thin_prism':
-            flags = cv2.CALIB_RATIONAL_MODEL | cv2.CALIB_THIN_PRISM_MODEL
-        elif distortion_model == 'tilted':
-            flags = cv2.CALIB_RATIONAL_MODEL | cv2.CALIB_THIN_PRISM_MODEL | cv2.CALIB_TILTED_MODEL
+        if verbose:
+            print(f"Successfully detected pattern in {successful_detections}/{len(self.images)} images")
         
-        # Calibrate camera
-        ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(
-            objpoints, imgpoints, self.image_size, None, None, flags=flags)
+        return True
+    
+    def calibrate_camera(self, 
+                        cameraMatrix: Optional[np.ndarray] = None,
+                        distCoeffs: Optional[np.ndarray] = None, 
+                        flags: int = 0,
+                        criteria: Optional[Tuple] = None,
+                        verbose: bool = False) -> float:
+        """
+        Calibrate camera following OpenCV's calibrateCamera interface.
         
-        if ret:
-            self.camera_matrix = mtx
-            self.distortion_coefficients = dist
-            self.rvecs = rvecs
-            self.tvecs = tvecs
-            self.valid_image_paths = valid_image_paths
-            self.calibration_completed = True
+        This method uses the point correspondences stored in class members
+        (image_points, object_points) to calibrate the camera.
+        
+        Args:
+            cameraMatrix: Initial camera matrix (3x3). If None, will be estimated.
+            distCoeffs: Initial distortion coefficients. If None, will be estimated.
+            flags: Calibration flags (same as OpenCV's calibrateCamera)
+            criteria: Termination criteria for iterative algorithms
+            verbose: Whether to print detailed progress
+            
+        Returns:
+            float: RMS reprojection error (0.0 if calibration failed)
+            
+        Note:
+            Before calling this method, you must:
+            1. Set images: set_images_from_paths() or set_images_from_arrays()
+            2. Set pattern: set_calibration_pattern()  
+            3. Detect points: detect_pattern_points()
+        """
+        if self.image_points is None or self.object_points is None:
+            raise ValueError("Point correspondences not available. Call detect_pattern_points() first.")
+        
+        if len(self.image_points) < 3:
+            raise ValueError(f"Insufficient point correspondences: need at least 3, got {len(self.image_points)}")
+        
+        if self.image_size is None:
+            raise ValueError("Image size not set")
+        
+        # Handle initial camera matrix
+        initial_camera_matrix = cameraMatrix
+        calibration_flags = flags
+        
+        # Auto-generate initial camera matrix for non-planar patterns if not provided
+        if initial_camera_matrix is None and self.calibration_pattern is not None and not self.calibration_pattern.is_planar:
+            fx = fy = max(self.image_size) * 1.2  # Rough estimate
+            cx, cy = self.image_size[0] / 2, self.image_size[1] / 2
+            initial_camera_matrix = np.array([[fx, 0, cx],
+                                            [0, fy, cy],
+                                            [0, 0, 1]], dtype=np.float32)
+            calibration_flags |= cv2.CALIB_USE_INTRINSIC_GUESS
             
             if verbose:
-                print(f"Calibration successful with {len(imgpoints)} images")
-                print(f"Camera matrix:\n{mtx}")
-                print(f"Distortion coefficients:\n{dist}")
+                print("Non-planar pattern detected, using auto-generated initial camera matrix")
         
-        return ret, mtx, dist
+        # Add USE_INTRINSIC_GUESS flag if initial matrix provided
+        if initial_camera_matrix is not None and not (calibration_flags & cv2.CALIB_USE_INTRINSIC_GUESS):
+            calibration_flags |= cv2.CALIB_USE_INTRINSIC_GUESS
+        
+        if verbose:
+            print(f"Running calibration with {len(self.image_points)} point correspondences")
+            print(f"Image size: {self.image_size}")
+            print(f"Calibration flags: {calibration_flags}")
+            if initial_camera_matrix is not None:
+                print(f"Using initial camera matrix:")
+                print(initial_camera_matrix)
+        
+        # Perform calibration
+        try:
+            ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(
+                self.object_points, 
+                self.image_points, 
+                self.image_size, 
+                initial_camera_matrix, 
+                distCoeffs,
+                flags=calibration_flags,
+                criteria=criteria
+            )
+            
+            if ret and mtx is not None:
+                # Store results in class members
+                self.camera_matrix = mtx
+                self.distortion_coefficients = dist
+                self.rvecs = rvecs
+                self.tvecs = tvecs
+                self.rms_error = ret
+                self.calibration_completed = True
+                
+                # Calculate per-image reprojection errors
+                self.per_image_errors = []
+                for obj_pts, img_pts, rvec, tvec in zip(self.object_points, self.image_points, rvecs, tvecs):
+                    projected_pts, _ = cv2.projectPoints(obj_pts, rvec, tvec, mtx, dist)
+                    error = cv2.norm(img_pts, projected_pts, cv2.NORM_L2) / np.sqrt(len(projected_pts))
+                    self.per_image_errors.append(error)
+                
+                if verbose:
+                    print(f"✅ Calibration successful!")
+                    print(f"RMS reprojection error: {ret:.4f} pixels")
+                    print(f"Camera matrix:")
+                    print(f"  fx: {mtx[0,0]:.2f}, fy: {mtx[1,1]:.2f}")
+                    print(f"  cx: {mtx[0,2]:.2f}, cy: {mtx[1,2]:.2f}")
+                    print(f"Distortion coefficients: {dist.flatten()}")
+                    print(f"Per-image errors: {[f'{err:.4f}' for err in self.per_image_errors]}")
+                
+                return ret
+            else:
+                if verbose:
+                    print("❌ Calibration failed - OpenCV returned invalid results")
+                return 0.0
+                
+        except Exception as e:
+            if verbose:
+                print(f"❌ Calibration failed with exception: {e}")
+            return 0.0
+    
+    # Getter methods for results
+    def get_camera_matrix(self) -> Optional[np.ndarray]:
+        """Get calibrated camera matrix."""
+        return self.camera_matrix
+    
+    def get_distortion_coefficients(self) -> Optional[np.ndarray]:
+        """Get calibrated distortion coefficients."""
+        return self.distortion_coefficients
+    
+    def get_extrinsics(self) -> Tuple[Optional[List[np.ndarray]], Optional[List[np.ndarray]]]:
+        """Get rotation and translation vectors for each image."""
+        return self.rvecs, self.tvecs
+    
+    def get_reprojection_error(self) -> Tuple[Optional[float], Optional[List[float]]]:
+        """Get overall and per-image reprojection errors."""
+        return self.rms_error, self.per_image_errors
+    
+    def is_calibrated(self) -> bool:
+        """Check if calibration has been completed successfully."""
+        return self.calibration_completed
