@@ -47,6 +47,73 @@ class CalibrationPattern(ABC):
         self.is_planar = is_planar
         self.detected_corners = []
         self.object_points = []
+    
+    def validate_dimensions(self, width: int, height: int, min_size: int = 3) -> None:
+        """
+        Validate pattern dimensions.
+        
+        Args:
+            width: Pattern width
+            height: Pattern height  
+            min_size: Minimum allowed size for each dimension
+            
+        Raises:
+            ValueError: If dimensions are invalid
+        """
+        if not isinstance(width, int) or not isinstance(height, int):
+            raise ValueError("Width and height must be integers")
+        if width < min_size or height < min_size:
+            raise ValueError(f"Width and height must be at least {min_size}")
+    
+    def validate_physical_size(self, size: float, param_name: str = "size") -> None:
+        """
+        Validate physical size parameter.
+        
+        Args:
+            size: Physical size in meters
+            param_name: Name of the parameter for error messages
+            
+        Raises:
+            ValueError: If size is invalid
+        """
+        if not isinstance(size, (int, float)) or size <= 0:
+            raise ValueError(f"{param_name} must be a positive number")
+    
+    def convert_to_grayscale(self, image: np.ndarray) -> np.ndarray:
+        """
+        Convert image to grayscale if needed.
+        
+        Args:
+            image: Input image (color or grayscale)
+            
+        Returns:
+            Grayscale image
+        """
+        if len(image.shape) == 3:
+            return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        return image
+    
+    def generate_planar_object_points(self, width: int, height: int, square_size: float, 
+                                    start_x: float = 0.0, start_y: float = 0.0) -> np.ndarray:
+        """
+        Generate object points for a planar pattern.
+        
+        Args:
+            width: Number of points along width
+            height: Number of points along height
+            square_size: Physical size between adjacent points
+            start_x: Starting X coordinate (default 0.0)
+            start_y: Starting Y coordinate (default 0.0)
+            
+        Returns:
+            Array of 3D object points (Nx3) with Z=0
+        """
+        objp = np.zeros((width * height, 3), np.float32)
+        objp[:, :2] = np.mgrid[0:width, 0:height].T.reshape(-1, 2)
+        objp *= square_size
+        objp[:, 0] += start_x
+        objp[:, 1] += start_y
+        return objp
         
     @abstractmethod
     def detect_corners(self, image: np.ndarray, **kwargs) -> Tuple[bool, Optional[np.ndarray], Optional[np.ndarray]]:
@@ -153,17 +220,19 @@ class StandardChessboard(CalibrationPattern):
             description="Traditional black and white checkerboard pattern",
             is_planar=True
         )
+        
+        # Use base class validation
+        self.validate_dimensions(width, height, min_size=2)
+        self.validate_physical_size(square_size, "square_size")
+        
         self.width = width
         self.height = height
         self.square_size = square_size
         
     def detect_corners(self, image: np.ndarray, **kwargs) -> Tuple[bool, Optional[np.ndarray], Optional[np.ndarray]]:
         """Detect corners using standard chessboard detection."""
-        # Convert to grayscale if needed
-        if len(image.shape) == 3:
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = image
+        # Use base class utility to convert to grayscale
+        gray = self.convert_to_grayscale(image)
             
         # Detection parameters
         flags = kwargs.get('flags', cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE)
@@ -182,12 +251,8 @@ class StandardChessboard(CalibrationPattern):
     
     def generate_object_points(self, point_ids: Optional[np.ndarray] = None) -> np.ndarray:
         """Generate 3D object points for standard chessboard (planar, z=0)."""
-        # Create 3D points (z=0 for planar pattern)
-        objp = np.zeros((self.width * self.height, 3), np.float32)
-        objp[:, :2] = np.mgrid[0:self.width, 0:self.height].T.reshape(-1, 2)
-        objp *= self.square_size
-        
-        return objp
+        # Use base class utility for planar object point generation
+        return self.generate_planar_object_points(self.width, self.height, self.square_size)
     
     def get_pattern_size(self) -> Tuple[int, int]:
         """Get pattern size."""
@@ -235,6 +300,12 @@ class CharucoBoard(CalibrationPattern):
             description="Chessboard with ArUco markers for robust detection",
             is_planar=is_planar
         )
+        
+        # Use base class validation
+        self.validate_dimensions(width, height, min_size=3)
+        self.validate_physical_size(square_size, "square_size")
+        self.validate_physical_size(marker_size, "marker_size")
+        
         self.width = width
         self.height = height
         self.square_size = square_size
@@ -261,21 +332,34 @@ class CharucoBoard(CalibrationPattern):
         
         # Detector parameters
         try:
-            # OpenCV 4.7+ method
+            # OpenCV 4.7+ method - use CharucoDetector for newer versions
             self.detector_params = cv2.aruco.DetectorParameters()
+            self.charuco_detector = cv2.aruco.CharucoDetector(self.charuco_board)
         except AttributeError:
             # Older OpenCV method
             self.detector_params = cv2.aruco.DetectorParameters_create()
+            self.charuco_detector = None
         
     def detect_corners(self, image: np.ndarray, **kwargs) -> Tuple[bool, Optional[np.ndarray], Optional[np.ndarray]]:
         """Detect corners using ChArUco detection."""
-        # Convert to grayscale if needed
-        if len(image.shape) == 3:
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = image
+        # Use base class utility to convert to grayscale
+        gray = self.convert_to_grayscale(image)
             
-        # Detect ArUco markers first
+        # Use newer CharucoDetector if available
+        if self.charuco_detector is not None:
+            try:
+                # OpenCV 4.8+ method using CharucoDetector
+                corners_charuco, ids_charuco, corners_aruco, ids_aruco = self.charuco_detector.detectBoard(gray)
+                
+                if corners_charuco is not None and len(corners_charuco) > 0:
+                    return True, corners_charuco, ids_charuco
+                else:
+                    return False, None, None
+            except Exception as e:
+                # Fallback to older method
+                pass
+        
+        # Fallback: Detect ArUco markers first, then interpolate ChArUco corners  
         try:
             # OpenCV 4.7+ method
             detector = cv2.aruco.ArucoDetector(self.aruco_dict, self.detector_params)
@@ -287,23 +371,25 @@ class CharucoBoard(CalibrationPattern):
             )
         
         if len(corners_aruco) > 0:
-            # Interpolate ChArUco corners
+            # Try to interpolate ChArUco corners using older API names
             try:
-                # Try newer OpenCV method
-                ret, corners_charuco, ids_charuco = cv2.aruco.interpolateCornersCharuco(
-                    corners_aruco, ids_aruco, gray, self.charuco_board
-                )
-            except Exception:
-                # Fallback for older versions or different parameters
-                try:
-                    ret, corners_charuco, ids_charuco = cv2.aruco.interpolateCornersCharuco(
-                        corners_aruco, ids_aruco, gray, self.charuco_board.getBoard()
+                # Try different possible function names for interpolation
+                interpolate_func = None
+                for func_name in ['interpolateCornersCharuco', 'interpolateCorners']:
+                    if hasattr(cv2.aruco, func_name):
+                        interpolate_func = getattr(cv2.aruco, func_name)
+                        break
+                
+                if interpolate_func:
+                    ret, corners_charuco, ids_charuco = interpolate_func(
+                        corners_aruco, ids_aruco, gray, self.charuco_board
                     )
-                except Exception:
-                    return False, None, None
-            
-            if ret > 0:
-                return True, corners_charuco, ids_charuco
+                    if ret > 0:
+                        return True, corners_charuco, ids_charuco
+                        
+            except Exception as e:
+                # If interpolation fails, we can't use ChArUco corners
+                pass
         
         return False, None, None
     
@@ -311,19 +397,25 @@ class CharucoBoard(CalibrationPattern):
         """Generate 3D object points for ChArUco board."""
         # Get ChArUco board corner positions
         try:
-            # Try newer OpenCV method
-            objp = self.charuco_board.getChessboardCorners()
+            # Try newer OpenCV method to get all chessboard corners
+            all_objp = self.charuco_board.getChessboardCorners()
         except AttributeError:
             # Fallback for older OpenCV versions
             try:
-                objp = self.charuco_board.chessboardCorners
+                all_objp = self.charuco_board.chessboardCorners
             except AttributeError:
                 # Manual generation as fallback
-                objp = np.zeros(((self.width - 1) * (self.height - 1), 3), np.float32)
-                objp[:, :2] = np.mgrid[0:self.width-1, 0:self.height-1].T.reshape(-1, 2)
-                objp *= self.square_size
+                all_objp = np.zeros(((self.width - 1) * (self.height - 1), 3), np.float32)
+                all_objp[:, :2] = np.mgrid[0:self.width-1, 0:self.height-1].T.reshape(-1, 2)
+                all_objp *= self.square_size
         
-        return objp
+        # For ChArUco, we need to return only the object points corresponding to detected corners
+        if point_ids is not None and len(point_ids) > 0:
+            # Return object points for the specific detected corner IDs
+            return all_objp[point_ids.flatten()]
+        else:
+            # Return all possible object points
+            return all_objp
     
     def get_pattern_size(self) -> Tuple[int, int]:
         """Get pattern size (internal corners)."""
