@@ -1,68 +1,41 @@
 /**
- * Intrinsic Camera Calibration Web Interface (Refactored)
+ * Intrinsic Camera Calibration Web Interface
+ * Handles file uploads, parameter settings, and calibration workflow
  * Uses shared ChessboardConfig module for chessboard functionality
+ * Extends BaseCalibration for common functionality
  */
 
-class IntrinsicCalibration {
+class IntrinsicCalibration extends BaseCalibration {
     constructor() {
-        this.sessionId = this.generateSessionId();
-        this.uploadedImages = [];
-        this.calibrationResults = null;
-        this.currentView = 'images';
-        
+        super('intrinsic');
         this.initializeEventListeners();
-        this.initializeModal();
-        this.initializeChessboard();
+        this.initializeConsole();
         this.updateUI();
     }
     
-    initializeChessboard() {
-        console.log('Initializing chessboard using shared ChessboardConfig module...');
-        
-        // Create instance of shared ChessboardConfig
-        this.chessboardConfig = new ChessboardConfig({
-            statusCallback: (message, type) => this.showStatus(message, type)
-        });
-        
-        // Initialize the chessboard config
-        this.chessboardConfig.initialize();
-        
-        // Set up global access for template onclick handlers
-        window.chessboardConfig = this.chessboardConfig;
-        
-        // Override saveConfiguration to integrate with intrinsic calibration
-        const originalSaveConfiguration = this.chessboardConfig.saveConfiguration.bind(this.chessboardConfig);
-        this.chessboardConfig.saveConfiguration = (callback) => {
-            originalSaveConfiguration((config) => {
-                // Update hidden form inputs for backward compatibility
-                document.getElementById('chessboard-x').value = config.cornerX;
-                document.getElementById('chessboard-y').value = config.cornerY;
-                document.getElementById('square-size').value = config.squareSize;
-                
-                // Update parameters on server
-                this.updateParameters();
-                
-                // Call provided callback if any
-                if (callback) callback(config);
-                
-                this.showStatus('Chessboard configuration updated', 'success');
-            });
-        };
-        
-        // Initial display update
-        this.updateChessboardDisplay();
-    }
-
-    updateChessboardDisplay() {
-        // Update the chessboard display using the shared module
-        if (this.chessboardConfig && this.chessboardConfig.updateChessboardDisplay) {
-            this.chessboardConfig.updateChessboardDisplay();
-        }
+    // ========================================
+    // Intrinsic-Specific Overrides
+    // ========================================
+    
+    getImageUploadMessage() {
+        return 'calibration images';
     }
     
-    generateSessionId() {
-        return 'intrinsic_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    getDefaultProgressMessage() {
+        return 'Upload calibration images to see results';
     }
+    
+    getGlobalInstanceName() {
+        return 'intrinsicCalib';
+    }
+    
+    getCalibrationButtonText() {
+        return 'Start Intrinsic Calibration';
+    }
+    
+    // ========================================
+    // Event Listeners Setup
+    // ========================================
     
     initializeEventListeners() {
         // File upload
@@ -73,8 +46,8 @@ class IntrinsicCalibration {
             imageFiles.addEventListener('change', (e) => this.handleImageUpload(e.target.files));
         }
         
+        // Drag and drop
         if (uploadArea) {
-            // Drag and drop
             uploadArea.addEventListener('dragover', (e) => {
                 e.preventDefault();
                 uploadArea.classList.add('dragover');
@@ -91,7 +64,7 @@ class IntrinsicCalibration {
             });
         }
         
-        // Parameters change
+        // Parameters change listeners
         ['chessboard-x', 'chessboard-y', 'square-size', 'distortion-model'].forEach(id => {
             const element = document.getElementById(id);
             if (element) {
@@ -114,406 +87,216 @@ class IntrinsicCalibration {
         });
     }
     
-    async handleImageUpload(files) {
-        const formData = new FormData();
-        formData.append('session_id', this.sessionId);
-        formData.append('calibration_type', 'intrinsic');
-        
-        for (let file of files) {
-            if (file.type.startsWith('image/')) {
-                formData.append('files', file);
-            }
-        }
-        
-        try {
-            this.showStatus('Uploading images...', 'info');
-            
-            const response = await fetch('/api/upload_images', {
-                method: 'POST',
-                body: formData
-            });
-            
-            const result = await response.json();
-            
-            if (result.error) {
-                this.showStatus(`Error: ${result.error}`, 'error');
-                return;
-            }
-            
-            // Backend returns all images (existing + new), so just replace the array
-            const allImages = result.files || [];
-            this.uploadedImages = allImages;
-            
-            this.showStatus(result.message, 'success');
-            this.updateUI();
-            this.displayUploadedImages();
-            
-        } catch (error) {
-            this.showStatus(`Upload failed: ${error.message}`, 'error');
-        }
-    }
-    
-    displayUploadedImages() {
-        const placeholder = document.getElementById('results-placeholder');
-        const comparisonTable = document.getElementById('image-comparison-table');
-        const tableBody = document.getElementById('image-comparison-body');
-        
-        // Update table display
-        if (this.uploadedImages.length === 0) {
-            if (placeholder) placeholder.style.display = 'block';
-            if (comparisonTable) comparisonTable.style.display = 'none';
-            return;
-        }
-        
-        if (placeholder) placeholder.style.display = 'none';
-        if (comparisonTable) comparisonTable.style.display = 'table';
-        
-        if (!tableBody) return;
-        
-        // Clear and populate table
-        tableBody.innerHTML = '';
-        
-        // Add select all row
-        const selectAllRow = document.createElement('tr');
-        selectAllRow.innerHTML = `
-            <td class="image-selection-cell">
-                <div class="select-all-container">
-                    <input type="checkbox" id="select-all-checkbox" class="select-all-checkbox" checked>
-                    <label for="select-all-checkbox" class="select-all-label">Select All</label>
-                </div>
-            </td>
-            <td colspan="3" style="text-align: center; color: #666; font-style: italic; padding: 1rem;">
-                Use checkboxes to select images for calibration, or × button to remove images
-            </td>
-        `;
-        tableBody.appendChild(selectAllRow);
-        
-        this.uploadedImages.forEach((file, index) => {
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td class="image-selection-cell">
-                    <div class="selection-row-1">
-                        <span class="image-index">${index + 1}</span>
-                        <span class="image-name">${file.name}</span>
-                    </div>
-                    <div class="selection-row-2">
-                        <span class="image-resolution" id="resolution-${index}">Loading...</span>
-                    </div>
-                    <div class="selection-row-3">
-                        <input type="checkbox" id="image-${index}" class="image-checkbox" data-index="${index}" checked>
-                        <button class="image-delete-btn" onclick="intrinsicCalib.removeImage(${index})" title="Remove image">&times;</button>
-                    </div>
-                </td>
-                <td>
-                    <div class="comparison-image-container">
-                        <img src="${file.url}" alt="Original ${index + 1}" class="comparison-image" loading="lazy" onclick="intrinsicCalib.openModal('${file.url}', 'Original Image ${index + 1}')">
-                    </div>
-                </td>
-                <td id="corner-cell-${index}">
-                    <div class="image-placeholder">
-                        <div class="placeholder-icon">⏳</div>
-                        <div class="placeholder-text">Corner detection pending</div>
-                    </div>
-                </td>
-                <td id="undistorted-cell-${index}">
-                    <div class="image-placeholder">
-                        <div class="placeholder-icon">⏳</div>
-                        <div class="placeholder-text">Calibration needed</div>
-                    </div>
-                </td>
-            `;
-            tableBody.appendChild(row);
-            
-            // Load image dimensions for this row
-            this.loadImageDimensions(file.url, index);
-        });
-        
-        // Set up select all functionality
-        this.setupSelectAllFunctionality();
-    }
-    
-    loadImageDimensions(imageUrl, index) {
-        const img = new Image();
-        img.onload = () => {
-            const resolutionElement = document.getElementById(`resolution-${index}`);
-            if (resolutionElement) {
-                resolutionElement.textContent = `${img.width} × ${img.height} px`;
-            }
-        };
-        img.onerror = () => {
-            const resolutionElement = document.getElementById(`resolution-${index}`);
-            if (resolutionElement) {
-                resolutionElement.textContent = 'Unable to load';
-            }
-        };
-        img.src = imageUrl;
-    }
-    
-    setupSelectAllFunctionality() {
-        const selectAllCheckbox = document.getElementById('select-all-checkbox');
-        const imageCheckboxes = document.querySelectorAll('.image-checkbox');
-        
-        if (selectAllCheckbox) {
-            selectAllCheckbox.addEventListener('change', (e) => {
-                imageCheckboxes.forEach(checkbox => {
-                    checkbox.checked = e.target.checked;
-                });
-            });
-        }
-        
-        // Update select all when individual checkboxes change
-        imageCheckboxes.forEach(checkbox => {
-            checkbox.addEventListener('change', () => {
-                const allChecked = Array.from(imageCheckboxes).every(cb => cb.checked);
-                const noneChecked = Array.from(imageCheckboxes).every(cb => !cb.checked);
-                
-                if (selectAllCheckbox) {
-                    selectAllCheckbox.checked = allChecked;
-                    selectAllCheckbox.indeterminate = !allChecked && !noneChecked;
-                }
-            });
-        });
-    }
-    
-    async removeImage(index) {
-        try {
-            const response = await fetch('/api/remove_image', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    session_id: this.sessionId,
-                    image_index: index
-                })
-            });
-            
-            const result = await response.json();
-            
-            if (result.error) {
-                this.showStatus(`Error: ${result.error}`, 'error');
-                return;
-            }
-            
-            this.uploadedImages = result.files;
-            this.showStatus('Image removed', 'success');
-            this.updateUI();
-            this.displayUploadedImages();
-            
-        } catch (error) {
-            this.showStatus(`Remove failed: ${error.message}`, 'error');
-        }
-    }
-    
-    async clearAllImages() {
-        if (!confirm('Are you sure you want to clear all images?')) {
-            return;
-        }
-        
-        try {
-            const response = await fetch('/api/clear_images', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    session_id: this.sessionId
-                })
-            });
-            
-            const result = await response.json();
-            
-            if (result.error) {
-                this.showStatus(`Error: ${result.error}`, 'error');
-                return;
-            }
-            
-            this.uploadedImages = [];
-            this.calibrationResults = null;
-            this.showStatus('All images cleared', 'success');
-            this.updateUI();
-            this.displayUploadedImages();
-            
-        } catch (error) {
-            this.showStatus(`Clear failed: ${error.message}`, 'error');
-        }
-    }
+    // ========================================
+    // Parameter Management
+    // ========================================
     
     async updateParameters() {
-        const chessboardX = document.getElementById('chessboard-x');
-        const chessboardY = document.getElementById('chessboard-y');
-        const squareSize = document.getElementById('square-size');
-        const distortionModel = document.getElementById('distortion-model');
-        
-        if (!chessboardX || !chessboardY || !squareSize || !distortionModel) {
-            throw new Error('Missing parameter input elements');
-        }
-        
-        const params = {
+        const parameters = {
             session_id: this.sessionId,
-            chessboard_x: parseInt(chessboardX.value),
-            chessboard_y: parseInt(chessboardY.value),
-            square_size: parseFloat(squareSize.value),
-            distortion_model: distortionModel.value
+            chessboard_x: parseInt(document.getElementById('chessboard-x').value),
+            chessboard_y: parseInt(document.getElementById('chessboard-y').value),
+            square_size: parseFloat(document.getElementById('square-size').value),
+            distortion_model: document.getElementById('distortion-model').value
         };
         
         try {
             const response = await fetch('/api/set_parameters', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(params)
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(parameters)
             });
             
             const result = await response.json();
-            
             if (result.error) {
-                throw new Error(`Parameter error: ${result.error}`);
+                this.showStatus(`Parameter error: ${result.error}`, 'error');
             }
-            
-            console.log('Parameters set successfully:', params);
             
         } catch (error) {
             this.showStatus(`Parameter update failed: ${error.message}`, 'error');
         }
     }
     
+    // ========================================
+    // Calibration Process
+    // ========================================
+    
     async startCalibration() {
         const selectedIndices = this.getSelectedImageIndices();
         
         if (selectedIndices.length < 3) {
-            this.showStatus('Please select at least 3 images for calibration', 'error');
+            this.showStatus('Need at least 3 selected images for calibration', 'error');
             return;
         }
         
         try {
-            this.showStatus('Setting parameters and starting calibration...', 'info');
+            this.showStatus(`Starting intrinsic calibration with ${selectedIndices.length} selected images...`, 'info');
+            const calibrateBtn = document.getElementById('calibrate-btn');
+            if (calibrateBtn) calibrateBtn.disabled = true;
             
-            // First, ensure parameters are set
-            try {
-                await this.updateParameters();
-            } catch (paramError) {
-                this.showStatus(`Parameter setup failed: ${paramError.message}`, 'error');
-                return;
-            }
+            // Clear console and start polling
+            await this.clearConsole();
+            this.startConsolePolling();
             
-            this.showStatus('Starting calibration...', 'info');
+            // Update parameters first
+            await this.updateParameters();
             
             const response = await fetch('/api/calibrate', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     session_id: this.sessionId,
-                    selected_indices: selectedIndices,
-                    distortion_model: document.getElementById('distortion-model').value
+                    calibration_type: 'intrinsic',
+                    selected_indices: selectedIndices
                 })
             });
             
             const result = await response.json();
             
             if (result.error) {
-                this.showStatus(`Calibration error: ${result.error}`, 'error');
+                this.showStatus(`Calibration failed: ${result.error}`, 'error');
+                if (calibrateBtn) calibrateBtn.disabled = false;
+                this.stopConsolePolling();
+                return;
+            }
+            
+            if (!result.success) {
+                this.showStatus('Calibration failed: Unknown error', 'error');
+                if (calibrateBtn) calibrateBtn.disabled = false;
+                this.stopConsolePolling();
                 return;
             }
             
             this.calibrationResults = result;
             this.showStatus(result.message, 'success');
-            this.updateUI();
             this.displayResults();
+            this.updateUI();
+            
+            // Stop console polling after successful calibration
+            this.stopConsolePolling();
+            // Do one final refresh to get any remaining messages
+            setTimeout(() => this.refreshConsole(), 500);
             
         } catch (error) {
             this.showStatus(`Calibration failed: ${error.message}`, 'error');
+            const calibrateBtn = document.getElementById('calibrate-btn');
+            if (calibrateBtn) calibrateBtn.disabled = false;
+            this.stopConsolePolling();
         }
     }
     
+    // ========================================
+    // Results Display
+    // ========================================
+    
     displayResults() {
-        if (!this.calibrationResults) return;
+        if (!this.calibrationResults || !this.calibrationResults.success) return;
         
-        // Show calibration metrics panel
-        const metricsPanel = document.getElementById('calibration-metrics');
-        if (metricsPanel) {
-            metricsPanel.style.display = 'block';
-        }
-        
-        // Camera matrix
-        const cameraMatrix = this.calibrationResults.camera_matrix;
-        document.getElementById('camera-matrix-display').innerHTML = `
-            <pre>${this.formatMatrix(cameraMatrix)}</pre>
-        `;
-        
-        // Distortion coefficients - show only relevant ones based on model
-        const distCoeffs = this.calibrationResults.distortion_coefficients[0] || this.calibrationResults.distortion_coefficients;
-        const distortionModel = document.getElementById('distortion-model').value;
-        
-        let relevantCoeffs;
-        let labels;
-        
-        switch(distortionModel) {
-            case 'standard':
-                relevantCoeffs = distCoeffs.slice(0, 5);
-                labels = ['k₁', 'k₂', 'p₁', 'p₂', 'k₃'];
-                break;
-            case 'rational':
-                relevantCoeffs = distCoeffs.slice(0, 8);
-                labels = ['k₁', 'k₂', 'p₁', 'p₂', 'k₃', 'k₄', 'k₅', 'k₆'];
-                break;
-            case 'thin_prism':
-                relevantCoeffs = distCoeffs.slice(0, 12);
-                labels = ['k₁', 'k₂', 'p₁', 'p₂', 'k₃', 'k₄', 'k₅', 'k₆', 's₁', 's₂', 's₃', 's₄'];
-                break;
-            case 'tilted':
-                relevantCoeffs = distCoeffs;
-                labels = ['k₁', 'k₂', 'p₁', 'p₂', 'k₃', 'k₄', 'k₅', 'k₆', 's₁', 's₂', 's₃', 's₄', 'τₓ', 'τᵧ'];
-                break;
-            default:
-                relevantCoeffs = distCoeffs;
-                labels = distCoeffs.map((_, i) => `coeff${i+1}`);
-        }
-        
-        const coeffDisplay = relevantCoeffs.map((coeff, i) => 
-            `${labels[i]}: ${coeff.toFixed(6)}`
-        ).join('\n');
-        
-        document.getElementById('distortion-display').innerHTML = `
-            <pre>${coeffDisplay}</pre>
-        `;
-        
-        // Reprojection error - check both possible field names
-        const errorDisplay = document.getElementById('error-display');
-        const rmsError = this.calibrationResults.rms_error || this.calibrationResults.reprojection_error;
-        if (rmsError !== undefined) {
-            errorDisplay.innerHTML = `<strong>${rmsError.toFixed(4)} pixels</strong>`;
-        } else {
-            errorDisplay.innerHTML = '<em>Not calculated</em>';
-        }
-        
-        // Images count
-        const imagesCountDisplay = document.getElementById('images-count-display');
-        if (imagesCountDisplay && this.calibrationResults.images_used !== undefined) {
-            imagesCountDisplay.innerHTML = `<strong>${this.calibrationResults.images_used} images</strong>`;
-        }
-        
-        // Update progress info
-        const progressInfo = document.getElementById('progress-info');
-        if (progressInfo) {
-            progressInfo.innerHTML = `✅ Calibration complete with ${this.calibrationResults.images_used || this.uploadedImages.length} images`;
-        }
-        
-        // Show download button
-        const downloadBtn = document.getElementById('download-btn');
-        if (downloadBtn) {
-            downloadBtn.style.display = 'block';
+        // Show metrics in control panel
+        const metricsDiv = document.getElementById('calibration-metrics');
+        if (metricsDiv) {
+            metricsDiv.style.display = 'block';
+            
+            // Update metric displays with proper type checking
+            if (this.calibrationResults.camera_matrix) {
+                this.updateMetricDisplay('camera-matrix-display', this.formatMatrix(this.calibrationResults.camera_matrix));
+            }
+            if (this.calibrationResults.distortion_coefficients) {
+                const distortionModel = this.calibrationResults.distortion_model || 'standard';
+                this.updateMetricDisplay('distortion-coeffs-display', this.formatDistortionCoeffs(this.calibrationResults.distortion_coefficients, distortionModel));
+            }
+            if (typeof this.calibrationResults.rms_error === 'number') {
+                this.updateMetricDisplay('rms-error-display', `<strong>${this.calibrationResults.rms_error.toFixed(4)} pixels</strong>`);
+            }
+            if (typeof this.calibrationResults.images_used === 'number') {
+                this.updateMetricDisplay('images-used-display', `<strong>${this.calibrationResults.images_used} images</strong>`);
+            }
+            
+            // Update progress info
+            const progressInfo = document.getElementById('progress-info');
+            if (progressInfo) {
+                progressInfo.innerHTML = `✅ Calibration complete with ${this.calibrationResults.images_used} images`;
+            }
         }
         
         // Update table with corner detection and undistorted images
         this.updateImageTable();
     }
     
+    updateMetricDisplay(elementId, content) {
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.innerHTML = content;
+        }
+    }
+    
+    formatMatrix(matrix) {
+        if (!Array.isArray(matrix)) return '<pre>Invalid matrix data</pre>';
+        
+        return '<pre>' + matrix.map(row => {
+            if (!Array.isArray(row)) return '[Invalid row]';
+            return '[' + row.map(val => {
+                const num = parseFloat(val);
+                return isNaN(num) ? 'NaN' : num.toFixed(4).padStart(10);
+            }).join('  ') + ']';
+        }).join('\n') + '</pre>';
+    }
+    
+    formatDistortionCoeffs(coeffs, distortionModel = 'standard') {
+        if (!Array.isArray(coeffs)) return '<pre>Invalid coefficients data</pre>';
+        
+        // Handle both 1D and 2D arrays (OpenCV sometimes returns 2D)
+        let flatCoeffs = coeffs;
+        if (coeffs.length > 0 && Array.isArray(coeffs[0])) {
+            // 2D array - flatten it
+            flatCoeffs = coeffs[0];
+        }
+        
+        if (!Array.isArray(flatCoeffs)) return '<pre>Invalid coefficients format</pre>';
+        
+        // Determine expected coefficient count based on distortion model
+        const expectedCoeffCounts = {
+            'standard': 5,    // k1, k2, p1, p2, k3
+            'rational': 8,    // k1-k6, p1, p2  
+            'thin_prism': 12, // k1-k6, p1, p2, s1-s4
+            'tilted': 14      // k1-k6, p1, p2, s1-s4, τx, τy
+        };
+        
+        const expectedCount = expectedCoeffCounts[distortionModel] || 5;
+        
+        // Remove trailing zeros beyond the expected count
+        let displayCoeffs = [...flatCoeffs];
+        
+        // For rational model (8 coeffs), if we have more than 8 coefficients,
+        // check if coefficients beyond index 7 are all zeros and remove them
+        if (distortionModel === 'rational' && displayCoeffs.length > 8) {
+            let hasNonZeroAfter8 = false;
+            for (let i = 8; i < displayCoeffs.length; i++) {
+                if (Math.abs(parseFloat(displayCoeffs[i])) > 1e-10) {
+                    hasNonZeroAfter8 = true;
+                    break;
+                }
+            }
+            if (!hasNonZeroAfter8) {
+                displayCoeffs = displayCoeffs.slice(0, 8);
+            }
+        }
+        
+        // General trailing zero removal for all models
+        while (displayCoeffs.length > expectedCount && 
+               Math.abs(parseFloat(displayCoeffs[displayCoeffs.length - 1])) < 1e-10) {
+            displayCoeffs.pop();
+        }
+        
+        return '<pre>[' + displayCoeffs.map((val, index) => {
+            const num = parseFloat(val);
+            const formattedNum = isNaN(num) ? 'NaN' : num.toFixed(6);
+            return `  ${formattedNum}`;
+        }).join(',\n') + '\n]</pre>';
+    }
+    
     updateImageTable() {
-        if (!this.calibrationResults || !this.calibrationResults.corner_images) return;
+        if (!this.calibrationResults) return;
         
         const cornerImages = this.calibrationResults.corner_images || [];
         const undistortedImages = this.calibrationResults.undistorted_images || [];
@@ -533,196 +316,200 @@ class IntrinsicCalibration {
         this.uploadedImages.forEach((file, index) => {
             // Update corner detection column
             const cornerCell = document.getElementById(`corner-cell-${index}`);
-            if (cornerImageMap[index]) {
-                cornerCell.innerHTML = `
-                    <div class="comparison-image-container">
-                        <img src="${cornerImageMap[index].url}" alt="Corners ${index + 1}" class="comparison-image" loading="lazy" onclick="intrinsicCalib.openModal('${cornerImageMap[index].url}', 'Corner Detection ${index + 1}')">
-                    </div>
-                `;
-            } else {
-                cornerCell.innerHTML = `
-                    <div style="color: #dc3545; padding: 2rem;">
-                        <div style="font-size: 2rem;">❌</div>
-                        <div>No corners detected</div>
-                    </div>
-                `;
+            if (cornerCell) {
+                if (cornerImageMap[index]) {
+                    cornerCell.innerHTML = `
+                        <div class="comparison-image-container">
+                            <img src="${cornerImageMap[index].url}" alt="Corners ${index + 1}" class="comparison-image" loading="lazy" onclick="intrinsicCalib.openModal('${cornerImageMap[index].url}', 'Corner Detection ${index + 1}')">
+                        </div>
+                    `;
+                } else {
+                    cornerCell.innerHTML = `
+                        <div style="color: #dc3545; padding: 2rem;">
+                            <div style="font-size: 2rem;">❌</div>
+                            <div>No corners detected</div>
+                        </div>
+                    `;
+                }
             }
             
             // Update undistorted column
             const undistortedCell = document.getElementById(`undistorted-cell-${index}`);
-            if (undistortedImageMap[index]) {
-                undistortedCell.innerHTML = `
-                    <div class="comparison-image-container">
-                        <img src="${undistortedImageMap[index].url}" alt="Undistorted ${index + 1}" class="comparison-image" loading="lazy" onclick="intrinsicCalib.openModal('${undistortedImageMap[index].url}', 'Undistorted Image ${index + 1}')">
-                    </div>
-                `;
-            } else {
-                undistortedCell.innerHTML = `
-                    <div style="color: #666; padding: 2rem;">
-                        <div style="font-size: 2rem;">⚠️</div>
-                        <div>Undistortion failed</div>
-                    </div>
-                `;
+            if (undistortedCell) {
+                if (undistortedImageMap[index]) {
+                    undistortedCell.innerHTML = `
+                        <div class="comparison-image-container">
+                            <img src="${undistortedImageMap[index].url}" alt="Undistorted ${index + 1}" class="comparison-image" loading="lazy" onclick="intrinsicCalib.openModal('${undistortedImageMap[index].url}', 'Undistorted Image ${index + 1}')">
+                        </div>
+                    `;
+                } else {
+                    undistortedCell.innerHTML = `
+                        <div style="color: #666; padding: 2rem;">
+                            <div style="font-size: 2rem;">⚠️</div>
+                            <div>Undistortion failed</div>
+                        </div>
+                    `;
+                }
             }
         });
     }
     
-    formatMatrix(matrix) {
-        if (!matrix || !Array.isArray(matrix)) return 'Matrix not available';
-        
-        // Ensure we have a proper 3x3 matrix format
-        if (matrix.length === 9) {
-            // Convert flat array to 3x3 matrix
-            const mat3x3 = [
-                matrix.slice(0, 3),
-                matrix.slice(3, 6),
-                matrix.slice(6, 9)
-            ];
-            return this.format3x3Matrix(mat3x3);
-        } else if (matrix.length === 3 && Array.isArray(matrix[0])) {
-            // Already in 3x3 format
-            return this.format3x3Matrix(matrix);
-        } else {
-            return 'Invalid matrix format';
-        }
-    }
-    
-    format3x3Matrix(matrix) {
-        return matrix.map(row => 
-            '[' + row.map(val => val.toFixed(2).padStart(10)).join('  ') + ']'
-        ).join('\n');
-    }
-    
-    async downloadResults() {
-        if (!this.calibrationResults) {
-            this.showStatus('No calibration results to download', 'error');
-            return;
-        }
-        
-        try {
-            const response = await fetch(`/api/export_results/${this.sessionId}`);
-            
-            if (!response.ok) {
-                throw new Error('Download failed');
-            }
-            
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = url;
-            a.download = `intrinsic_calibration_results_${this.sessionId}.zip`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-            
-            this.showStatus('Results downloaded successfully', 'success');
-            
-        } catch (error) {
-            this.showStatus(`Download failed: ${error.message}`, 'error');
-        }
-    }
-    
-    updateUI() {
-        const imageCount = this.uploadedImages.length;
-        const hasResults = this.calibrationResults !== null;
-        
-        // Update button states
-        const calibrateBtn = document.getElementById('calibrate-btn');
-        const downloadBtn = document.getElementById('download-btn');
-        const clearBtn = document.getElementById('clear-all-images-btn');
-        
-        if (calibrateBtn) calibrateBtn.disabled = imageCount < 3;
-        if (downloadBtn) {
-            downloadBtn.disabled = !hasResults;
-            downloadBtn.style.display = hasResults ? 'block' : 'none';
-        }
-        if (clearBtn) clearBtn.style.display = imageCount > 0 ? 'block' : 'none';
-        
-        // Show/hide calibration metrics panel
-        const metricsPanel = document.getElementById('calibration-metrics');
-        if (metricsPanel) {
-            metricsPanel.style.display = hasResults ? 'block' : 'none';
-        }
-        
-        // Update counters and status
-        const statusElements = document.querySelectorAll('.image-count');
-        statusElements.forEach(el => el.textContent = imageCount);
-    }
+    // ========================================
+    // View Switching
+    // ========================================
     
     switchView(view) {
         this.currentView = view;
         
-        // Update button states
+        // Update active button
         document.querySelectorAll('.view-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.view === view);
+            btn.classList.remove('active');
+        });
+        document.querySelector(`[data-view="${view}"]`).classList.add('active');
+        
+        // Show/hide appropriate sections
+        const imageView = document.getElementById('image-comparison-view');
+        const metricsView = document.getElementById('metrics-view');
+        
+        if (imageView && metricsView) {
+            if (view === 'images') {
+                imageView.style.display = 'block';
+                metricsView.style.display = 'none';
+            } else if (view === 'metrics') {
+                imageView.style.display = 'none';
+                metricsView.style.display = 'block';
+            }
+        }
+    }
+    
+    // ========================================
+    // UI State Management Overrides
+    // ========================================
+    
+    resetUIAfterClear() {
+        super.resetUIAfterClear();
+        
+        // Reset metrics view
+        const metricsDiv = document.getElementById('calibration-metrics');
+        if (metricsDiv) {
+            metricsDiv.style.display = 'none';
+        }
+    }
+    
+    // ========================================
+    // Console Output Management
+    // ========================================
+    
+    initializeConsole() {
+        // Set up console refresh polling
+        this.consolePolling = null;
+        
+        // Add initial message to console
+        const consoleOutput = document.getElementById('console-output');
+        if (consoleOutput) {
+            consoleOutput.textContent = 'Console initialized. Ready for calibration...\n';
+        }
+        
+        // Set up console controls
+        const clearBtn = document.getElementById('clear-console-btn');
+        const refreshBtn = document.getElementById('refresh-console-btn');
+        
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => this.clearConsole());
+        }
+        
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => this.refreshConsole());
+        }
+        
+        // Initialize console resizer
+        this.initializeConsoleResizer();
+    }
+    
+    initializeConsoleResizer() {
+        const resizer = document.getElementById('console-resizer');
+        const consoleArea = document.getElementById('console-area');
+        const resultsPanel = document.querySelector('.intrinsic-results-panel');
+        
+        if (!resizer || !consoleArea || !resultsPanel) return;
+        
+        let isResizing = false;
+        let startY = 0;
+        let startHeight = 0;
+        
+        resizer.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            startY = e.clientY;
+            startHeight = parseInt(document.defaultView.getComputedStyle(consoleArea).height, 10);
+            
+            // Prevent text selection during drag
+            document.body.style.userSelect = 'none';
+            resizer.style.background = '#007acc';
+            
+            e.preventDefault();
         });
         
-        // Show/hide content based on view
-        // Add view switching logic here if needed
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            
+            const deltaY = startY - e.clientY; // Reversed because we're resizing from bottom
+            const newHeight = Math.max(80, Math.min(400, startHeight + deltaY));
+            
+            consoleArea.style.height = newHeight + 'px';
+        });
+        
+        document.addEventListener('mouseup', () => {
+            if (isResizing) {
+                isResizing = false;
+                document.body.style.userSelect = '';
+                resizer.style.background = '';
+            }
+        });
     }
     
-    openModal(imageSrc, title) {
-        const modal = document.getElementById('imageModal');
-        const modalImage = document.getElementById('modalImage');
-        const modalTitle = document.getElementById('modalTitle');
+    startConsolePolling() {
+        this.stopConsolePolling(); // Stop any existing polling
         
-        if (modal && modalImage && modalTitle) {
-            modalImage.src = imageSrc;
-            modalTitle.textContent = title;
-            modal.style.display = 'block';
+        this.consolePolling = setInterval(() => {
+            this.refreshConsole();
+        }, 1000); // Poll every second during calibration
+    }
+    
+    stopConsolePolling() {
+        if (this.consolePolling) {
+            clearInterval(this.consolePolling);
+            this.consolePolling = null;
         }
     }
     
-    initializeModal() {
-        const modal = document.getElementById('imageModal');
-        const modalClose = document.getElementById('modalClose');
-        
-        if (modalClose) {
-            // Close modal when clicking the close button
-            modalClose.addEventListener('click', () => {
-                if (modal) modal.style.display = 'none';
-            });
-        }
-        
-        if (modal) {
-            // Close modal when clicking outside the image
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) {
-                    modal.style.display = 'none';
+    async refreshConsole() {
+        try {
+            const response = await fetch(`/api/console/${this.sessionId}`);
+            const data = await response.json();
+            
+            if (data.console_output) {
+                const consoleOutput = document.getElementById('console-output');
+                if (consoleOutput) {
+                    consoleOutput.textContent = data.console_output.join('\n');
+                    // Auto-scroll to bottom
+                    consoleOutput.scrollTop = consoleOutput.scrollHeight;
                 }
-            });
-        }
-        
-        // Close modal with Escape key
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && modal && modal.style.display === 'block') {
-                modal.style.display = 'none';
             }
-        });
+        } catch (error) {
+            console.error('Error fetching console output:', error);
+        }
     }
     
-    showStatus(message, type = 'info') {
-        const statusDiv = document.getElementById('calibration-status');
-        if (statusDiv) {
-            statusDiv.className = `status-display ${type}`;
-            statusDiv.innerHTML = `<p>${message}</p>`;
-        }
-        console.log(`[${type.toUpperCase()}] ${message}`);
-    }
-    
-    getSelectedImageIndices() {
-        const selectedIndices = [];
-        const checkboxes = document.querySelectorAll('.image-checkbox');
-        
-        checkboxes.forEach(checkbox => {
-            if (checkbox.checked) {
-                selectedIndices.push(parseInt(checkbox.dataset.index));
+    async clearConsole() {
+        try {
+            await fetch(`/api/console/${this.sessionId}/clear`, { method: 'GET' });
+            const consoleOutput = document.getElementById('console-output');
+            if (consoleOutput) {
+                consoleOutput.textContent = '';
             }
-        });
-        
-        return selectedIndices;
+        } catch (error) {
+            console.error('Error clearing console:', error);
+        }
     }
 }
 
