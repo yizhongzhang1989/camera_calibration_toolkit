@@ -158,8 +158,8 @@ if __name__ == "__main__":
     parser.add_argument("--xx", type=int, required=True, help="Number of corners along chessboard X axis")
     parser.add_argument("--yy", type=int, required=True, help="Number of corners along chessboard Y axis")
     parser.add_argument("--square_size", type=float, required=True, help="Size of one chessboard square in meters")
-    parser.add_argument("--calib_out_dir", required=True, help="Path to output folder for calibration parameters")
-    parser.add_argument("--reproj_out_dir", help="(Optional) Output folder for reprojection visualization")
+    parser.add_argument("--calib_out_dir", default="data/results", help="Path to output folder for calibration parameters")
+    parser.add_argument("--reproj_out_dir", default="data/results", help="(Optional) Output folder for reprojection visualization")
 
     args = parser.parse_args()
 

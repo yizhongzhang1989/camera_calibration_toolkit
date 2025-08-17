@@ -77,7 +77,7 @@ def test_chessboard_calibration():
             print(f"   Principal Point: cx={camera_matrix[0,2]:.1f}, cy={camera_matrix[1,2]:.1f}")
             
             # Save calibration data to JSON
-            output_dir = "results/chessboard_calibration"
+            output_dir = "data/results/chessboard_calibration"
             os.makedirs(output_dir, exist_ok=True)
             calibrator.save_calibration(
                 os.path.join(output_dir, "calibration_results.json"),
@@ -171,7 +171,7 @@ def test_charuco_calibration():
             print(f"   Principal Point: cx={camera_matrix[0,2]:.1f}, cy={camera_matrix[1,2]:.1f}")
             
             # Save calibration data to JSON
-            output_dir = "results/charuco_calibration"
+            output_dir = "data/results/charuco_calibration"
             os.makedirs(output_dir, exist_ok=True)
             calibrator.save_calibration(
                 os.path.join(output_dir, "calibration_results.json"),
@@ -215,5 +215,5 @@ if __name__ == "__main__":
     test_charuco_calibration()
     
     print(f"\n✨ All calibrations completed!")
-    print(f"   Chessboard results: results/chessboard_calibration/")
-    print(f"   ChArUco results: results/charuco_calibration/")
+    print(f"   Chessboard results: data/results/chessboard_calibration/")
+    print(f"   ChArUco results: data/results/charuco_calibration/")

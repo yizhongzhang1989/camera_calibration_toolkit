@@ -30,8 +30,8 @@ def main():
     parser.add_argument("--xx", type=int, help="Number of corners along chessboard X axis")
     parser.add_argument("--yy", type=int, help="Number of corners along chessboard Y axis") 
     parser.add_argument("--square_size", type=float, help="Size of one chessboard square in meters")
-    parser.add_argument("--calib_out_dir", help="Path to output folder for calibration parameters")
-    parser.add_argument("--reproj_out_dir", help="Output folder for reprojection visualization")
+    parser.add_argument("--calib_out_dir", default="data/results", help="Path to output folder for calibration parameters")
+    parser.add_argument("--reproj_out_dir", default="data/results", help="Output folder for reprojection visualization")
     parser.add_argument("--port", type=int, default=5000, help="Web server port (web mode only)")
     parser.add_argument("--host", default='localhost', help="Web server host (web mode only)")
     
@@ -47,9 +47,10 @@ def main():
         
     elif args.mode == 'intrinsic':
         # Run intrinsic calibration
-        if not all([args.calib_data_dir, args.xx, args.yy, args.square_size, args.calib_out_dir]):
+        if not all([args.calib_data_dir, args.xx, args.yy, args.square_size]):
             print("Error: Missing required arguments for intrinsic calibration")
-            print("Required: --calib_data_dir, --xx, --yy, --square_size, --calib_out_dir")
+            print("Required: --calib_data_dir, --xx, --yy, --square_size")
+            print("Optional: --calib_out_dir (default: data/results)")
             return 1
             
         # Create calibration pattern
@@ -96,9 +97,10 @@ def main():
             
     elif args.mode == 'eye_in_hand':
         # Run eye-in-hand calibration  
-        if not all([args.calib_data_dir, args.xx, args.yy, args.square_size, args.calib_out_dir]):
+        if not all([args.calib_data_dir, args.xx, args.yy, args.square_size]):
             print("Error: Missing required arguments for eye-in-hand calibration")
-            print("Required: --calib_data_dir, --xx, --yy, --square_size, --calib_out_dir")
+            print("Required: --calib_data_dir, --xx, --yy, --square_size")
+            print("Optional: --calib_out_dir (default: data/results)")
             return 1
             
         # First run intrinsic calibration
