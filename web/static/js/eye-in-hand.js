@@ -2,121 +2,156 @@
  * Eye-in-Hand Camera Calibration Web Interface
  * Handles file uploads, parameter settings, and calibration workflow
  * Uses shared ChessboardConfig module for chessboard functionality
+ * Extends BaseCalibration for common functionality
  */
 
-class EyeInHandCalibration {
+class EyeInHandCalibration extends BaseCalibration {
     constructor() {
-        this.sessionId = this.generateSessionId();
-        this.uploadedImages = [];
+        super('eye_in_hand');
         this.uploadedPoses = [];
-        this.calibrationResults = null;
-        this.currentView = 'images';
-        
         this.initializeEventListeners();
-        this.initializeModal();
-        this.initializeChessboard();
         this.updateUI();
     }
     
-    initializeChessboard() {
-        console.log('Initializing chessboard using shared ChessboardConfig module...');
-        
-        // Create instance of shared ChessboardConfig
-        this.chessboardConfig = new ChessboardConfig({
-            statusCallback: (message, type) => this.showStatus(message, type)
-        });
-        
-        // Initialize the chessboard config
-        this.chessboardConfig.initialize();
-        
-        // Set up global access for template onclick handlers
-        window.chessboardConfig = this.chessboardConfig;
-        
-        // Override saveConfiguration to integrate with eye-in-hand calibration
-        const originalSaveConfiguration = this.chessboardConfig.saveConfiguration.bind(this.chessboardConfig);
-        this.chessboardConfig.saveConfiguration = (callback) => {
-            originalSaveConfiguration((config) => {
-                // Update hidden form inputs for backward compatibility
-                document.getElementById('chessboard-x').value = config.cornerX;
-                document.getElementById('chessboard-y').value = config.cornerY;
-                document.getElementById('square-size').value = config.squareSize;
-                
-                // Update parameters on server
-                this.updateParameters();
-                
-                // Call provided callback if any
-                if (callback) callback(config);
-                
-                this.showStatus('Chessboard configuration updated', 'success');
-            });
-        };
-        
-        // Initial display update
-        this.updateChessboardDisplay();
-    }
-
-    updateChessboardDisplay() {
-        // Update the chessboard display using the shared module
-        if (this.chessboardConfig && this.chessboardConfig.updateChessboardDisplay) {
-            this.chessboardConfig.updateChessboardDisplay();
-        }
+    // ========================================
+    // Eye-in-Hand Specific Overrides
+    // ========================================
+    
+    getImageUploadMessage() {
+        return 'robot pose images';
     }
     
-    generateSessionId() {
-        return 'eye_in_hand_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    getDefaultProgressMessage() {
+        return 'Upload robot pose images and poses to see calibration results';
     }
+    
+    getGlobalInstanceName() {
+        return 'eyeInHandCalib';
+    }
+    
+    getCalibrationButtonText() {
+        return 'Start Eye-in-Hand Calibration';
+    }
+    
+    getTableColumnCount() {
+        return 5; // selection, original, corner, undistorted, reprojected
+    }
+    
+    getAdditionalColumns(index) {
+        // Eye-in-hand specific columns: corner detection, undistorted, reprojected
+        return `
+            <td id="corner-cell-${index}">
+                <div class="image-placeholder">
+                    <div class="placeholder-icon">⏳</div>
+                    <div class="placeholder-text">Corner detection pending</div>
+                </div>
+            </td>
+            <td id="undistorted-cell-${index}">
+                <div class="image-placeholder">
+                    <div class="placeholder-icon">⏳</div>
+                    <div class="placeholder-text">Calibration needed</div>
+                </div>
+            </td>
+            <td id="reprojected-cell-${index}">
+                <div class="image-placeholder">
+                    <div class="placeholder-icon">⏳</div>
+                    <div class="placeholder-text">Reprojection pending</div>
+                </div>
+            </td>
+        `;
+    }
+    
+    canStartCalibration(hasImages) {
+        const hasPoses = this.uploadedPoses.length > 0;
+        const posesMatch = hasImages && hasPoses && (this.uploadedImages.length === this.uploadedPoses.length);
+        return hasImages && posesMatch;
+    }
+    
+    onImagesUploaded() {
+        this.updatePosesStatus();
+    }
+    
+    onImagesChanged() {
+        this.updatePosesStatus();
+    }
+    
+    onUIUpdate(hasImages, hasResults) {
+        this.updatePosesStatus();
+    }
+    
+    resetUIAfterClear() {
+        super.resetUIAfterClear();
+        this.updatePosesStatus();
+    }
+    
+    // ========================================
+    // Event Listeners Setup
+    // ========================================
     
     initializeEventListeners() {
         // File upload - Images
         const imageFiles = document.getElementById('image-files');
         const uploadArea = document.getElementById('image-upload-area');
         
-        imageFiles.addEventListener('change', (e) => this.handleImageUpload(e.target.files));
+        if (imageFiles) {
+            imageFiles.addEventListener('change', (e) => this.handleImageUpload(e.target.files));
+        }
         
         // Drag and drop - Images
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadArea.classList.add('dragover');
-        });
-        
-        uploadArea.addEventListener('dragleave', () => {
-            uploadArea.classList.remove('dragover');
-        });
-        
-        uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadArea.classList.remove('dragover');
-            this.handleImageUpload(e.dataTransfer.files);
-        });
+        if (uploadArea) {
+            uploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadArea.classList.add('dragover');
+            });
+            
+            uploadArea.addEventListener('dragleave', () => {
+                uploadArea.classList.remove('dragover');
+            });
+            
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+                this.handleImageUpload(e.dataTransfer.files);
+            });
+        }
         
         // File upload - Poses
         const poseFiles = document.getElementById('pose-files');
         const poseUploadArea = document.getElementById('pose-upload-area');
         
-        poseFiles.addEventListener('change', (e) => this.handlePoseUpload(e.target.files));
+        if (poseFiles) {
+            poseFiles.addEventListener('change', (e) => this.handlePoseUpload(e.target.files));
+        }
         
         // Drag and drop - Poses
-        poseUploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            poseUploadArea.classList.add('dragover');
-        });
-        
-        poseUploadArea.addEventListener('dragleave', () => {
-            poseUploadArea.classList.remove('dragover');
-        });
-        
-        poseUploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            poseUploadArea.classList.remove('dragover');
-            this.handlePoseUpload(e.dataTransfer.files);
-        });
+        if (poseUploadArea) {
+            poseUploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                poseUploadArea.classList.add('dragover');
+            });
+            
+            poseUploadArea.addEventListener('dragleave', () => {
+                poseUploadArea.classList.remove('dragover');
+            });
+            
+            poseUploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                poseUploadArea.classList.remove('dragover');
+                this.handlePoseUpload(e.dataTransfer.files);
+            });
+        }
         
         // Camera matrix source change
-        document.getElementById('camera-matrix-source').addEventListener('change', (e) => {
-            const manualSection = document.getElementById('manual-camera-section');
-            manualSection.style.display = e.target.value === 'manual' ? 'block' : 'none';
-            this.updateParameters();
-        });
+        const cameraSourceSelect = document.getElementById('camera-matrix-source');
+        if (cameraSourceSelect) {
+            cameraSourceSelect.addEventListener('change', (e) => {
+                const manualSection = document.getElementById('manual-camera-section');
+                if (manualSection) {
+                    manualSection.style.display = e.target.value === 'manual' ? 'block' : 'none';
+                }
+                this.updateParameters();
+            });
+        }
         
         // Manual camera parameters change
         ['fx', 'fy', 'cx', 'cy', 'distortion-coeffs'].forEach(id => {
@@ -135,51 +170,20 @@ class EyeInHandCalibration {
         });
         
         // Buttons
-        document.getElementById('calibrate-btn').addEventListener('click', () => this.startCalibration());
-        document.getElementById('download-btn').addEventListener('click', () => this.downloadResults());
-        document.getElementById('clear-all-images-btn').addEventListener('click', () => this.clearAllImages());
-        document.getElementById('clear-all-poses-btn').addEventListener('click', () => this.clearAllPoses());
+        const calibrateBtn = document.getElementById('calibrate-btn');
+        const downloadBtn = document.getElementById('download-btn');
+        const clearImagesBtn = document.getElementById('clear-all-images-btn');
+        const clearPosesBtn = document.getElementById('clear-all-poses-btn');
+        
+        if (calibrateBtn) calibrateBtn.addEventListener('click', () => this.startCalibration());
+        if (downloadBtn) downloadBtn.addEventListener('click', () => this.downloadResults());
+        if (clearImagesBtn) clearImagesBtn.addEventListener('click', () => this.clearAllImages());
+        if (clearPosesBtn) clearPosesBtn.addEventListener('click', () => this.clearAllPoses());
     }
     
-    async handleImageUpload(files) {
-        const formData = new FormData();
-        formData.append('session_id', this.sessionId);
-        formData.append('calibration_type', 'eye_in_hand');
-        
-        for (let file of files) {
-            if (file.type.startsWith('image/')) {
-                formData.append('files', file);
-            }
-        }
-        
-        try {
-            this.showStatus('Uploading robot pose images...', 'info');
-            
-            const response = await fetch('/api/upload_images', {
-                method: 'POST',
-                body: formData
-            });
-            
-            const result = await response.json();
-            
-            if (result.error) {
-                this.showStatus(`Error: ${result.error}`, 'error');
-                return;
-            }
-            
-            // Backend returns all images (existing + new), so just replace the array
-            const allImages = result.files || [];
-            this.uploadedImages = allImages;
-            
-            this.showStatus(result.message, 'success');
-            this.updateUI();
-            this.displayUploadedImages();
-            this.updatePosesStatus();
-            
-        } catch (error) {
-            this.showStatus(`Upload failed: ${error.message}`, 'error');
-        }
-    }
+    // ========================================
+    // Pose File Handling
+    // ========================================
     
     async handlePoseUpload(files) {
         const formData = new FormData();
@@ -220,113 +224,93 @@ class EyeInHandCalibration {
         }
     }
     
-    displayUploadedImages() {
-        const placeholder = document.getElementById('results-placeholder');
-        const comparisonTable = document.getElementById('image-comparison-table');
-        const tableBody = document.getElementById('image-comparison-body');
+    async clearAllPoses() {
+        if (this.uploadedPoses.length === 0) return;
         
-        // Update table display
-        if (this.uploadedImages.length === 0) {
-            placeholder.style.display = 'block';
-            comparisonTable.style.display = 'none';
+        if (!confirm(`Are you sure you want to remove all ${this.uploadedPoses.length} pose files?`)) {
             return;
         }
         
-        placeholder.style.display = 'none';
-        comparisonTable.style.display = 'table';
-        
-        // Clear and populate table
-        tableBody.innerHTML = '';
-        
-        // Add select all row
-        const selectAllRow = document.createElement('tr');
-        selectAllRow.innerHTML = `
-            <td class="image-selection-cell">
-                <div class="select-all-container">
-                    <input type="checkbox" id="select-all-checkbox" class="select-all-checkbox" checked>
-                    <label for="select-all-checkbox" class="select-all-label">Select All</label>
-                </div>
-            </td>
-            <td colspan="4" style="text-align: center; color: #666; font-style: italic; padding: 1rem;">
-                Use checkboxes to select images for calibration, or × button to remove images
-            </td>
-        `;
-        tableBody.appendChild(selectAllRow);
-        
-        this.uploadedImages.forEach((file, index) => {
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td class="image-selection-cell">
-                    <div class="selection-row-1">
-                        <span class="image-index">${index + 1}</span>
-                        <span class="image-name">${file.name}</span>
-                    </div>
-                    <div class="selection-row-2">
-                        <span class="image-resolution" id="resolution-${index}">Loading...</span>
-                    </div>
-                    <div class="selection-row-3">
-                        <input type="checkbox" id="image-${index}" class="image-checkbox" data-index="${index}" checked>
-                        <button class="image-delete-btn" onclick="eyeInHandCalib.removeImage(${index})" title="Remove image">&times;</button>
-                    </div>
-                </td>
-                <td>
-                    <div class="comparison-image-container">
-                        <img src="${file.url}" alt="Original ${index + 1}" class="comparison-image" loading="lazy" onclick="eyeInHandCalib.openModal('${file.url}', 'Original Image ${index + 1}')">
-                    </div>
-                </td>
-                <td id="corner-cell-${index}">
-                    <div class="image-placeholder">
-                        <div class="placeholder-icon">⏳</div>
-                        <div class="placeholder-text">Corner detection pending</div>
-                    </div>
-                </td>
-                <td id="undistorted-cell-${index}">
-                    <div class="image-placeholder">
-                        <div class="placeholder-icon">⏳</div>
-                        <div class="placeholder-text">Calibration needed</div>
-                    </div>
-                </td>
-                <td id="reprojected-cell-${index}">
-                    <div class="image-placeholder">
-                        <div class="placeholder-icon">⏳</div>
-                        <div class="placeholder-text">Reprojection pending</div>
-                    </div>
-                </td>
-            `;
-            tableBody.appendChild(row);
+        try {
+            // Reset local data
+            this.uploadedPoses = [];
             
-            // Load image dimensions for this row
-            this.loadImageDimensions(file.url, index);
-        });
+            // Reset UI
+            this.updatePosesStatus();
+            this.updateUI();
+            this.displayUploadedImages(); // Refresh to remove pose validation
+            
+            this.showStatus('All poses cleared', 'info');
+            
+        } catch (error) {
+            this.showStatus(`Failed to clear poses: ${error.message}`, 'error');
+        }
+    }
+    
+    updatePosesStatus() {
+        const posesStatusSection = document.getElementById('poses-status-section');
+        const posesCount = document.getElementById('poses-count');
+        const posesMatchStatus = document.getElementById('poses-match-status');
+        const posesValidation = document.getElementById('poses-validation');
         
-        // Add select all functionality
-        const selectAllCheckbox = document.getElementById('select-all-checkbox');
-        if (selectAllCheckbox) {
-            selectAllCheckbox.addEventListener('change', (e) => {
-                const imageCheckboxes = document.querySelectorAll('.image-checkbox');
-                imageCheckboxes.forEach(checkbox => {
-                    checkbox.checked = e.target.checked;
-                });
-            });
+        if (!posesStatusSection) return;
+        
+        const hasPoses = this.uploadedPoses.length > 0;
+        const hasImages = this.uploadedImages.length > 0;
+        
+        if (hasPoses) {
+            posesStatusSection.style.display = 'block';
+            
+            if (posesCount) {
+                posesCount.textContent = `${this.uploadedPoses.length} poses uploaded`;
+            }
+            
+            if (hasImages) {
+                if (this.uploadedImages.length === this.uploadedPoses.length) {
+                    if (posesMatchStatus) {
+                        posesMatchStatus.textContent = '• Images and poses match';
+                        posesMatchStatus.style.color = '#28a745';
+                    }
+                    if (posesValidation) {
+                        posesValidation.textContent = '✅ Ready for calibration';
+                        posesValidation.style.color = '#28a745';
+                    }
+                } else {
+                    if (posesMatchStatus) {
+                        posesMatchStatus.textContent = `• Mismatch: ${this.uploadedImages.length} images vs ${this.uploadedPoses.length} poses`;
+                        posesMatchStatus.style.color = '#dc3545';
+                    }
+                    if (posesValidation) {
+                        posesValidation.textContent = '⚠️ Image-pose count mismatch';
+                        posesValidation.style.color = '#dc3545';
+                    }
+                }
+            } else {
+                if (posesMatchStatus) {
+                    posesMatchStatus.textContent = '• Waiting for images';
+                    posesMatchStatus.style.color = '#6c757d';
+                }
+                if (posesValidation) {
+                    posesValidation.textContent = '';
+                }
+            }
+        } else {
+            posesStatusSection.style.display = 'none';
         }
         
-        // Add individual checkbox listeners
-        const imageCheckboxes = document.querySelectorAll('.image-checkbox');
-        imageCheckboxes.forEach(checkbox => {
-            checkbox.addEventListener('change', () => {
-                this.updateSelectAllState();
-            });
-        });
+        // Update clear poses button
+        const clearPosesBtn = document.getElementById('clear-all-poses-btn');
+        if (clearPosesBtn) {
+            clearPosesBtn.style.display = hasPoses ? 'block' : 'none';
+        }
     }
     
-    removeImage(index) {
-        this.uploadedImages.splice(index, 1);
-        this.updateUI();
-        this.displayUploadedImages();
-    }
+    // ========================================
+    // Parameter Management
+    // ========================================
     
     async updateParameters() {
-        const cameraSource = document.getElementById('camera-matrix-source').value;
+        const cameraSource = document.getElementById('camera-matrix-source')?.value || 'intrinsic';
         
         // Get pattern configuration from ChessboardConfig if available  
         let patternJSON = null;
@@ -336,7 +320,7 @@ class EyeInHandCalibration {
         
         const parameters = {
             session_id: this.sessionId,
-            handeye_method: document.getElementById('handeye-method').value,
+            handeye_method: document.getElementById('handeye-method')?.value || 'horaud',
             camera_matrix_source: cameraSource,
             distortion_model: 'standard'  // Default for eye-in-hand
         };
@@ -347,20 +331,20 @@ class EyeInHandCalibration {
             console.log('Using JSON pattern configuration:', patternJSON);
         } else {
             // Fallback to legacy format for backward compatibility
-            parameters.chessboard_x = parseInt(document.getElementById('chessboard-x').value);
-            parameters.chessboard_y = parseInt(document.getElementById('chessboard-y').value);
-            parameters.square_size = parseFloat(document.getElementById('square-size').value);
+            parameters.chessboard_x = parseInt(document.getElementById('chessboard-x')?.value || 11);
+            parameters.chessboard_y = parseInt(document.getElementById('chessboard-y')?.value || 8);
+            parameters.square_size = parseFloat(document.getElementById('square-size')?.value || 0.02);
             console.log('Using legacy parameter format');
         }
         
         // Add manual camera parameters if selected
         if (cameraSource === 'manual') {
-            parameters.fx = parseFloat(document.getElementById('fx').value);
-            parameters.fy = parseFloat(document.getElementById('fy').value);
-            parameters.cx = parseFloat(document.getElementById('cx').value);
-            parameters.cy = parseFloat(document.getElementById('cy').value);
+            parameters.fx = parseFloat(document.getElementById('fx')?.value || 800);
+            parameters.fy = parseFloat(document.getElementById('fy')?.value || 800);
+            parameters.cx = parseFloat(document.getElementById('cx')?.value || 320);
+            parameters.cy = parseFloat(document.getElementById('cy')?.value || 240);
             
-            const distCoeffsStr = document.getElementById('distortion-coeffs').value;
+            const distCoeffsStr = document.getElementById('distortion-coeffs')?.value || '0,0,0,0,0';
             parameters.distortion_coefficients = distCoeffsStr.split(',').map(x => parseFloat(x.trim()));
         }
 
@@ -379,7 +363,13 @@ class EyeInHandCalibration {
         } catch (error) {
             this.showStatus(`Parameter update failed: ${error.message}`, 'error');
         }
-    }    async startCalibration() {
+    }
+    
+    // ========================================
+    // Calibration Process
+    // ========================================
+    
+    async startCalibration() {
         const selectedIndices = this.getSelectedImageIndices();
         
         if (selectedIndices.length < 3) {
@@ -399,7 +389,8 @@ class EyeInHandCalibration {
         
         try {
             this.showStatus(`Starting eye-in-hand calibration with ${selectedIndices.length} selected images...`, 'info');
-            document.getElementById('calibrate-btn').disabled = true;
+            const calibrateBtn = document.getElementById('calibrate-btn');
+            if (calibrateBtn) calibrateBtn.disabled = true;
             
             // Update parameters first
             await this.updateParameters();
@@ -418,7 +409,7 @@ class EyeInHandCalibration {
             
             if (result.error) {
                 this.showStatus(`Calibration failed: ${result.error}`, 'error');
-                document.getElementById('calibrate-btn').disabled = false;
+                if (calibrateBtn) calibrateBtn.disabled = false;
                 return;
             }
             
@@ -429,127 +420,57 @@ class EyeInHandCalibration {
             
         } catch (error) {
             this.showStatus(`Calibration failed: ${error.message}`, 'error');
-            document.getElementById('calibrate-btn').disabled = false;
+            const calibrateBtn = document.getElementById('calibrate-btn');
+            if (calibrateBtn) calibrateBtn.disabled = false;
         }
     }
+    
+    // ========================================
+    // Results Display
+    // ========================================
     
     displayResults() {
         if (!this.calibrationResults) return;
         
         // Show metrics in control panel
         const metricsDiv = document.getElementById('calibration-metrics');
-        metricsDiv.style.display = 'block';
-        
-        // Hand-eye transformation matrix
-        const handeyeTransform = this.calibrationResults.handeye_transform;
-        document.getElementById('handeye-transform-display').innerHTML = `
-            <pre>${this.formatMatrix(handeyeTransform)}</pre>
-        `;
-        
-        // Rotation matrix (top-left 3x3 of transformation matrix)
-        const rotationMatrix = handeyeTransform.slice(0, 3).map(row => row.slice(0, 3));
-        document.getElementById('rotation-matrix-display').innerHTML = `
-            <pre>${this.format3x3Matrix(rotationMatrix)}</pre>
-        `;
-        
-        // Translation vector (first 3 elements of last column)
-        const translationVector = handeyeTransform.slice(0, 3).map(row => row[3]);
-        document.getElementById('translation-vector-display').innerHTML = `
-            <pre>[${translationVector.map(v => v.toFixed(6)).join('\n ')}]</pre>
-        `;
-        
-        // Reprojection error
-        const errorDisplay = document.getElementById('error-display');
-        if (this.calibrationResults.reprojection_error !== undefined) {
-            errorDisplay.innerHTML = `<strong>${this.calibrationResults.reprojection_error.toFixed(4)} pixels</strong>`;
-        } else {
-            errorDisplay.innerHTML = '<em>Not calculated</em>';
+        if (metricsDiv) {
+            metricsDiv.style.display = 'block';
+            
+            // Hand-eye transformation matrix
+            const handeyeTransform = this.calibrationResults.handeye_transform;
+            this.updateMetricDisplay('handeye-transform-display', `<pre>${this.formatMatrix(handeyeTransform)}</pre>`);
+            
+            // Rotation matrix (top-left 3x3 of transformation matrix)
+            const rotationMatrix = handeyeTransform.slice(0, 3).map(row => row.slice(0, 3));
+            this.updateMetricDisplay('rotation-matrix-display', `<pre>${this.format3x3Matrix(rotationMatrix)}</pre>`);
+            
+            // Translation vector (first 3 elements of last column)
+            const translationVector = handeyeTransform.slice(0, 3).map(row => row[3]);
+            this.updateMetricDisplay('translation-vector-display', `<pre>[${translationVector.map(v => v.toFixed(6)).join('\n ')}]</pre>`);
+            
+            // Reprojection error
+            const errorDisplay = document.getElementById('error-display');
+            if (errorDisplay && this.calibrationResults.reprojection_error !== undefined) {
+                errorDisplay.innerHTML = `<strong>${this.calibrationResults.reprojection_error.toFixed(4)} pixels</strong>`;
+            }
+            
+            // Update progress info
+            const progressInfo = document.getElementById('progress-info');
+            if (progressInfo) {
+                progressInfo.innerHTML = `✅ Eye-in-hand calibration complete with ${this.uploadedImages.length} images`;
+            }
         }
-        
-        // Update progress info
-        const progressInfo = document.getElementById('progress-info');
-        progressInfo.innerHTML = `✅ Eye-in-hand calibration complete with ${this.uploadedImages.length} images`;
         
         // Update table with corner detection, undistorted, and reprojected images
         this.updateImageTable();
     }
     
-    updateImageTable() {
-        if (!this.calibrationResults) return;
-        
-        const cornerImages = this.calibrationResults.corner_images || [];
-        const undistortedImages = this.calibrationResults.undistorted_images || [];
-        const reprojectedImages = this.calibrationResults.reprojected_images || [];
-        
-        // Create lookup maps by index
-        const cornerImageMap = {};
-        const undistortedImageMap = {};
-        const reprojectedImageMap = {};
-        
-        cornerImages.forEach(img => {
-            cornerImageMap[img.index] = img;
-        });
-        
-        undistortedImages.forEach(img => {
-            undistortedImageMap[img.index] = img;
-        });
-        
-        reprojectedImages.forEach(img => {
-            reprojectedImageMap[img.index] = img;
-        });
-        
-        this.uploadedImages.forEach((file, index) => {
-            // Update corner detection column
-            const cornerCell = document.getElementById(`corner-cell-${index}`);
-            if (cornerImageMap[index]) {
-                cornerCell.innerHTML = `
-                    <div class="comparison-image-container">
-                        <img src="${cornerImageMap[index].url}" alt="Corners ${index + 1}" class="comparison-image" loading="lazy" onclick="eyeInHandCalib.openModal('${cornerImageMap[index].url}', 'Corner Detection ${index + 1}')">
-                    </div>
-                `;
-            } else {
-                cornerCell.innerHTML = `
-                    <div style="color: #dc3545; padding: 2rem;">
-                        <div style="font-size: 2rem;">❌</div>
-                        <div>No corners detected</div>
-                    </div>
-                `;
-            }
-            
-            // Update undistorted column
-            const undistortedCell = document.getElementById(`undistorted-cell-${index}`);
-            if (undistortedImageMap[index]) {
-                undistortedCell.innerHTML = `
-                    <div class="comparison-image-container">
-                        <img src="${undistortedImageMap[index].url}" alt="Undistorted ${index + 1}" class="comparison-image" loading="lazy" onclick="eyeInHandCalib.openModal('${undistortedImageMap[index].url}', 'Undistorted Image ${index + 1}')">
-                    </div>
-                `;
-            } else {
-                undistortedCell.innerHTML = `
-                    <div style="color: #666; padding: 2rem;">
-                        <div style="font-size: 2rem;">⚠️</div>
-                        <div>Undistortion failed</div>
-                    </div>
-                `;
-            }
-            
-            // Update reprojected column
-            const reprojectedCell = document.getElementById(`reprojected-cell-${index}`);
-            if (reprojectedImageMap[index]) {
-                reprojectedCell.innerHTML = `
-                    <div class="comparison-image-container">
-                        <img src="${reprojectedImageMap[index].url}" alt="Reprojected ${index + 1}" class="comparison-image" loading="lazy" onclick="eyeInHandCalib.openModal('${reprojectedImageMap[index].url}', 'Reprojected Points ${index + 1}')">
-                    </div>
-                `;
-            } else {
-                reprojectedCell.innerHTML = `
-                    <div style="color: #666; padding: 2rem;">
-                        <div style="font-size: 2rem;">⚠️</div>
-                        <div>Reprojection failed</div>
-                    </div>
-                `;
-            }
-        });
+    updateMetricDisplay(elementId, content) {
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.innerHTML = content;
+        }
     }
     
     formatMatrix(matrix) {
@@ -579,252 +500,88 @@ class EyeInHandCalibration {
         ).join('\n');
     }
     
-    loadImageDimensions(imageUrl, index) {
-        const img = new Image();
-        img.onload = () => {
-            const resolutionElement = document.getElementById(`resolution-${index}`);
-            if (resolutionElement) {
-                resolutionElement.textContent = `${img.width} × ${img.height}`;
-            }
-        };
-        img.onerror = () => {
-            const resolutionElement = document.getElementById(`resolution-${index}`);
-            if (resolutionElement) {
-                resolutionElement.textContent = 'Resolution unknown';
-            }
-        };
-        img.src = imageUrl;
-    }
-    
-    async downloadResults() {
+    updateImageTable() {
         if (!this.calibrationResults) return;
         
-        try {
-            const response = await fetch(`/api/export_results/${this.sessionId}`);
-            const blob = await response.blob();
-            
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `eye_in_hand_calibration_results_${this.sessionId}.zip`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-            
-        } catch (error) {
-            this.showStatus(`Download failed: ${error.message}`, 'error');
-        }
-    }
-    
-    updateUI() {
-        const hasImages = this.uploadedImages.length > 0;
-        const hasPoses = this.uploadedPoses.length > 0;
-        const hasResults = this.calibrationResults !== null;
-        const posesMatch = hasImages && hasPoses && (this.uploadedImages.length === this.uploadedPoses.length);
+        const cornerImages = this.calibrationResults.corner_images || [];
+        const undistortedImages = this.calibrationResults.undistorted_images || [];
+        const reprojectedImages = this.calibrationResults.reprojected_images || [];
         
-        // Update calibrate button - requires both images and matching poses
-        const calibrateBtn = document.getElementById('calibrate-btn');
-        if (hasResults) {
-            calibrateBtn.textContent = '🔄 Recalibrate';
-            calibrateBtn.disabled = !(hasImages && posesMatch);
-        } else {
-            calibrateBtn.textContent = 'Start Eye-in-Hand Calibration';
-            calibrateBtn.disabled = !(hasImages && posesMatch);
-        }
+        // Create lookup maps by index
+        const cornerImageMap = {};
+        const undistortedImageMap = {};
+        const reprojectedImageMap = {};
         
-        // Update button visibility
-        document.getElementById('download-btn').style.display = hasResults ? 'block' : 'none';
-        document.getElementById('clear-all-images-btn').style.display = hasImages ? 'block' : 'none';
-        document.getElementById('clear-all-poses-btn').style.display = hasPoses ? 'block' : 'none';
-        
-        // Update poses status
-        this.updatePosesStatus();
-    }
-    
-    async clearAllImages() {
-        if (this.uploadedImages.length === 0) return;
-        
-        if (!confirm(`Are you sure you want to remove all ${this.uploadedImages.length} images?`)) {
-            return;
-        }
-        
-        try {
-            // Clear from backend session
-            await fetch(`/api/clear_session/${this.sessionId}`, { method: 'POST' });
-            
-            // Reset local data
-            this.uploadedImages = [];
-            this.calibrationResults = null;
-            this.sessionId = this.generateSessionId();
-            
-            // Reset UI
-            document.getElementById('calibration-metrics').style.display = 'none';
-            
-            const placeholder = document.getElementById('results-placeholder');
-            const comparisonTable = document.getElementById('image-comparison-table');
-            placeholder.style.display = 'block';
-            comparisonTable.style.display = 'none';
-            
-            const progressInfo = document.getElementById('progress-info');
-            progressInfo.innerHTML = 'Upload robot pose images and poses to see calibration results';
-            
-            this.updateUI();
-            this.updatePosesStatus();
-            this.showStatus('All images cleared', 'info');
-            
-        } catch (error) {
-            this.showStatus(`Failed to clear images: ${error.message}`, 'error');
-        }
-    }
-    
-    async clearAllPoses() {
-        if (this.uploadedPoses.length === 0) return;
-        
-        if (!confirm(`Are you sure you want to remove all ${this.uploadedPoses.length} pose files?`)) {
-            return;
-        }
-        
-        try {
-            // Reset local data
-            this.uploadedPoses = [];
-            
-            // Reset UI
-            this.updatePosesStatus();
-            this.updateUI();
-            this.displayUploadedImages(); // Refresh to remove pose validation
-            
-            this.showStatus('All poses cleared', 'info');
-            
-        } catch (error) {
-            this.showStatus(`Failed to clear poses: ${error.message}`, 'error');
-        }
-    }
-    
-    showStatus(message, type = 'info') {
-        const statusDiv = document.getElementById('calibration-status');
-        statusDiv.className = `status-display ${type}`;
-        statusDiv.innerHTML = `<p>${message}</p>`;
-        
-        console.log(`[${type.toUpperCase()}] ${message}`);
-    }
-    
-    initializeModal() {
-        const modal = document.getElementById('imageModal');
-        const modalClose = document.getElementById('modalClose');
-        
-        // Close modal when clicking the close button
-        modalClose.addEventListener('click', () => {
-            modal.style.display = 'none';
+        cornerImages.forEach(img => {
+            cornerImageMap[img.index] = img;
         });
         
-        // Close modal when clicking outside the image
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.style.display = 'none';
-            }
+        undistortedImages.forEach(img => {
+            undistortedImageMap[img.index] = img;
         });
         
-        // Close modal with Escape key
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && modal.style.display === 'block') {
-                modal.style.display = 'none';
-            }
+        reprojectedImages.forEach(img => {
+            reprojectedImageMap[img.index] = img;
         });
-    }
-    
-    openModal(imageSrc, title) {
-        const modal = document.getElementById('imageModal');
-        const modalImage = document.getElementById('modalImage');
-        const modalTitle = document.getElementById('modalTitle');
         
-        modalImage.src = imageSrc;
-        modalTitle.textContent = title;
-        modal.style.display = 'block';
-        
-        // Prevent scrolling on the background
-        document.body.style.overflow = 'hidden';
-        
-        // Restore scrolling when modal is closed
-        const closeModal = () => {
-            document.body.style.overflow = '';
-            modal.style.display = 'none';
-        };
-        
-        // Update close functionality to restore scrolling
-        const modalClose = document.getElementById('modalClose');
-        modalClose.onclick = closeModal;
-        modal.onclick = (e) => {
-            if (e.target === modal) closeModal();
-        };
-    }
-    
-    updateSelectAllState() {
-        const selectAllCheckbox = document.getElementById('select-all-checkbox');
-        const imageCheckboxes = document.querySelectorAll('.image-checkbox');
-        
-        if (!selectAllCheckbox || imageCheckboxes.length === 0) return;
-        
-        const checkedCount = Array.from(imageCheckboxes).filter(cb => cb.checked).length;
-        
-        if (checkedCount === 0) {
-            selectAllCheckbox.checked = false;
-            selectAllCheckbox.indeterminate = false;
-        } else if (checkedCount === imageCheckboxes.length) {
-            selectAllCheckbox.checked = true;
-            selectAllCheckbox.indeterminate = false;
-        } else {
-            selectAllCheckbox.checked = false;
-            selectAllCheckbox.indeterminate = true;
-        }
-    }
-    
-    updatePosesStatus() {
-        const posesStatusSection = document.getElementById('poses-status-section');
-        const posesCount = document.getElementById('poses-count');
-        const posesMatchStatus = document.getElementById('poses-match-status');
-        const posesValidation = document.getElementById('poses-validation');
-        
-        const hasPoses = this.uploadedPoses.length > 0;
-        const hasImages = this.uploadedImages.length > 0;
-        
-        if (hasPoses) {
-            posesStatusSection.style.display = 'block';
-            posesCount.textContent = `${this.uploadedPoses.length} poses uploaded`;
-            
-            if (hasImages) {
-                if (this.uploadedImages.length === this.uploadedPoses.length) {
-                    posesMatchStatus.textContent = '• Images and poses match';
-                    posesMatchStatus.style.color = '#28a745';
-                    posesValidation.textContent = '✅ Ready for calibration';
-                    posesValidation.style.color = '#28a745';
+        this.uploadedImages.forEach((file, index) => {
+            // Update corner detection column
+            const cornerCell = document.getElementById(`corner-cell-${index}`);
+            if (cornerCell) {
+                if (cornerImageMap[index]) {
+                    cornerCell.innerHTML = `
+                        <div class="comparison-image-container">
+                            <img src="${cornerImageMap[index].url}" alt="Corners ${index + 1}" class="comparison-image" loading="lazy" onclick="eyeInHandCalib.openModal('${cornerImageMap[index].url}', 'Corner Detection ${index + 1}')">
+                        </div>
+                    `;
                 } else {
-                    posesMatchStatus.textContent = `• Mismatch: ${this.uploadedImages.length} images vs ${this.uploadedPoses.length} poses`;
-                    posesMatchStatus.style.color = '#dc3545';
-                    posesValidation.textContent = '⚠️ Image-pose count mismatch';
-                    posesValidation.style.color = '#dc3545';
+                    cornerCell.innerHTML = `
+                        <div style="color: #dc3545; padding: 2rem;">
+                            <div style="font-size: 2rem;">❌</div>
+                            <div>No corners detected</div>
+                        </div>
+                    `;
                 }
-            } else {
-                posesMatchStatus.textContent = '• Waiting for images';
-                posesMatchStatus.style.color = '#6c757d';
-                posesValidation.textContent = '';
             }
-        } else {
-            posesStatusSection.style.display = 'none';
-        }
-    }
-    
-    getSelectedImageIndices() {
-        const imageCheckboxes = document.querySelectorAll('.image-checkbox');
-        const selectedIndices = [];
-        
-        imageCheckboxes.forEach(checkbox => {
-            if (checkbox.checked) {
-                selectedIndices.push(parseInt(checkbox.dataset.index));
+            
+            // Update undistorted column
+            const undistortedCell = document.getElementById(`undistorted-cell-${index}`);
+            if (undistortedCell) {
+                if (undistortedImageMap[index]) {
+                    undistortedCell.innerHTML = `
+                        <div class="comparison-image-container">
+                            <img src="${undistortedImageMap[index].url}" alt="Undistorted ${index + 1}" class="comparison-image" loading="lazy" onclick="eyeInHandCalib.openModal('${undistortedImageMap[index].url}', 'Undistorted Image ${index + 1}')">
+                        </div>
+                    `;
+                } else {
+                    undistortedCell.innerHTML = `
+                        <div style="color: #666; padding: 2rem;">
+                            <div style="font-size: 2rem;">⚠️</div>
+                            <div>Undistortion failed</div>
+                        </div>
+                    `;
+                }
+            }
+            
+            // Update reprojected column
+            const reprojectedCell = document.getElementById(`reprojected-cell-${index}`);
+            if (reprojectedCell) {
+                if (reprojectedImageMap[index]) {
+                    reprojectedCell.innerHTML = `
+                        <div class="comparison-image-container">
+                            <img src="${reprojectedImageMap[index].url}" alt="Reprojected ${index + 1}" class="comparison-image" loading="lazy" onclick="eyeInHandCalib.openModal('${reprojectedImageMap[index].url}', 'Reprojected Points ${index + 1}')">
+                        </div>
+                    `;
+                } else {
+                    reprojectedCell.innerHTML = `
+                        <div style="color: #666; padding: 2rem;">
+                            <div style="font-size: 2rem;">⚠️</div>
+                            <div>Reprojection failed</div>
+                        </div>
+                    `;
+                }
             }
         });
-        
-        return selectedIndices;
     }
 }
 
