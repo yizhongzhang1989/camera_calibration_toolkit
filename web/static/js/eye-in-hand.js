@@ -512,88 +512,117 @@ class EyeInHandCalibration extends BaseCalibration {
         ).join('\n');
     }
     
-    updateImageTable() {
+    async updateImageTable() {
         if (!this.calibrationResults) return;
         
-        const cornerImages = this.calibrationResults.corner_images || [];
-        const undistortedImages = this.calibrationResults.undistorted_images || [];
-        const reprojectedImages = this.calibrationResults.reprojected_images || [];
+        console.log('🖼️  Updating image table...');
         
-        // Create lookup maps by index
-        const cornerImageMap = {};
-        const undistortedImageMap = {};
-        const reprojectedImageMap = {};
-        
-        cornerImages.forEach(img => {
-            cornerImageMap[img.index] = img;
-        });
-        
-        undistortedImages.forEach(img => {
-            undistortedImageMap[img.index] = img;
-        });
-        
-        reprojectedImages.forEach(img => {
-            reprojectedImageMap[img.index] = img;
-        });
-        
-        this.uploadedImages.forEach((file, index) => {
-            // Update corner detection column
-            const cornerCell = document.getElementById(`corner-cell-${index}`);
-            if (cornerCell) {
-                if (cornerImageMap[index]) {
-                    cornerCell.innerHTML = `
-                        <div class="comparison-image-container">
-                            <img src="${cornerImageMap[index].url}" alt="Corners ${index + 1}" class="comparison-image" loading="lazy" onclick="eyeInHandCalib.openModal('${cornerImageMap[index].url}', 'Corner Detection ${index + 1}')">
-                        </div>
-                    `;
-                } else {
-                    cornerCell.innerHTML = `
-                        <div style="color: #dc3545; padding: 2rem;">
-                            <div style="font-size: 2rem;">❌</div>
-                            <div>No corners detected</div>
-                        </div>
-                    `;
-                }
+        try {
+            // Fetch detailed results with visualization images
+            const response = await fetch(`/api/get_results/${this.sessionId}`);
+            const detailResults = await response.json();
+            
+            if (!response.ok) {
+                console.error('❌ Failed to fetch visualization images:', detailResults.error);
+                return;
             }
             
-            // Update undistorted column
-            const undistortedCell = document.getElementById(`undistorted-cell-${index}`);
-            if (undistortedCell) {
-                if (undistortedImageMap[index]) {
-                    undistortedCell.innerHTML = `
-                        <div class="comparison-image-container">
-                            <img src="${undistortedImageMap[index].url}" alt="Undistorted ${index + 1}" class="comparison-image" loading="lazy" onclick="eyeInHandCalib.openModal('${undistortedImageMap[index].url}', 'Undistorted Image ${index + 1}')">
-                        </div>
-                    `;
-                } else {
-                    undistortedCell.innerHTML = `
-                        <div style="color: #666; padding: 2rem;">
-                            <div style="font-size: 2rem;">⚠️</div>
-                            <div>Undistortion failed</div>
-                        </div>
-                    `;
-                }
-            }
+            const visualizationImages = detailResults.visualization_images || [];
+            console.log(`📊 Received ${visualizationImages.length} visualization images`);
             
-            // Update reprojected column
-            const reprojectedCell = document.getElementById(`reprojected-cell-${index}`);
-            if (reprojectedCell) {
-                if (reprojectedImageMap[index]) {
-                    reprojectedCell.innerHTML = `
-                        <div class="comparison-image-container">
-                            <img src="${reprojectedImageMap[index].url}" alt="Reprojected ${index + 1}" class="comparison-image" loading="lazy" onclick="eyeInHandCalib.openModal('${reprojectedImageMap[index].url}', 'Reprojected Points ${index + 1}')">
-                        </div>
-                    `;
-                } else {
-                    reprojectedCell.innerHTML = `
-                        <div style="color: #666; padding: 2rem;">
-                            <div style="font-size: 2rem;">⚠️</div>
-                            <div>Reprojection failed</div>
-                        </div>
-                    `;
+            // Create lookup maps by image name and type
+            const imagesByType = {
+                'corner_detection': {},
+                'undistorted_axes': {},
+                'reprojection': {}
+            };
+            
+            visualizationImages.forEach(img => {
+                if (!imagesByType[img.type]) {
+                    imagesByType[img.type] = {};
                 }
-            }
-        });
+                // Extract the original filename from the image name
+                const filename = img.name.split(' - ')[1] || img.name;
+                imagesByType[img.type][filename] = img;
+                console.log(`📷 Mapped ${img.type}: ${filename}`);
+            });
+            
+            this.uploadedImages.forEach((file, index) => {
+                const originalName = file.name;
+                console.log(`🔍 Looking for images for ${originalName} (index ${index})`);
+                
+                // Update corner detection column
+                const cornerCell = document.getElementById(`corner-cell-${index}`);
+                if (cornerCell) {
+                    const cornerImage = imagesByType.corner_detection[originalName];
+                    if (cornerImage && cornerImage.data) {
+                        cornerCell.innerHTML = `
+                            <div class="comparison-image-container">
+                                <img src="${cornerImage.data}" alt="Corners ${index + 1}" class="comparison-image" loading="lazy" onclick="eyeInHandCalib.openModal('${cornerImage.data}', 'Corner Detection ${index + 1}')">
+                            </div>
+                        `;
+                        console.log(`✅ Updated corner detection for ${originalName}`);
+                    } else {
+                        cornerCell.innerHTML = `
+                            <div style="color: #dc3545; padding: 2rem;">
+                                <div style="font-size: 2rem;">❌</div>
+                                <div>No corners detected</div>
+                            </div>
+                        `;
+                        console.log(`❌ No corner detection image for ${originalName}`);
+                    }
+                }
+                
+                // Update undistorted column
+                const undistortedCell = document.getElementById(`undistorted-cell-${index}`);
+                if (undistortedCell) {
+                    const undistortedImage = imagesByType.undistorted_axes[originalName];
+                    if (undistortedImage && undistortedImage.data) {
+                        undistortedCell.innerHTML = `
+                            <div class="comparison-image-container">
+                                <img src="${undistortedImage.data}" alt="Undistorted ${index + 1}" class="comparison-image" loading="lazy" onclick="eyeInHandCalib.openModal('${undistortedImage.data}', 'Undistorted Axes ${index + 1}')">
+                            </div>
+                        `;
+                        console.log(`✅ Updated undistorted axes for ${originalName}`);
+                    } else {
+                        undistortedCell.innerHTML = `
+                            <div style="color: #666; padding: 2rem;">
+                                <div style="font-size: 2rem;">⚠️</div>
+                                <div>Undistortion failed</div>
+                            </div>
+                        `;
+                        console.log(`❌ No undistorted axes image for ${originalName}`);
+                    }
+                }
+                
+                // Update reprojected column
+                const reprojectedCell = document.getElementById(`reprojected-cell-${index}`);
+                if (reprojectedCell) {
+                    const reprojectedImage = imagesByType.reprojection[originalName];
+                    if (reprojectedImage && reprojectedImage.data) {
+                        reprojectedCell.innerHTML = `
+                            <div class="comparison-image-container">
+                                <img src="${reprojectedImage.data}" alt="Reprojected ${index + 1}" class="comparison-image" loading="lazy" onclick="eyeInHandCalib.openModal('${reprojectedImage.data}', 'Reprojection Error ${index + 1}')">
+                            </div>
+                        `;
+                        console.log(`✅ Updated reprojection for ${originalName}`);
+                    } else {
+                        reprojectedCell.innerHTML = `
+                            <div style="color: #666; padding: 2rem;">
+                                <div style="font-size: 2rem;">⚠️</div>
+                                <div>Reprojection failed</div>
+                            </div>
+                        `;
+                        console.log(`❌ No reprojection image for ${originalName}`);
+                    }
+                }
+            });
+            
+            console.log('✅ Image table update completed');
+            
+        } catch (error) {
+            console.error('💥 Failed to update image table:', error);
+        }
     }
     
     // ========================================

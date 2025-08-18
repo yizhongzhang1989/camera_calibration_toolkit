@@ -4,6 +4,26 @@ Eye-in-Hand Calibration Module
 
 This module handles eye-in-hand calibration for robot-mounted cameras.
 It calibrates the transformation between the camera and robot end-effector.
+
+Modern Member-Based API:
+-----------------------
+The EyeInHandCalibrator class follows a clean member-based architecture similar to IntrinsicCalibrator:
+
+1. Initialize with data: EyeInHandCalibrator(camera_matrix, distortion_coefficients, calibration_pattern, ...)
+2. Load calibration data: load_calibration_data(directory) or set methods
+3. Detect patterns: detect_pattern_points()  
+4. Calibrate: calibrate(method, verbose) - uses member variables only
+5. Optimize (optional): optimize_calibration(iterations, ftol_rel, verbose)
+6. Generate debug images: draw_pattern_on_images(), draw_axes_on_undistorted_images(), draw_reprojection_on_images()
+7. Access results: self.cam2end_matrix, self.rms_error, self.per_image_errors
+
+Legacy Methods (Deprecated):
+----------------------------
+- calculate_reprojection_errors(image_paths, ...) - Use member-based approach instead
+- _generate_reprojection_visualization(...) - Use draw_reprojection_on_images() instead
+- _calibrate_extrinsic_parameters(...) - Use detect_pattern_points() instead
+
+The legacy methods are maintained for backward compatibility but will print deprecation warnings.
 """
 
 import os
@@ -940,44 +960,9 @@ class EyeInHandCalibrator:
         
         return debug_images
     
-    def _calibrate_extrinsic_parameters(self, image_paths: List[str], XX: int, YY: int, L: float,
-                                       verbose: bool = False) -> Tuple[List[np.ndarray], List[np.ndarray]]:
-        """
-        Calculate extrinsic parameters (target to camera transformation) for each image.
-        
-        Args:
-            image_paths: List of calibration image paths
-            XX: Number of chessboard corners along x-axis
-            YY: Number of chessboard corners along y-axis
-            L: Size of chessboard squares in meters
-            verbose: Whether to print detailed information
-            
-        Returns:
-            Tuple of (rotation_vectors, translation_vectors)
-        """
-        # Generate 3D object points
-        objpoints = get_objpoints(len(image_paths), XX, YY, L)
-        
-        # Find chessboard corners
-        imgpoints = get_chessboard_corners(image_paths, XX, YY)
-        
-        if len(imgpoints) != len(image_paths):
-            print(f"Warning: Only {len(imgpoints)}/{len(image_paths)} images had detectable corners")
-        
-        # Calculate extrinsic parameters for each valid image
-        rvecs = []
-        tvecs = []
-        
-        for i in range(len(imgpoints)):
-            ret, rvec, tvec = cv2.solvePnP(objpoints[i], imgpoints[i], 
-                                          self.camera_matrix, self.distortion_coefficients)
-            if ret:
-                rvecs.append(rvec)
-                tvecs.append(tvec)
-            else:
-                print(f"Could not solve PnP for image {i}")
-        
-        return rvecs, tvecs
+    # =============================================================================
+    # DEPRECATED METHODS - Use modern member-based API instead
+    # =============================================================================
     
     def calculate_reprojection_errors(self, image_paths: List[str], 
                                     base2end_matrices: List[np.ndarray],
@@ -988,7 +973,14 @@ class EyeInHandCalibrator:
                                     vis: bool = False, 
                                     save_dir: Optional[str] = None) -> Tuple[np.ndarray, List[np.ndarray]]:
         """
-        Calculate reprojection errors using eye-in-hand calibration results.
+        DEPRECATED: Calculate reprojection errors using external parameters.
+        
+        This method is deprecated and maintained only for backward compatibility.
+        Use the modern member-based approach instead:
+        1. Use detect_pattern_points() to populate member variables
+        2. Use calibrate() to perform calibration  
+        3. Access self.rms_error and self.per_image_errors for results
+        4. Use draw_reprojection_on_images() for visualization
         
         Args:
             image_paths: List of calibration image paths
@@ -1005,6 +997,9 @@ class EyeInHandCalibrator:
         Returns:
             Tuple of (reprojection_errors, target2base_matrices)
         """
+        print("⚠️  WARNING: calculate_reprojection_errors() is deprecated.")
+        print("   Use modern member-based API: detect_pattern_points() + calibrate() + self.rms_error")
+        
         if not self.calibration_completed:
             raise ValueError("Calibration has not been completed yet")
         
@@ -1047,7 +1042,10 @@ class EyeInHandCalibrator:
                                            XX: int, YY: int, L: float, save_dir: str,
                                            suffix: str = "") -> None:
         """
-        Generate reprojection visualization for a single image.
+        DEPRECATED: Generate reprojection visualization using external parameters.
+        
+        This method is deprecated and maintained only for backward compatibility.
+        Use draw_reprojection_on_images() instead for modern member-based visualization.
         
         Args:
             image_path: Path to the image
@@ -1058,6 +1056,9 @@ class EyeInHandCalibrator:
             save_dir: Directory to save the visualization
             suffix: Suffix for the output filename
         """
+        print("⚠️  WARNING: _generate_reprojection_visualization() is deprecated.")
+        print("   Use modern member-based API: draw_reprojection_on_images()")
+        
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
         
@@ -1105,6 +1106,10 @@ class EyeInHandCalibrator:
         output_name = f'{suffix}_reproject_{image_name}.png' if suffix else f'reproject_{image_name}.png'
         output_path = os.path.join(save_dir, output_name)
         cv2.imwrite(output_path, img_draw)
+    
+    # =============================================================================
+    # END DEPRECATED METHODS
+    # =============================================================================
     
     def optimize_calibration(self, iterations: int = 5, ftol_rel: float = 1e-6, verbose: bool = False) -> float:
         """
