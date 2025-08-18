@@ -110,20 +110,20 @@ class IntrinsicCalibration extends BaseCalibration {
     
     async updateParameters() {
         // Get pattern configuration from ChessboardConfig if available
-        let patternConfig = null;
+        let patternJSON = null;
         if (window.chessboardConfig && window.chessboardConfig.config) {
-            patternConfig = window.chessboardConfig.config;
+            patternJSON = window.chessboardConfig.getPatternJSON();
         }
-        
+
         const parameters = {
             session_id: this.sessionId,
             distortion_model: document.getElementById('distortion-model').value
         };
-        
-        // Use new pattern configuration format if available
-        if (patternConfig && patternConfig.patternType) {
-            parameters.pattern_config = patternConfig;
-            console.log('Using new pattern configuration:', patternConfig);
+
+        // Use new JSON pattern format if available
+        if (patternJSON) {
+            parameters.pattern_json = patternJSON;
+            console.log('Using JSON pattern configuration:', patternJSON);
         } else {
             // Fallback to legacy format for backward compatibility
             parameters.chessboard_x = parseInt(document.getElementById('chessboard-x').value);
@@ -131,25 +131,23 @@ class IntrinsicCalibration extends BaseCalibration {
             parameters.square_size = parseFloat(document.getElementById('square-size').value);
             console.log('Using legacy parameter format');
         }
-        
+
         try {
             const response = await fetch('/api/set_parameters', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(parameters)
             });
-            
+
             const result = await response.json();
             if (result.error) {
                 this.showStatus(`Parameter error: ${result.error}`, 'error');
             }
-            
+
         } catch (error) {
             this.showStatus(`Parameter update failed: ${error.message}`, 'error');
         }
-    }
-    
-    // ========================================
+    }    // ========================================
     // Calibration Process
     // ========================================
     

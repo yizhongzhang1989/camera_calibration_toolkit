@@ -327,11 +327,31 @@ def set_parameters():
         data = request.get_json()
         session_id = data.get('session_id', 'default')
         
-        # Extract parameters - handle both legacy and new pattern configuration formats
+        # Extract parameters - handle both new JSON pattern and legacy formats
         parameters = {}
         
-        # Pattern configuration (new format)
-        if 'pattern_config' in data:
+        # Pattern JSON (new format)
+        if 'pattern_json' in data:
+            pattern_json = data['pattern_json']
+            # Store the complete JSON pattern for use with unified pattern system
+            parameters['pattern_json'] = pattern_json
+            
+            # For backward compatibility, also extract individual parameters
+            pattern_params = pattern_json.get('parameters', {})
+            parameters['pattern_type'] = pattern_json.get('pattern_id', 'standard')
+            parameters['chessboard_x'] = pattern_params.get('width', 11)
+            parameters['chessboard_y'] = pattern_params.get('height', 8) 
+            parameters['square_size'] = pattern_params.get('square_size', 0.025)
+            
+            # Add ChArUco-specific parameters if present
+            if 'marker_size' in pattern_params:
+                parameters['marker_size'] = pattern_params['marker_size']
+            if 'dictionary_id' in pattern_params:
+                parameters['dictionary_id'] = pattern_params['dictionary_id']
+                
+            print(f'Using JSON pattern format: {pattern_json}')
+        elif 'pattern_config' in data:
+            # Legacy pattern_config format (for backward compatibility)
             pattern_config = data['pattern_config']
             parameters['pattern_type'] = pattern_config.get('patternType', 'standard')
             parameters['pattern_parameters'] = pattern_config.get('parameters', {})
@@ -484,8 +504,15 @@ def calibrate():
                 
                 # Create calibration pattern using unified JSON system
                 try:
-                    pattern = create_pattern_from_parameters(parameters)
-                    print(f"✅ Created pattern using unified JSON system")
+                    if 'pattern_json' in parameters:
+                        # Use the JSON pattern directly
+                        pattern_json = parameters['pattern_json']
+                        pattern = create_pattern_from_json(pattern_json)
+                        print(f"✅ Created pattern from JSON: {pattern_json['pattern_id']}")
+                    else:
+                        # Fallback to create from individual parameters
+                        pattern = create_pattern_from_parameters(parameters)
+                        print(f"✅ Created pattern using unified JSON system")
                 except Exception as e:
                     print(f"❌ Error creating calibration pattern: {str(e)}")
                     return jsonify({'error': f'Error creating calibration pattern: {str(e)}'}), 400
@@ -684,7 +711,19 @@ def calibrate():
                     # Create a new calibrator for intrinsic calculation if needed
                     
                     # Create calibration pattern using unified JSON system
-                    pattern = create_pattern_from_parameters(parameters)
+                    try:
+                        if 'pattern_json' in parameters:
+                            # Use the JSON pattern directly
+                            pattern_json = parameters['pattern_json']
+                            pattern = create_pattern_from_json(pattern_json)
+                            print(f"✅ Created pattern from JSON: {pattern_json['pattern_id']}")
+                        else:
+                            # Fallback to create from individual parameters
+                            pattern = create_pattern_from_parameters(parameters)
+                            print(f"✅ Created pattern using unified JSON system")
+                    except Exception as e:
+                        print(f"❌ Error creating calibration pattern: {str(e)}")
+                        return jsonify({'error': f'Error creating calibration pattern: {str(e)}'}), 400
                     
                     intrinsic_cal = IntrinsicCalibrator(
                         image_paths=image_paths,

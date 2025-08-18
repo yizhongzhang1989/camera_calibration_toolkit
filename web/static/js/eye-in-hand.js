@@ -328,15 +328,30 @@ class EyeInHandCalibration {
     async updateParameters() {
         const cameraSource = document.getElementById('camera-matrix-source').value;
         
+        // Get pattern configuration from ChessboardConfig if available  
+        let patternJSON = null;
+        if (window.chessboardConfig && window.chessboardConfig.config) {
+            patternJSON = window.chessboardConfig.getPatternJSON();
+        }
+        
         const parameters = {
             session_id: this.sessionId,
-            chessboard_x: parseInt(document.getElementById('chessboard-x').value),
-            chessboard_y: parseInt(document.getElementById('chessboard-y').value),
-            square_size: parseFloat(document.getElementById('square-size').value),
             handeye_method: document.getElementById('handeye-method').value,
             camera_matrix_source: cameraSource,
             distortion_model: 'standard'  // Default for eye-in-hand
         };
+
+        // Use new JSON pattern format if available
+        if (patternJSON) {
+            parameters.pattern_json = patternJSON;
+            console.log('Using JSON pattern configuration:', patternJSON);
+        } else {
+            // Fallback to legacy format for backward compatibility
+            parameters.chessboard_x = parseInt(document.getElementById('chessboard-x').value);
+            parameters.chessboard_y = parseInt(document.getElementById('chessboard-y').value);
+            parameters.square_size = parseFloat(document.getElementById('square-size').value);
+            console.log('Using legacy parameter format');
+        }
         
         // Add manual camera parameters if selected
         if (cameraSource === 'manual') {
@@ -348,7 +363,7 @@ class EyeInHandCalibration {
             const distCoeffsStr = document.getElementById('distortion-coeffs').value;
             parameters.distortion_coefficients = distCoeffsStr.split(',').map(x => parseFloat(x.trim()));
         }
-        
+
         try {
             const response = await fetch('/api/set_parameters', {
                 method: 'POST',
@@ -364,9 +379,7 @@ class EyeInHandCalibration {
         } catch (error) {
             this.showStatus(`Parameter update failed: ${error.message}`, 'error');
         }
-    }
-    
-    async startCalibration() {
+    }    async startCalibration() {
         const selectedIndices = this.getSelectedImageIndices();
         
         if (selectedIndices.length < 3) {

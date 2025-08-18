@@ -572,21 +572,70 @@ class ChessboardConfig {
         if (!this.config.patternType || !this.config.parameters) {
             return { pattern_type: 'standard', pixel_per_square: 20, border_pixels: 0 };
         }
-        
+
         const params = {
             pattern_type: this.config.patternType,
             pixel_per_square: 20,
             border_pixels: 0
         };
-        
+
         // Add pattern-specific parameters
         for (const [paramName, value] of Object.entries(this.config.parameters)) {
             params[paramName] = value;
         }
-        
+
         return params;
     }
-    
+
+    // Create a valid JSON pattern object for the backend
+    getPatternJSON() {
+        if (!this.config.patternType || !this.config.parameters) {
+            // Return default standard chessboard pattern
+            return {
+                pattern_id: 'standard',
+                name: 'Standard Chessboard',
+                description: 'Traditional black and white checkerboard pattern',
+                is_planar: true,
+                parameters: {
+                    width: 11,
+                    height: 8,
+                    square_size: 0.025
+                }
+            };
+        }
+
+        // Create the base pattern object
+        const patternJSON = {
+            pattern_id: this.config.patternType,
+            is_planar: true,
+            parameters: {}
+        };
+
+        // Set name and description based on pattern type
+        if (this.config.patternType === 'standard') {
+            patternJSON.name = 'Standard Chessboard';
+            patternJSON.description = 'Traditional black and white checkerboard pattern';
+        } else if (this.config.patternType === 'charuco') {
+            patternJSON.name = 'ChArUco Board';
+            patternJSON.description = 'Chessboard with ArUco markers';
+        } else {
+            patternJSON.name = this.config.patternType;
+            patternJSON.description = `${this.config.patternType} calibration pattern`;
+        }
+
+        // Copy all parameters from the current configuration
+        for (const [paramName, value] of Object.entries(this.config.parameters)) {
+            // Ensure numeric values are properly converted
+            if (typeof value === 'string' && !isNaN(value)) {
+                patternJSON.parameters[paramName] = paramName.includes('_id') ? parseInt(value) : parseFloat(value);
+            } else {
+                patternJSON.parameters[paramName] = value;
+            }
+        }
+
+        return patternJSON;
+    }
+
     getModalPatternParams() {
         if (!this.config.patternType) {
             return { pattern_type: 'standard', pixel_per_square: 20, border_pixels: 0 };
