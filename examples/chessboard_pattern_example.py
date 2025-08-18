@@ -110,7 +110,7 @@ def calibrate_with_patterns(sample_data_dir: str):
     # Check if sample data exists
     if not os.path.exists(sample_data_dir):
         print(f"❌ Sample data directory not found: {sample_data_dir}")
-        print("Please ensure sample_data/intrinsic_calib_test_images/ exists")
+        print("Please ensure sample_data/hand_in_eye_test_data/ exists")
         return
     
     # Get sample images
@@ -230,7 +230,7 @@ def main():
     
     # Test pattern detection (if sample image exists)
     toolkit_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sample_data_dir = os.path.join(toolkit_root, "sample_data", "intrinsic_calib_test_images")
+    sample_data_dir = os.path.join(toolkit_root, "sample_data", "hand_in_eye_test_data")
     
     # Try to find a sample image for detection test
     sample_images = []

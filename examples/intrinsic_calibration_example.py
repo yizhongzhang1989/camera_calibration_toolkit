@@ -32,7 +32,7 @@ def test_chessboard_calibration():
     print("=" * 50)
     
     # Load sample images
-    sample_dir = os.path.join("sample_data", "intrinsic_calib_test_images")
+    sample_dir = os.path.join("sample_data", "hand_in_eye_test_data")
     if not os.path.exists(sample_dir):
         print(f"❌ Sample data directory not found: {sample_dir}")
         return
