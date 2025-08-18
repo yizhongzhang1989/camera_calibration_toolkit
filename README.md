@@ -221,12 +221,17 @@ dist_coeffs = calibrator.get_distortion_coefficients()
 
 #### EyeInHandCalibrator
 ```python
-calibrator = EyeInHandCalibrator()
-calibrator.load_camera_intrinsics(camera_matrix, dist_coeffs)
-image_paths, base2end, end2base = calibrator.load_calibration_data(data_directory)
-cam2end_matrix = calibrator.calibrate(image_paths, end2base, XX, YY, L)
-errors = calibrator.calculate_reprojection_errors(...)
-optimized_matrix = calibrator.optimize_calibration(...)
+# Modern member-based API
+pattern = create_chessboard_pattern('standard', width=11, height=8, square_size=0.02)
+calibrator = EyeInHandCalibrator(
+    camera_matrix=camera_matrix, 
+    distortion_coefficients=dist_coeffs, 
+    calibration_pattern=pattern
+)
+calibrator.load_calibration_data(data_directory)
+calibrator.detect_pattern_points()
+rms_error = calibrator.calibrate()
+optimized_error = calibrator.optimize_calibration()
 calibrator.save_results(output_directory)
 ```
 

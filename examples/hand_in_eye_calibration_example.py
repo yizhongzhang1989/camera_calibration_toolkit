@@ -106,30 +106,6 @@ def calculate_camera_intrinsics(sample_dir):
         return None, None
 
 
-def load_sample_camera_intrinsics():
-    """Load sample camera intrinsic parameters for demonstration.
-    
-    DEPRECATED: This function is kept for backward compatibility but should
-    not be used. Use calculate_camera_intrinsics() instead for real calibration.
-    """
-    print("⚠️ Warning: Using hardcoded sample intrinsic parameters")
-    print("   For accurate results, use calculate_camera_intrinsics() instead")
-    
-    # These are sample intrinsic parameters - in practice, you should always
-    # calculate these from actual calibration data
-    camera_matrix = np.array([
-        [800.0, 0.0, 320.0],
-        [0.0, 800.0, 240.0],
-        [0.0, 0.0, 1.0]
-    ], dtype=np.float64)
-    
-    distortion_coefficients = np.array([
-        0.1, -0.2, 0.001, 0.001, 0.1
-    ], dtype=np.float64)
-    
-    return camera_matrix, distortion_coefficients
-
-
 def test_hand_in_eye_calibration():
     """Test hand-in-eye calibration workflow using sample data."""
     print("🤖 Hand-in-Eye Camera Calibration")

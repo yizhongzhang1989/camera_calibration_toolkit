@@ -10,6 +10,9 @@ for compatibility with existing workflows.
 import argparse
 import sys
 import os
+import cv2
+import sys
+import os
 
 # Add the toolkit to the Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -148,30 +151,56 @@ def main():
         
         # Run eye-in-hand calibration
         print("Running eye-in-hand calibration...")
-        eye_in_hand_cal = EyeInHandCalibrator()
-        eye_in_hand_cal.load_camera_intrinsics(camera_matrix, dist_coeffs)
+        
+        # Create calibration pattern
+        from core.calibration_patterns import create_chessboard_pattern
+        pattern = create_chessboard_pattern('standard', width=args.xx, height=args.yy, square_size=args.square_size)
+        
+        # Initialize with modern API
+        eye_in_hand_cal = EyeInHandCalibrator(
+            camera_matrix=camera_matrix,
+            distortion_coefficients=dist_coeffs,
+            calibration_pattern=pattern,
+            pattern_type='standard'
+        )
         
         try:
-            image_paths, base2end_matrices, end2base_matrices = eye_in_hand_cal.load_calibration_data(
-                args.calib_data_dir)
+            # Load calibration data using modern API
+            if not eye_in_hand_cal.load_calibration_data(args.calib_data_dir):
+                print("Failed to load calibration data")
+                return 1
             
-            cam2end_R, cam2end_t, cam2end_4x4, rvecs, tvecs = eye_in_hand_cal.calibrate(
-                image_paths, end2base_matrices, args.xx, args.yy, args.square_size, verbose=True)
+            # Detect pattern points
+            if not eye_in_hand_cal.detect_pattern_points():
+                print("Failed to detect calibration patterns")
+                return 1
             
-            # Calculate reprojection errors
-            errors, target2base_matrices = eye_in_hand_cal.calculate_reprojection_errors(
-                image_paths, base2end_matrices, end2base_matrices, 
-                rvecs, tvecs, args.xx, args.yy, args.square_size, 
-                vis=(args.reproj_out_dir is not None), 
-                save_dir=args.reproj_out_dir)
+            # Perform calibration
+            rms_error = eye_in_hand_cal.calibrate(verbose=True)
             
+            if rms_error <= 0:
+                print("Eye-in-hand calibration failed")
+                return 1
+            
+            # Save results using modern API
             eye_in_hand_cal.save_results(args.calib_out_dir)
             
             print(f"Eye-in-hand calibration completed successfully!")
-            print(f"Mean reprojection error: {errors.mean():.4f} pixels")
+            print(f"RMS reprojection error: {rms_error:.4f} pixels")
             print(f"Results saved to: {args.calib_out_dir}")
             
+            # Generate visualizations if output directory specified
             if args.reproj_out_dir:
+                print("Generating reprojection visualizations...")
+                os.makedirs(args.reproj_out_dir, exist_ok=True)
+                
+                # Generate reprojection images using modern API
+                reprojection_images = eye_in_hand_cal.draw_reprojection_on_images()
+                
+                for filename, debug_img in reprojection_images:
+                    output_path = os.path.join(args.reproj_out_dir, f"{filename}_reprojection.jpg")
+                    cv2.imwrite(output_path, debug_img)
+                
                 print(f"Visualizations saved to: {args.reproj_out_dir}")
                 
         except Exception as e:

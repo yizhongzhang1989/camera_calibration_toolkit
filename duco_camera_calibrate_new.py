@@ -10,6 +10,7 @@ duco_camera_calibrateOPT_cmd.py functionality using the new modular structure.
 import sys
 import os
 import argparse
+import cv2
 
 # Add the new toolkit to the path
 toolkit_path = os.path.join(os.path.dirname(__file__), 'camera_calibration_toolkit')
@@ -86,62 +87,69 @@ def main(CALIBRATION_DATA_DIR, CALIBRATION_PARAMETER_OUTPUT_DIR, XX, YY, L, REPR
         
         # Step 2: Eye-in-hand calibration
         print("Starting eye-in-hand calibration...")
-        eye_in_hand_cal = EyeInHandCalibrator()
-        eye_in_hand_cal.load_camera_intrinsics(camera_matrix, dist_coeffs)
         
-        # Load calibration data
-        image_paths, base2end_matrices, end2base_matrices = eye_in_hand_cal.load_calibration_data(
-            CALIBRATION_DATA_DIR)
+        # Create calibration pattern
+        from core.calibration_patterns import create_chessboard_pattern
+        pattern = create_chessboard_pattern('standard', width=XX, height=YY, square_size=L)
+        
+        # Initialize with modern API
+        eye_in_hand_cal = EyeInHandCalibrator(
+            camera_matrix=camera_matrix,
+            distortion_coefficients=dist_coeffs,
+            calibration_pattern=pattern,
+            pattern_type='standard'
+        )
+        
+        # Load calibration data using modern API
+        if not eye_in_hand_cal.load_calibration_data(CALIBRATION_DATA_DIR):
+            print("Error: Failed to load calibration data!")
+            return
+        
+        # Detect pattern points
+        if not eye_in_hand_cal.detect_pattern_points():
+            print("Error: Failed to detect calibration patterns!")
+            return
         
         # Perform calibration
-        cam2end_R, cam2end_t, cam2end_4x4, rvecs, tvecs = eye_in_hand_cal.calibrate(
-            image_paths, end2base_matrices, XX, YY, L, verbose=True)
+        rms_error = eye_in_hand_cal.calibrate(verbose=True)
         
-        # Calculate reprojection errors
-        vis_enabled = REPROJECTION_RESULT_OUTPUT_DIR is not None
-        errors, target2base_matrices = eye_in_hand_cal.calculate_reprojection_errors(
-            image_paths, base2end_matrices, end2base_matrices, 
-            rvecs, tvecs, XX, YY, L, vis=vis_enabled, save_dir=REPROJECTION_RESULT_OUTPUT_DIR)
+        if rms_error <= 0:
+            print("Error: Eye-in-hand calibration failed!")
+            return
         
-        print(f"Initial mean reprojection error: {errors.mean():.6f} pixels")
+        print(f"Initial RMS reprojection error: {rms_error:.6f} pixels")
         
-        # Step 3: Optimization (replicating the original optimization)
+        # Step 3: Optimization using modern API
         print("Starting calibration optimization...")
-        optimized_cam2end, optimized_target2base = eye_in_hand_cal.optimize_calibration(
-            image_paths, rvecs, tvecs, end2base_matrices, base2end_matrices,
-            XX, YY, L, iterations=5, ftol_rel=1e-6)
+        optimized_error = eye_in_hand_cal.optimize_calibration(
+            iterations=5, ftol_rel=1e-6, verbose=True)
         
-        # Calculate final errors
-        import numpy as np
-        end2cam_4x4 = np.linalg.inv(optimized_cam2end)
-        final_errors = []
+        if optimized_error > 0:
+            print(f"Optimized RMS reprojection error: {optimized_error:.6f} pixels")
+            improvement = (rms_error - optimized_error) / rms_error * 100
+            print(f"Improvement: {improvement:.1f}%")
+        else:
+            print("Optimization completed with no significant improvement")
         
-        for i, base2end_matrix in enumerate(base2end_matrices):
-            target2cam_4x4 = end2cam_4x4 @ base2end_matrix @ optimized_target2base
-            
-            # Calculate reprojection error for this image
-            from core.utils import get_objpoints, calculate_single_image_reprojection_error
-            
-            error = calculate_single_image_reprojection_error(
-                image_paths[i], target2cam_4x4[:3, :3], target2cam_4x4[:3, 3],
-                camera_matrix, dist_coeffs, XX, YY, L)
-            final_errors.append(error)
-            
-            # Generate visualization if requested
-            if vis_enabled:
-                eye_in_hand_cal._generate_reprojection_visualization(
-                    image_paths[i], target2cam_4x4, XX, YY, L, 
-                    REPROJECTION_RESULT_OUTPUT_DIR, suffix="optimized")
-        
-        final_errors = np.array(final_errors)
-        print(f"Optimized mean reprojection error: {final_errors.mean():.6f} pixels")
-        
-        # Save final results
+        # Save final results using modern API
         eye_in_hand_cal.save_results(CALIBRATION_PARAMETER_OUTPUT_DIR)
+        
+        # Generate visualizations if requested
+        if REPROJECTION_RESULT_OUTPUT_DIR:
+            print("Generating reprojection visualizations...")
+            
+            # Generate reprojection images using modern API
+            reprojection_images = eye_in_hand_cal.draw_reprojection_on_images()
+            
+            for filename, debug_img in reprojection_images:
+                output_path = os.path.join(REPROJECTION_RESULT_OUTPUT_DIR, f"{filename}_reprojection.jpg")
+                cv2.imwrite(output_path, debug_img)
+            
+            print(f"Reprojection visualizations saved to: {REPROJECTION_RESULT_OUTPUT_DIR}")
         print(f"Calibration completed successfully!")
         print(f"Results saved to: {CALIBRATION_PARAMETER_OUTPUT_DIR}")
         
-        if vis_enabled:
+        if REPROJECTION_RESULT_OUTPUT_DIR:
             print(f"Visualizations saved to: {REPROJECTION_RESULT_OUTPUT_DIR}")
         
         return 0
