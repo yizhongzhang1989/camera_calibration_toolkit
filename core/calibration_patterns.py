@@ -48,6 +48,49 @@ class CalibrationPattern(ABC):
         self.detected_corners = []
         self.object_points = []
     
+    def to_json(self) -> Dict[str, Any]:
+        """
+        Serialize the pattern to a JSON-compatible dictionary.
+        
+        Returns:
+            Dictionary representation of the pattern
+        """
+        return {
+            'pattern_id': self.pattern_id,
+            'name': self.name,
+            'description': self.description,
+            'is_planar': self.is_planar,
+            'parameters': self.get_parameters()
+        }
+    
+    @classmethod
+    def from_json(cls, json_data: Dict[str, Any]) -> 'CalibrationPattern':
+        """
+        Create a pattern instance from JSON data.
+        
+        Args:
+            json_data: Dictionary containing pattern data
+            
+        Returns:
+            Pattern instance
+            
+        Raises:
+            NotImplementedError: Must be implemented by subclasses
+        """
+        raise NotImplementedError("Subclasses must implement from_json method")
+    
+    def get_parameters(self) -> Dict[str, Any]:
+        """
+        Get pattern-specific parameters.
+        
+        Returns:
+            Dictionary of parameters
+            
+        Raises:
+            NotImplementedError: Must be implemented by subclasses
+        """
+        raise NotImplementedError("Subclasses must implement get_parameters method")
+    
     def validate_dimensions(self, width: int, height: int, min_size: int = 3) -> None:
         """
         Validate pattern dimensions.
@@ -398,6 +441,24 @@ class StandardChessboard(CalibrationPattern):
             'total_corners': self.width * self.height
         })
         return info
+    
+    def get_parameters(self) -> Dict[str, Any]:
+        """Get pattern parameters for JSON serialization."""
+        return {
+            'width': self.width,
+            'height': self.height,
+            'square_size': self.square_size
+        }
+    
+    @classmethod
+    def from_json(cls, json_data: Dict[str, Any]) -> 'StandardChessboard':
+        """Create StandardChessboard from JSON data."""
+        params = json_data.get('parameters', {})
+        return cls(
+            width=params.get('width', 11),
+            height=params.get('height', 8),
+            square_size=params.get('square_size', 0.025)
+        )
 
 
 class CharucoBoard(CalibrationPattern):
@@ -773,6 +834,28 @@ class CharucoBoard(CalibrationPattern):
                 }
             ]
         }
+    
+    def get_parameters(self) -> Dict[str, Any]:
+        """Get pattern parameters for JSON serialization."""
+        return {
+            'width': self.width,
+            'height': self.height,
+            'square_size': self.square_size,
+            'marker_size': self.marker_size,
+            'dictionary_id': self.dictionary_id
+        }
+    
+    @classmethod
+    def from_json(cls, json_data: Dict[str, Any]) -> 'CharucoBoard':
+        """Create CharucoBoard from JSON data."""
+        params = json_data.get('parameters', {})
+        return cls(
+            width=params.get('width', 9),
+            height=params.get('height', 7),
+            square_size=params.get('square_size', 0.025),
+            marker_size=params.get('marker_size', 0.015),
+            dictionary_id=params.get('dictionary_id', cv2.aruco.DICT_6X6_250)
+        )
 
 
 class Custom3DPattern(CalibrationPattern):
@@ -1090,3 +1173,55 @@ def get_pattern_type_configurations():
             }
     
     return pattern_configs
+
+
+def create_pattern_from_json(json_data: Dict[str, Any]) -> CalibrationPattern:
+    """
+    Create a calibration pattern from JSON data.
+    
+    Args:
+        json_data: Dictionary containing pattern configuration
+        
+    Returns:
+        CalibrationPattern instance
+        
+    Raises:
+        ValueError: If pattern type is not supported
+    """
+    pattern_id = json_data.get('pattern_id', '')
+    
+    # Map pattern IDs to classes
+    pattern_classes = {
+        'standard_chessboard': StandardChessboard,
+        'charuco_board': CharucoBoard,
+        # Can be extended for future pattern types
+    }
+    
+    # Also support short names
+    if pattern_id not in pattern_classes:
+        short_name_map = {
+            'standard': StandardChessboard,
+            'charuco': CharucoBoard,
+        }
+        pattern_id = json_data.get('pattern_type', pattern_id)
+        if pattern_id in short_name_map:
+            pattern_classes[pattern_id] = short_name_map[pattern_id]
+    
+    if pattern_id not in pattern_classes:
+        raise ValueError(f"Unsupported pattern type: {pattern_id}")
+    
+    pattern_class = pattern_classes[pattern_id]
+    return pattern_class.from_json(json_data)
+
+
+def pattern_to_json(pattern: CalibrationPattern) -> Dict[str, Any]:
+    """
+    Convert a calibration pattern to JSON format.
+    
+    Args:
+        pattern: CalibrationPattern instance
+        
+    Returns:
+        Dictionary representation of the pattern
+    """
+    return pattern.to_json()
