@@ -489,11 +489,12 @@ class ChessboardConfig {
             return;
         }
         
-        const params = this.getPatternParams();
-        console.log('📋 Pattern params:', params);
-        
-        // Add cache-busting parameter to force browser to reload image
-        params.t = Date.now();
+        const params = {
+            pattern_json: JSON.stringify(this.getPatternJSON()),
+            pixel_per_square: 20,
+            border_pixels: 0,
+            t: Date.now() // Cache busting
+        };
         
         const url = `/api/pattern_image?${new URLSearchParams(params)}`;
         console.log('🔗 Generated URL (with cache-busting):', url);
@@ -547,11 +548,12 @@ class ChessboardConfig {
             return;
         }
         
-        const params = this.getModalPatternParams();
-        console.log('📋 Modal pattern params:', params);
-        
-        // Add cache-busting parameter to force browser to reload image
-        params.t = Date.now();
+        const params = {
+            pattern_json: JSON.stringify(this.getPatternJSON()),
+            pixel_per_square: 20,
+            border_pixels: 0,
+            t: Date.now() // Cache busting
+        };
         
         const url = `/api/pattern_image?${new URLSearchParams(params)}`;
         console.log('🔗 Generated URL (with cache-busting):', url);
@@ -568,31 +570,12 @@ class ChessboardConfig {
         };
     }
     
-    getPatternParams() {
-        if (!this.config.patternType || !this.config.parameters) {
-            return { pattern_type: 'standard', pixel_per_square: 20, border_pixels: 0 };
-        }
-
-        const params = {
-            pattern_type: this.config.patternType,
-            pixel_per_square: 20,
-            border_pixels: 0
-        };
-
-        // Add pattern-specific parameters
-        for (const [paramName, value] of Object.entries(this.config.parameters)) {
-            params[paramName] = value;
-        }
-
-        return params;
-    }
-
     // Create a valid JSON pattern object for the backend
     getPatternJSON() {
         if (!this.config.patternType || !this.config.parameters) {
             // Return default standard chessboard pattern
             return {
-                pattern_id: 'standard',
+                pattern_id: 'standard_chessboard',
                 name: 'Standard Chessboard',
                 description: 'Traditional black and white checkerboard pattern',
                 is_planar: true,
@@ -606,7 +589,7 @@ class ChessboardConfig {
 
         // Create the base pattern object
         const patternJSON = {
-            pattern_id: this.config.patternType,
+            pattern_id: this.config.patternType === 'standard' ? 'standard_chessboard' : 'charuco_board',
             is_planar: true,
             parameters: {}
         };
@@ -635,27 +618,6 @@ class ChessboardConfig {
 
         return patternJSON;
     }
-
-    getModalPatternParams() {
-        if (!this.config.patternType) {
-            return { pattern_type: 'standard', pixel_per_square: 20, border_pixels: 0 };
-        }
-        
-        const params = {
-            pattern_type: this.config.patternType,
-            pixel_per_square: 20,
-            border_pixels: 0
-        };
-        
-        // Add current parameter values from form
-        if (this.config.parameters) {
-            for (const [paramName, value] of Object.entries(this.config.parameters)) {
-                params[paramName] = value;
-            }
-        }
-        
-        return params;
-    }
     
     async downloadPattern() {
         if (!this.config.patternType) {
@@ -666,12 +628,12 @@ class ChessboardConfig {
         console.log('Downloading pattern with config:', this.config);
         
         const params = {
-            ...this.getPatternParams(),
+            pattern_json: JSON.stringify(this.getPatternJSON()),
             pixel_per_square: 100,  // Higher resolution for printing
-            border_pixels: 50      // Border for printing
+            border_pixels: 50       // Border for printing
         };
         
-        const url = `/api/pattern_download?${new URLSearchParams(params)}`;
+        const url = `/api/pattern_image?${new URLSearchParams(params)}`;
         
         try {
             const response = await fetch(url);

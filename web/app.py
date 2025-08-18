@@ -1076,51 +1076,29 @@ def get_visualization_image(session_id, filename):
 def get_pattern_image():
     """Generate and serve calibration pattern images."""
     try:
-        # Get pattern parameters from query string
-        pattern_type = request.args.get('pattern_type', 'standard')
+        # Get pattern JSON from query string or form data
+        pattern_json_str = request.args.get('pattern_json') or request.form.get('pattern_json')
         
-        # Modern parameter names only
-        width = int(request.args.get('width', 11))
-        height = int(request.args.get('height', 8))
-        square_size = float(request.args.get('square_size', 0.02))
+        if not pattern_json_str:
+            return jsonify({'error': 'pattern_json parameter is required'}), 400
         
-        # Simplified parameters
+        try:
+            pattern_json = json.loads(pattern_json_str)
+        except json.JSONDecodeError:
+            return jsonify({'error': 'Invalid JSON format for pattern_json parameter'}), 400
+        
+        # Pattern generation parameters
         pixel_per_square = int(request.args.get('pixel_per_square', 100))
         border_pixels = int(request.args.get('border_pixels', 0))
         
-        # ChArUco specific parameters
-        marker_size = float(request.args.get('marker_size', 0.0125))
-        dictionary_id = int(request.args.get('dictionary_id', cv2.aruco.DICT_6X6_250))
+        print(f"API: Creating pattern from JSON: {pattern_json}")
         
-        print(f"API: Creating pattern {pattern_type} with width={width}, height={height}, square_size={square_size}")
-        
-        # Create pattern instance
-        if pattern_type == 'standard':
-            pattern_json = {
-                'pattern_id': 'standard_chessboard',
-                'parameters': {
-                    'width': width,
-                    'height': height,
-                    'square_size': square_size
-                }
-            }
+        # Create pattern instance using unified JSON system
+        try:
             pattern = create_pattern_from_json(pattern_json)
-        elif pattern_type == 'charuco':
-            # For ChArUco, width and height represent squares, not corners
-            print(f"API: Creating ChArUco with width={width}, height={height}, marker_size={marker_size}, dict={dictionary_id}")
-            pattern_json = {
-                'pattern_id': 'charuco_board',
-                'parameters': {
-                    'width': width,
-                    'height': height,
-                    'square_size': square_size,
-                    'marker_size': marker_size,
-                    'dictionary_id': dictionary_id
-                }
-            }
-            pattern = create_pattern_from_json(pattern_json)
-        else:
-            return jsonify({'error': f'Unsupported pattern type: {pattern_type}'}), 400
+            print(f"✅ Created pattern: {pattern.name}")
+        except Exception as e:
+            return jsonify({'error': f'Failed to create pattern: {str(e)}'}), 400
         
         # Generate pattern image using simplified parameters
         pattern_image = pattern.generate_pattern_image(
@@ -1155,41 +1133,25 @@ def get_pattern_image():
 def get_pattern_description():
     """Get pattern description text."""
     try:
-        # Get pattern parameters from query string
-        pattern_type = request.args.get('pattern_type', 'standard')
-        corner_x = int(request.args.get('corner_x', 11))
-        corner_y = int(request.args.get('corner_y', 8))
-        square_size = float(request.args.get('square_size', 0.02))
+        # Get pattern JSON from query string or form data
+        pattern_json_str = request.args.get('pattern_json') or request.form.get('pattern_json')
         
-        # ChArUco specific parameters
-        marker_size = float(request.args.get('marker_size', 0.0125))
-        dictionary_id = int(request.args.get('dictionary_id', cv2.aruco.DICT_6X6_250))
+        if not pattern_json_str:
+            return jsonify({'error': 'pattern_json parameter is required'}), 400
         
-        # Create pattern instance
-        if pattern_type == 'standard':
-            pattern_json = {
-                'pattern_id': 'standard_chessboard',
-                'parameters': {
-                    'width': corner_x,
-                    'height': corner_y,
-                    'square_size': square_size
-                }
-            }
+        try:
+            pattern_json = json.loads(pattern_json_str)
+        except json.JSONDecodeError:
+            return jsonify({'error': 'Invalid JSON format for pattern_json parameter'}), 400
+        
+        print(f"API: Creating pattern description from JSON: {pattern_json}")
+        
+        # Create pattern instance using unified JSON system
+        try:
             pattern = create_pattern_from_json(pattern_json)
-        elif pattern_type == 'charuco':
-            pattern_json = {
-                'pattern_id': 'charuco_board',
-                'parameters': {
-                    'width': corner_x,
-                    'height': corner_y,
-                    'square_size': square_size,
-                    'marker_size': marker_size,
-                    'dictionary_id': dictionary_id
-                }
-            }
-            pattern = create_pattern_from_json(pattern_json)
-        else:
-            return jsonify({'error': f'Unsupported pattern type: {pattern_type}'}), 400
+            print(f"✅ Created pattern for description: {pattern.name}")
+        except Exception as e:
+            return jsonify({'error': f'Failed to create pattern: {str(e)}'}), 400
         
         # Get pattern information
         info = pattern.get_info()
