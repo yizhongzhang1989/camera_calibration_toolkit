@@ -45,10 +45,10 @@ Open your browser to `http://localhost:5000` and follow the interface:
 5. **Click "Start Calibration"** to begin the process
 6. **View results** and export calibration data
 
-### Option 2: Command Line (Legacy Compatible)
+### Option 2: Command Line Interface
 
 ```bash
-python duco_camera_calibrate_new.py \
+python main.py \
   --calib_data_dir ./calibration_data \
   --xx 11 --yy 8 --square_size 0.02 \
   --calib_out_dir ./results \
@@ -103,8 +103,7 @@ camera-calibration-toolkit/
 │   ├── 3d_pattern_example.py            # 3D pattern calibration
 │   └── chessboard_pattern_example.py    # Pattern abstraction demo
 ├── tests/                  # Unit tests
-├── main.py                # Main entry point
-├── duco_camera_calibrate_new.py  # Legacy compatibility script
+├── main.py                # Main entry point and command line interface
 ├── requirements.txt       # Python dependencies
 ├── setup.py              # Package installation
 └── README.md            # This file

@@ -26,7 +26,48 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from core.intrinsic_calibration import IntrinsicCalibrator
 from core.calibration_patterns import create_pattern_from_json, get_pattern_type_configurations
 from core.eye_in_hand_calibration import EyeInHandCalibrator
-from web.visualization_utils import trim_distortion_coefficients
+
+
+def trim_distortion_coefficients(dist_coeffs, distortion_model='standard'):
+    """
+    Trim distortion coefficients based on the distortion model to remove trailing zeros.
+    
+    Args:
+        dist_coeffs: Distortion coefficients array
+        distortion_model: Type of distortion model used
+        
+    Returns:
+        Trimmed distortion coefficients array
+    """
+    # Flatten in case it's 2D
+    flat_coeffs = dist_coeffs.flatten() if hasattr(dist_coeffs, 'flatten') else np.array(dist_coeffs).flatten()
+    
+    # Expected coefficient counts for each model
+    expected_counts = {
+        'standard': 5,    # k1, k2, p1, p2, k3
+        'rational': 8,    # k1-k6, p1, p2  
+        'thin_prism': 12, # k1-k6, p1, p2, s1-s4
+        'tilted': 14      # k1-k6, p1, p2, s1-s4, τx, τy
+    }
+    
+    expected_count = expected_counts.get(distortion_model, 5)
+    
+    # For rational model, specifically check if coefficients beyond index 7 are all zeros
+    if distortion_model == 'rational' and len(flat_coeffs) > 8:
+        has_non_zero_after_8 = np.any(np.abs(flat_coeffs[8:]) > 1e-10)
+        if not has_non_zero_after_8:
+            return flat_coeffs[:8]
+    
+    # General trailing zero removal for all models
+    coeffs_list = flat_coeffs.tolist()
+    while len(coeffs_list) > expected_count and abs(coeffs_list[-1]) < 1e-10:
+        coeffs_list.pop()
+    
+    # Ensure minimum expected length
+    while len(coeffs_list) < expected_count:
+        coeffs_list.append(0.0)
+    
+    return np.array(coeffs_list)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
