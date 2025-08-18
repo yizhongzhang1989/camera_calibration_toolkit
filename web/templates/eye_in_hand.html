@@ -169,49 +169,67 @@
 
             <!-- Right Results Panel -->
             <div class="intrinsic-results-panel">
-                <div class="intrinsic-results-header">
-                    <h3>🔄 Eye-in-Hand Processing Results</h3>
-                    <div id="progress-info" style="color: #666; font-size: 0.9rem;">
-                        Upload robot pose images and poses to see calibration results
+                <!-- Upper Results Area -->
+                <div class="results-upper-area">
+                    <div id="progress-info" style="display: none;"></div>
+                    <div class="intrinsic-results-content">
+                        <div id="results-placeholder" style="text-align: center; padding: 3rem; color: #666;">
+                            <div style="font-size: 4rem; margin-bottom: 1rem; opacity: 0.5;">🤖</div>
+                            <h4>Upload Robot Pose Data</h4>
+                            <p>Upload images and corresponding robot pose JSON files</p>
+                            <p style="font-size: 0.9em; margin-top: 1rem;">Both images and poses are required for eye-in-hand calibration</p>
+                        </div>
+                        
+                        <!-- Poses Status Section -->
+                        <div id="poses-status-section" class="panel-section" style="display: none; background: #f8f9fa; border-radius: 8px; padding: 1rem; margin: 1rem 0;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: #495057;">🦾 Robot Poses Status</h4>
+                            <div id="poses-status" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <span id="poses-count" style="font-weight: bold;">0 poses uploaded</span>
+                                    <span id="poses-match-status" style="color: #6c757d; font-size: 0.9rem;">• Waiting for poses</span>
+                                </div>
+                                <div id="poses-validation" style="color: #28a745; font-size: 0.9rem; font-weight: bold;">
+                                    <!-- Validation status will appear here -->
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="table-container">
+                            <table id="image-comparison-table" class="image-comparison-table" style="display: none;">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 10%;">
+                                            <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                                                <input type="checkbox" id="select-all-checkbox" class="select-all-checkbox" checked title="Select/Deselect All">
+                                                <span style="font-size: 0.9rem;">Select</span>
+                                            </div>
+                                        </th>
+                                        <th style="width: 22.5%;">📷 Original Image</th>
+                                        <th style="width: 22.5%;">🎯 Corner Detection</th>
+                                        <th style="width: 22.5%;">✨ Undistorted Image</th>
+                                        <th style="width: 22.5%;">🔄 Reprojected Points</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="image-comparison-body">
+                                    <!-- Dynamic content will be inserted here -->
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
                 
-                <!-- Poses Status Section -->
-                <div id="poses-status-section" class="panel-section" style="display: none; background: #f8f9fa; border-radius: 8px; padding: 1rem; margin: 1rem 0;">
-                    <h4 style="margin: 0 0 0.5rem 0; color: #495057;">🦾 Robot Poses Status</h4>
-                    <div id="poses-status" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
-                        <div style="display: flex; align-items: center; gap: 0.5rem;">
-                            <span id="poses-count" style="font-weight: bold;">0 poses uploaded</span>
-                            <span id="poses-match-status" style="color: #6c757d; font-size: 0.9rem;">• Waiting for poses</span>
-                        </div>
-                        <div id="poses-validation" style="color: #28a745; font-size: 0.9rem; font-weight: bold;">
-                            <!-- Validation status will appear here -->
-                        </div>
-                    </div>
-                </div>
+                <!-- Console Resizer -->
+                <div class="console-resizer" id="console-resizer"></div>
                 
-                <div class="intrinsic-results-content">
-                    <div id="results-placeholder" style="text-align: center; padding: 3rem; color: #666;">
-                        <div style="font-size: 4rem; margin-bottom: 1rem; opacity: 0.5;">🤖</div>
-                        <h4>Upload Robot Pose Data</h4>
-                        <p>Upload images and corresponding robot pose JSON files</p>
-                        <p style="font-size: 0.9em; margin-top: 1rem;">Both images and poses are required for eye-in-hand calibration</p>
+                <!-- Console Area -->
+                <div class="console-area" id="console-area" style="background-color: #f0f0f0; border: 2px solid #007acc; min-height: 150px;">
+                    <div class="console-content">
+                        <div id="console-output" style="background-color: white; min-height: 100px;">Console output will appear here...</div>
+                        <div class="console-controls">
+                            <button id="clear-console-btn" type="button" class="console-btn">Clear</button>
+                            <button id="refresh-console-btn" type="button" class="console-btn">Refresh</button>
+                        </div>
                     </div>
-                    
-                    <table id="image-comparison-table" class="image-comparison-table" style="display: none;">
-                        <thead>
-                            <tr>
-                                <th style="width: 10%;"></th>
-                                <th style="width: 22.5%;">📷 Original Image</th>
-                                <th style="width: 22.5%;">🎯 Corner Detection</th>
-                                <th style="width: 22.5%;">✨ Undistorted Image</th>
-                                <th style="width: 22.5%;">🔄 Reprojected Points</th>
-                            </tr>
-                        </thead>
-                        <tbody id="image-comparison-body">
-                            <!-- Dynamic content will be inserted here -->
-                        </tbody>
-                    </table>
                 </div>
             </div>
         </div>
