@@ -587,24 +587,22 @@ class ChessboardConfig {
             };
         }
 
-        // Create the base pattern object
+        // Create the base pattern object using configuration data
+        const patternConfig = this.patternConfigurations[this.config.patternType];
+        
+        // Map frontend pattern types to backend pattern IDs
+        const patternIdMapping = {
+            'standard': 'standard_chessboard',
+            'charuco': 'charuco_board'
+        };
+        
         const patternJSON = {
-            pattern_id: this.config.patternType === 'standard' ? 'standard_chessboard' : 'charuco_board',
+            pattern_id: patternIdMapping[this.config.patternType] || this.config.patternType,
+            name: patternConfig ? patternConfig.name : this.config.patternType,
+            description: patternConfig ? patternConfig.description : `${this.config.patternType} calibration pattern`,
             is_planar: true,
             parameters: {}
         };
-
-        // Set name and description based on pattern type
-        if (this.config.patternType === 'standard') {
-            patternJSON.name = 'Standard Chessboard';
-            patternJSON.description = 'Traditional black and white checkerboard pattern';
-        } else if (this.config.patternType === 'charuco') {
-            patternJSON.name = 'ChArUco Board';
-            patternJSON.description = 'Chessboard with ArUco markers';
-        } else {
-            patternJSON.name = this.config.patternType;
-            patternJSON.description = `${this.config.patternType} calibration pattern`;
-        }
 
         // Copy all parameters from the current configuration
         for (const [paramName, value] of Object.entries(this.config.parameters)) {

@@ -125,54 +125,6 @@ def image_to_base64(image_path):
         return None
 
 
-def create_pattern_from_parameters(parameters):
-    """Create calibration pattern from session parameters using JSON system."""
-    pattern_type = parameters.get('pattern_type', 'standard')
-    pattern_params = parameters.get('pattern_parameters', {})
-    
-    if pattern_type == 'standard':
-        width = pattern_params.get('width', parameters.get('chessboard_x', 11))
-        height = pattern_params.get('height', parameters.get('chessboard_y', 8))
-        square_size = pattern_params.get('square_size', parameters.get('square_size', 0.02))
-        
-        pattern_json = {
-            'pattern_id': 'standard_chessboard',
-            'name': 'Standard Chessboard',
-            'description': 'Standard chessboard calibration pattern',
-            'parameters': {
-                'width': width,
-                'height': height,
-                'square_size': square_size
-            }
-        }
-        
-    elif pattern_type == 'charuco':
-        width = pattern_params.get('width', parameters.get('chessboard_x', 8))
-        height = pattern_params.get('height', parameters.get('chessboard_y', 6))
-        square_size = pattern_params.get('square_size', parameters.get('square_size', 0.040))
-        marker_size = pattern_params.get('marker_size', parameters.get('marker_size', 0.020))
-        dict_id_raw = pattern_params.get('dictionary_id', parameters.get('dictionary_id', cv2.aruco.DICT_6X6_250))
-        dictionary_id = int(dict_id_raw) if isinstance(dict_id_raw, (str, float)) else dict_id_raw
-        
-        pattern_json = {
-            'pattern_id': 'charuco_board',
-            'name': 'ChArUco Board',
-            'description': 'ChArUco board calibration pattern',
-            'parameters': {
-                'width': width,
-                'height': height,
-                'square_size': square_size,
-                'marker_size': marker_size,
-                'dictionary_id': dictionary_id
-            }
-        }
-        
-    else:
-        raise ValueError(f'Unsupported pattern type: {pattern_type}')
-    
-    return create_pattern_from_json(pattern_json)
-
-
 @app.route('/')
 def index():
     """Main calibration type selection page."""
@@ -453,15 +405,10 @@ def calibrate():
                 
                 # Create calibration pattern using unified JSON system
                 try:
-                    if 'pattern_json' in parameters:
-                        # Use the JSON pattern directly
-                        pattern_json = parameters['pattern_json']
-                        pattern = create_pattern_from_json(pattern_json)
-                        print(f"✅ Created pattern from JSON: {pattern_json['pattern_id']}")
-                    else:
-                        # Fallback to create from individual parameters
-                        pattern = create_pattern_from_parameters(parameters)
-                        print(f"✅ Created pattern using unified JSON system")
+                    # Use the JSON pattern directly (always available since set_parameters requires it)
+                    pattern_json = parameters['pattern_json']
+                    pattern = create_pattern_from_json(pattern_json)
+                    print(f"✅ Created pattern from JSON: {pattern_json['pattern_id']}")
                     
                     # Log pattern information
                     pattern_info = pattern.get_info()
@@ -639,15 +586,10 @@ def calibrate():
                     
                     # Create calibration pattern using unified JSON system
                     try:
-                        if 'pattern_json' in parameters:
-                            # Use the JSON pattern directly
-                            pattern_json = parameters['pattern_json']
-                            pattern = create_pattern_from_json(pattern_json)
-                            print(f"✅ Created pattern from JSON: {pattern_json['pattern_id']}")
-                        else:
-                            # Fallback to create from individual parameters
-                            pattern = create_pattern_from_parameters(parameters)
-                            print(f"✅ Created pattern using unified JSON system")
+                        # Use the JSON pattern directly (always available since set_parameters requires it)
+                        pattern_json = parameters['pattern_json']
+                        pattern = create_pattern_from_json(pattern_json)
+                        print(f"✅ Created pattern from JSON: {pattern_json['pattern_id']}")
                     except Exception as e:
                         print(f"❌ Error creating calibration pattern: {str(e)}")
                         return jsonify({'error': f'Error creating calibration pattern: {str(e)}'}), 400
