@@ -840,6 +840,114 @@ def get_visualization_image(session_id, filename):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/pattern_image')
+def get_pattern_image():
+    """Generate and serve calibration pattern images."""
+    try:
+        # Get pattern parameters from query string
+        pattern_type = request.args.get('pattern_type', 'standard')
+        corner_x = int(request.args.get('corner_x', 11))
+        corner_y = int(request.args.get('corner_y', 8))
+        square_size = float(request.args.get('square_size', 0.025))
+        
+        # Simplified parameters
+        pixel_per_square = int(request.args.get('pixel_per_square', 100))
+        border_pixels = int(request.args.get('border_pixels', 0))
+        
+        # ChArUco specific parameters
+        marker_size = float(request.args.get('marker_size', 0.0125))
+        dictionary_id = int(request.args.get('dictionary_id', cv2.aruco.DICT_6X6_250))
+        
+        # Create pattern instance
+        if pattern_type == 'standard':
+            pattern = create_chessboard_pattern('standard', 
+                                              width=corner_x, 
+                                              height=corner_y, 
+                                              square_size=square_size)
+        elif pattern_type == 'charuco':
+            # For ChArUco, width and height represent squares, not corners
+            pattern = create_chessboard_pattern('charuco',
+                                              width=corner_x,
+                                              height=corner_y,
+                                              square_size=square_size,
+                                              marker_size=marker_size,
+                                              dictionary_id=dictionary_id)
+        else:
+            return jsonify({'error': f'Unsupported pattern type: {pattern_type}'}), 400
+        
+        # Generate pattern image using simplified parameters
+        pattern_image = pattern.generate_pattern_image(
+            pixel_per_square=pixel_per_square,
+            border_pixels=border_pixels
+        )
+        
+        # Convert to bytes for HTTP response
+        _, buffer = cv2.imencode('.png', pattern_image)
+        
+        # Create temporary file to serve
+        temp_file = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
+        temp_file.write(buffer.tobytes())
+        temp_file.close()
+        
+        def remove_file(response):
+            try:
+                os.unlink(temp_file.name)
+            except:
+                pass
+            return response
+        
+        response = send_file(temp_file.name, mimetype='image/png')
+        response.call_on_close(remove_file)
+        return response
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/pattern_description')
+def get_pattern_description():
+    """Get pattern description text."""
+    try:
+        # Get pattern parameters from query string
+        pattern_type = request.args.get('pattern_type', 'standard')
+        corner_x = int(request.args.get('corner_x', 11))
+        corner_y = int(request.args.get('corner_y', 8))
+        square_size = float(request.args.get('square_size', 0.025))
+        
+        # ChArUco specific parameters
+        marker_size = float(request.args.get('marker_size', 0.0125))
+        dictionary_id = int(request.args.get('dictionary_id', cv2.aruco.DICT_6X6_250))
+        
+        # Create pattern instance
+        if pattern_type == 'standard':
+            pattern = create_chessboard_pattern('standard', 
+                                              width=corner_x, 
+                                              height=corner_y, 
+                                              square_size=square_size)
+        elif pattern_type == 'charuco':
+            pattern = create_chessboard_pattern('charuco',
+                                              width=corner_x,
+                                              height=corner_y,
+                                              square_size=square_size,
+                                              marker_size=marker_size,
+                                              dictionary_id=dictionary_id)
+        else:
+            return jsonify({'error': f'Unsupported pattern type: {pattern_type}'}), 400
+        
+        # Get pattern information
+        info = pattern.get_info()
+        description = pattern.get_pattern_description()
+        
+        return jsonify({
+            'description': description,
+            'pattern_name': info['name'],
+            'pattern_info': info
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/clear_images', methods=['POST'])
 def clear_images():
     """Clear uploaded images for a session."""

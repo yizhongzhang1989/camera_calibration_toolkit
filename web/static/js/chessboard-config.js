@@ -1,32 +1,26 @@
 /**
  * Chessboard Configuration Module
- * Shared functionality for chessboard target configuration and download
- * Used across intrinsic and hand-eye calibration interfaces
+ * Handles chessboard pattern configuration and display using Python-generated images
  */
 
 class ChessboardConfig {
     constructor(options = {}) {
         console.log('ChessboardConfig constructor called with options:', options);
-        this.modalId = options.modalId || 'chessboardModal';
-        this.canvasId = options.canvasId || 'chessboard-canvas';
-        this.downloadCanvasId = options.downloadCanvasId || 'download-canvas';
-        this.statusCallback = options.statusCallback || this.defaultStatusCallback;
         
         // Default configuration
         this.config = {
             cornerX: 11,
             cornerY: 8,
-            squareSize: 0.02, // meters
-            paperSize: 'a4',
-            customWidth: 210,
-            customHeight: 297,
-            format: 'png',
-            resolution: 300
+            squareSize: 0.020, // meters  
+            patternType: 'standard',
+            charucoSquareX: 5,
+            charucoSquareY: 7,
+            charucoSquareSize: 0.040,
+            charucoMarkerSize: 0.020,
+            charucoDictionary: 'DICT_6X6_250'
         };
         
         console.log('ChessboardConfig initialized with config:', this.config);
-        
-        // Don't initialize event listeners in constructor - wait for DOM to be ready
         this.eventListenersInitialized = false;
     }
     
@@ -38,525 +32,399 @@ class ChessboardConfig {
             this.eventListenersInitialized = true;
         }
         
+        // Load from session storage if available
+        this.loadFromSession();
+        
         // Initial display update
-        this.updateChessboardDisplay();
-    }
-    
-    defaultStatusCallback(message, type) {
-        console.log(`[${type.toUpperCase()}] ${message}`);
+        this.updateDisplay();
     }
     
     initializeEventListeners() {
         console.log('Initializing event listeners...');
         
-        // Download size change
-        const downloadSize = document.getElementById('download-size');
-        if (downloadSize) {
-            console.log('Found download-size element');
-            downloadSize.addEventListener('change', (e) => {
-                const customGroup = document.getElementById('custom-size-group');
-                if (customGroup) {
-                    customGroup.style.display = e.target.value === 'custom' ? 'block' : 'none';
-                }
-                this.updateDownloadPreview();
-            });
-        } else {
-            console.warn('download-size element not found');
-        }
-        
-        // Download parameters change
-        ['custom-width', 'custom-height', 'download-format', 'download-resolution'].forEach(id => {
-            const element = document.getElementById(id);
-            if (element) {
-                console.log(`Found element: ${id}`);
-                element.addEventListener('change', () => this.updateDownloadPreview());
-            } else {
-                console.warn(`Element not found: ${id}`);
+        // Pattern type change in modal
+        document.addEventListener('change', (e) => {
+            if (e.target.name === 'pattern-type') {
+                this.handlePatternTypeChange(e.target.value);
             }
         });
+
+        // Input changes for all configuration fields
+        const inputIds = [
+            'modal-chessboard-x', 'modal-chessboard-y', 'modal-square-size',
+            'modal-charuco-x', 'modal-charuco-y', 
+            'modal-charuco-square-size', 'modal-charuco-marker-size', 'modal-charuco-dictionary'
+        ];
         
-        // Modal chessboard parameters change
-        ['modal-chessboard-x', 'modal-chessboard-y', 'modal-square-size'].forEach(id => {
+        inputIds.forEach(id => {
             const element = document.getElementById(id);
             if (element) {
-                console.log(`Found element: ${id}`);
-                element.addEventListener('input', () => {
-                    this.updateChessboardDisplay();
-                    this.updateDownloadPreview();
-                });
-            } else {
-                console.warn(`Element not found: ${id}`);
+                element.addEventListener('input', () => this.updateModalPreview());
+            }
+        });
+
+        // Apply button
+        document.addEventListener('click', (e) => {
+            if (e.target.matches('.btn-apply-config')) {
+                this.applyConfiguration();
+            }
+            
+            // Download button
+            if (e.target.matches('#download-pattern-btn')) {
+                this.downloadPattern();
+            }
+        });
+
+        // Modal show event
+        document.addEventListener('shown.bs.modal', (e) => {
+            if (e.target.id === 'chessboard-config-modal') {
+                this.loadConfigToModal();
+                this.updateModalPreview();
             }
         });
         
         console.log('Event listeners initialization complete');
     }
     
-    openModal(currentConfig = {}) {
-        console.log('Opening chessboard modal with config:', currentConfig);
-        // Sync modal values with current settings
-        this.config = { ...this.config, ...currentConfig };
+    handlePatternTypeChange(patternType) {
+        this.config.patternType = patternType;
         
-        const elements = {
-            'modal-chessboard-x': this.config.cornerX,
-            'modal-chessboard-y': this.config.cornerY,
-            'modal-square-size': this.config.squareSize
-        };
+        // Show/hide appropriate config sections
+        const chessboardConfig = document.getElementById('chessboard-config');
+        const charucoConfig = document.getElementById('charuco-config');
         
-        console.log('Setting modal element values:', elements);
-        Object.entries(elements).forEach(([id, value]) => {
-            const element = document.getElementById(id);
-            if (element) {
-                element.value = value;
-                console.log(`Set ${id} to ${value}`);
-            } else {
-                console.warn(`Element with id ${id} not found`);
+        if (chessboardConfig && charucoConfig) {
+            if (patternType === 'chessboard' || patternType === 'standard') {
+                chessboardConfig.style.display = 'block';
+                charucoConfig.style.display = 'none';
+            } else if (patternType === 'charuco') {
+                chessboardConfig.style.display = 'none';
+                charucoConfig.style.display = 'block';
             }
+        }
+        
+        this.updateModalPreview();
+    }
+    
+    loadFromSession() {
+        try {
+            const saved = sessionStorage.getItem('chessboard_config');
+            if (saved) {
+                this.config = { ...this.config, ...JSON.parse(saved) };
+                console.log('Loaded config from session:', this.config);
+            }
+        } catch (error) {
+            console.warn('Could not load chessboard config from session:', error);
+        }
+    }
+
+    saveToSession() {
+        try {
+            sessionStorage.setItem('chessboard_config', JSON.stringify(this.config));
+        } catch (error) {
+            console.warn('Could not save chessboard config to session:', error);
+        }
+    }
+    
+    loadConfigToModal() {
+        // Pattern type radio buttons
+        const patternTypeInputs = document.querySelectorAll('input[name="pattern-type"]');
+        patternTypeInputs.forEach(input => {
+            input.checked = input.value === this.config.patternType;
         });
-        
-        // Update previews
-        this.updateChessboardDisplay();
-        this.updateDownloadPreview();
-        
-        // Show modal
-        const modal = document.getElementById(this.modalId);
+
+        // Trigger pattern type change to show correct sections
+        this.handlePatternTypeChange(this.config.patternType);
+
+        // Load values into modal inputs
+        this.setElementValue('modal-chessboard-x', this.config.cornerX);
+        this.setElementValue('modal-chessboard-y', this.config.cornerY);
+        this.setElementValue('modal-square-size', this.config.squareSize);
+        this.setElementValue('modal-charuco-x', this.config.charucoSquareX);
+        this.setElementValue('modal-charuco-y', this.config.charucoSquareY);
+        this.setElementValue('modal-charuco-square-size', this.config.charucoSquareSize);
+        this.setElementValue('modal-charuco-marker-size', this.config.charucoMarkerSize);
+        this.setElementValue('modal-charuco-dictionary', this.config.charucoDictionary);
+    }
+
+    setElementValue(id, value) {
+        const element = document.getElementById(id);
+        if (element) {
+            element.value = value;
+        }
+    }
+    
+    applyConfiguration() {
+        // Get current pattern type
+        const patternTypeInput = document.querySelector('input[name="pattern-type"]:checked');
+        if (patternTypeInput) {
+            this.config.patternType = patternTypeInput.value;
+        }
+
+        if (this.config.patternType === 'chessboard' || this.config.patternType === 'standard') {
+            // Update chessboard config
+            this.config.cornerX = this.getCurrentValue('modal-chessboard-x', this.config.cornerX);
+            this.config.cornerY = this.getCurrentValue('modal-chessboard-y', this.config.cornerY);
+            this.config.squareSize = this.getCurrentValue('modal-square-size', this.config.squareSize);
+        } else if (this.config.patternType === 'charuco') {
+            // Update ChArUco config
+            this.config.charucoSquareX = this.getCurrentValue('modal-charuco-x', this.config.charucoSquareX);
+            this.config.charucoSquareY = this.getCurrentValue('modal-charuco-y', this.config.charucoSquareY);
+            this.config.charucoSquareSize = this.getCurrentValue('modal-charuco-square-size', this.config.charucoSquareSize);
+            this.config.charucoMarkerSize = this.getCurrentValue('modal-charuco-marker-size', this.config.charucoMarkerSize);
+            
+            const dictElement = document.getElementById('modal-charuco-dictionary');
+            if (dictElement) {
+                this.config.charucoDictionary = dictElement.value;
+            }
+        }
+
+        this.saveToSession();
+        this.updateDisplay();
+
+        // Close modal
+        const modal = bootstrap.Modal.getInstance(document.getElementById('chessboard-config-modal'));
         if (modal) {
-            modal.style.display = 'block';
-            console.log('Modal displayed');
-        } else {
-            console.error(`Modal with id ${this.modalId} not found`);
+            modal.hide();
         }
     }
     
-    closeModal() {
-        const modal = document.getElementById(this.modalId);
-        if (modal) modal.style.display = 'none';
+    getCurrentValue(elementId, defaultValue) {
+        const element = document.getElementById(elementId);
+        if (element) {
+            const value = element.type === 'number' ? parseFloat(element.value) : parseInt(element.value);
+            return isNaN(value) ? defaultValue : value;
+        }
+        return defaultValue;
     }
     
-    saveConfiguration(callback) {
-        // Get values from modal
-        const x = document.getElementById('modal-chessboard-x');
-        const y = document.getElementById('modal-chessboard-y');
-        const size = document.getElementById('modal-square-size');
+    updateDisplay() {
+        // Update the main chessboard card display
+        this.updatePatternImage();
+        this.updatePatternDescription();
+    }
+    
+    updatePatternImage() {
+        const img = document.getElementById('chessboard-preview-img');
+        if (!img) return;
         
-        if (x && y && size) {
-            this.config.cornerX = parseInt(x.value);
-            this.config.cornerY = parseInt(y.value);
-            this.config.squareSize = parseFloat(size.value);
+        const params = this.getPatternParams();
+        const url = `/api/pattern_image?${new URLSearchParams(params)}`;
+        
+        img.src = url;
+        img.onerror = () => {
+            console.error('Failed to load pattern image:', url);
+            img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5vIEltYWdlPC90ZXh0Pjwvc3ZnPg==';
+        };
+    }
+    
+    async updatePatternDescription() {
+        const typeDisplay = document.getElementById('pattern-type-display');
+        const specsDisplay = document.getElementById('pattern-specs-display');
+        
+        if (!typeDisplay || !specsDisplay) return;
+        
+        try {
+            const params = this.getPatternParams();
+            const response = await fetch(`/api/pattern_description?${new URLSearchParams(params)}`);
+            const data = await response.json();
             
-            // Call callback with new configuration
-            if (callback) callback(this.config);
+            if (data.error) {
+                console.error('Error getting pattern description:', data.error);
+                return;
+            }
             
-            this.closeModal();
-            this.statusCallback('Chessboard configuration updated', 'success');
+            typeDisplay.textContent = data.pattern_name || 'Pattern';
+            specsDisplay.innerHTML = data.description || 'No description available';
+            
+        } catch (error) {
+            console.error('Failed to fetch pattern description:', error);
         }
     }
     
-    updateChessboardDisplay() {
-        console.log('updateChessboardDisplay() called');
-        const x = this.getCurrentCornerX();
-        const y = this.getCurrentCornerY();
-        console.log(`Chessboard dimensions: ${x} × ${y}`);
+    updateModalPreview() {
+        // Update preview in modal if it exists
+        const modalImg = document.getElementById('chessboard-modal-preview');
+        if (!modalImg) return;
         
-        // Update display elements
-        const dimensions = document.getElementById('board-dimensions');
-        const squareSize = document.getElementById('board-square-size');
-        
-        if (dimensions) {
-            dimensions.textContent = `${x} × ${y} corners`;
-            console.log('Updated dimensions display');
-        } else {
-            console.warn('board-dimensions element not found');
-        }
-        
-        if (squareSize) {
-            const size = this.getCurrentSquareSize();
-            squareSize.textContent = `${(size * 1000).toFixed(1)} mm`;
-            console.log(`Updated square size display: ${(size * 1000).toFixed(1)} mm`);
-        } else {
-            console.warn('board-square-size element not found');
-        }
-        
-        // Draw chessboard preview
-        console.log('Drawing chessboard preview...');
-        this.drawChessboardPreview(x, y);
+        const params = this.getModalPatternParams();
+        const url = `/api/pattern_image?${new URLSearchParams(params)}`;
+        modalImg.src = url;
     }
     
-    drawChessboardPreview(cornerX, cornerY) {
-        console.log(`drawChessboardPreview(${cornerX}, ${cornerY}) called`);
-        const canvas = document.getElementById(this.canvasId);
-        if (!canvas) {
-            console.error(`Canvas with id ${this.canvasId} not found`);
-            return;
-        }
-        
-        console.log('Canvas found, drawing chessboard...');
-        const ctx = canvas.getContext('2d');
-        const canvasWidth = canvas.width;
-        const canvasHeight = canvas.height;
-        
-        // Clear canvas
-        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-        
-        // Calculate squares (corners + 1 for each dimension)
-        const squaresX = cornerX + 1;
-        const squaresY = cornerY + 1;
-        console.log(`Drawing ${squaresX} × ${squaresY} squares`);
-        
-        // Calculate square size to fit in canvas with some padding
-        const padding = 10;
-        const availableWidth = canvasWidth - 2 * padding;
-        const availableHeight = canvasHeight - 2 * padding;
-        
-        const squareSize = Math.min(
-            availableWidth / squaresX,
-            availableHeight / squaresY
-        );
-        
-        // Center the chessboard
-        const boardWidth = squaresX * squareSize;
-        const boardHeight = squaresY * squareSize;
-        const startX = (canvasWidth - boardWidth) / 2;
-        const startY = (canvasHeight - boardHeight) / 2;
-        
-        // Draw chessboard pattern
-        for (let row = 0; row < squaresY; row++) {
-            for (let col = 0; col < squaresX; col++) {
-                const x = startX + col * squareSize;
-                const y = startY + row * squareSize;
-                
-                // Alternate colors (true chessboard pattern)
-                const isBlack = (row + col) % 2 === 0;
-                ctx.fillStyle = isBlack ? '#2c2c2c' : '#f8f8f8';
-                ctx.fillRect(x, y, squareSize, squareSize);
-                
-                // Add subtle border to squares
-                ctx.strokeStyle = '#ccc';
-                ctx.lineWidth = 0.5;
-                ctx.strokeRect(x, y, squareSize, squareSize);
-            }
-        }
-        
-        // Draw corner indicators (red dots where corners are detected)
-        ctx.fillStyle = '#dc3545';
-        const cornerRadius = Math.max(2, squareSize * 0.1);
-        
-        for (let row = 1; row < squaresY; row++) {
-            for (let col = 1; col < squaresX; col++) {
-                const x = startX + col * squareSize;
-                const y = startY + row * squareSize;
-                
-                ctx.beginPath();
-                ctx.arc(x, y, cornerRadius, 0, 2 * Math.PI);
-                ctx.fill();
-            }
-        }
-        
-        // Add dimension labels
-        ctx.fillStyle = '#666';
-        ctx.font = '10px Arial';
-        ctx.textAlign = 'center';
-        
-        // Bottom label (X dimension)
-        ctx.fillText(`${cornerX} corners`, canvasWidth / 2, canvasHeight - 2);
-        
-        // Right label (Y dimension) - rotated
-        ctx.save();
-        ctx.translate(canvasWidth - 5, canvasHeight / 2);
-        ctx.rotate(-Math.PI / 2);
-        ctx.fillText(`${cornerY} corners`, 0, 0);
-        ctx.restore();
-    }
-    
-    updateDownloadPreview() {
-        // Get current parameters
-        const cornerX = this.getCurrentCornerX();
-        const cornerY = this.getCurrentCornerY();
-        const squareSize = this.getCurrentSquareSize();
-        
-        // Get download settings
-        const sizeType = this.getDownloadSizeType();
-        const { width, height } = this.getPaperDimensions(sizeType);
-        
-        // Update info display
-        const elements = {
-            'download-squares': `${cornerX + 1}×${cornerY + 1}`,
-            'download-dimensions': `${width}×${height} mm`,
-            'download-square-size': `${(squareSize * 1000).toFixed(1)} mm`
+    getPatternParams() {
+        const params = {
+            width: 300,
+            height: 200,
+            pixel_per_square: 20,  // Small preview image with 20px per square
+            border_pixels: 0       // No border for preview
         };
         
-        Object.entries(elements).forEach(([id, text]) => {
-            const element = document.getElementById(id);
-            if (element) element.textContent = text;
-        });
-        
-        // Draw preview
-        this.drawDownloadPreview(cornerX, cornerY, width, height);
-    }
-    
-    drawDownloadPreview(cornerX, cornerY, paperWidth, paperHeight) {
-        const canvas = document.getElementById(this.downloadCanvasId);
-        if (!canvas) return;
-        
-        const ctx = canvas.getContext('2d');
-        const canvasWidth = canvas.width;
-        const canvasHeight = canvas.height;
-        
-        // Clear canvas
-        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-        
-        // Calculate squares (corners + 1 for each dimension)
-        const squaresX = cornerX + 1;
-        const squaresY = cornerY + 1;
-        
-        // Calculate aspect ratios
-        const paperAspect = paperWidth / paperHeight;
-        const canvasAspect = canvasWidth / canvasHeight;
-        
-        // Fit paper aspect ratio to canvas
-        let drawWidth, drawHeight, offsetX, offsetY;
-        
-        if (paperAspect > canvasAspect) {
-            // Paper is wider relative to height
-            drawWidth = canvasWidth - 20; // padding
-            drawHeight = drawWidth / paperAspect;
-            offsetX = 10;
-            offsetY = (canvasHeight - drawHeight) / 2;
+        if (this.config.patternType === 'charuco') {
+            params.pattern_type = 'charuco';
+            params.corner_x = this.config.charucoSquareX;
+            params.corner_y = this.config.charucoSquareY;
+            params.square_size = this.config.charucoSquareSize;
+            params.marker_size = this.config.charucoMarkerSize;
+            params.dictionary_id = this.getDictionaryId(this.config.charucoDictionary);
         } else {
-            // Paper is taller relative to width
-            drawHeight = canvasHeight - 20; // padding
-            drawWidth = drawHeight * paperAspect;
-            offsetX = (canvasWidth - drawWidth) / 2;
-            offsetY = 10;
+            params.pattern_type = 'standard';
+            params.corner_x = this.config.cornerX;
+            params.corner_y = this.config.cornerY;
+            params.square_size = this.config.squareSize;
         }
         
-        // Draw paper background
-        ctx.fillStyle = 'white';
-        ctx.fillRect(offsetX, offsetY, drawWidth, drawHeight);
-        ctx.strokeStyle = '#ddd';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(offsetX, offsetY, drawWidth, drawHeight);
+        return params;
+    }
+    
+    getModalPatternParams() {
+        const patternTypeInput = document.querySelector('input[name="pattern-type"]:checked');
+        const patternType = patternTypeInput ? patternTypeInput.value : this.config.patternType;
         
-        // Calculate chessboard size that fits on paper with margin
-        const margin = Math.min(drawWidth, drawHeight) * 0.1; // 10% margin
-        const availableWidth = drawWidth - 2 * margin;
-        const availableHeight = drawHeight - 2 * margin;
+        const params = {
+            width: 250,
+            height: 180,
+            pixel_per_square: 20,  // Small modal preview with 20px per square
+            border_pixels: 0       // No border for modal preview
+        };
         
-        const squareSize = Math.min(availableWidth / squaresX, availableHeight / squaresY);
-        const boardWidth = squaresX * squareSize;
-        const boardHeight = squaresY * squareSize;
+        if (patternType === 'charuco') {
+            params.pattern_type = 'charuco';
+            params.corner_x = this.getCurrentValue('modal-charuco-x', this.config.charucoSquareX);
+            params.corner_y = this.getCurrentValue('modal-charuco-y', this.config.charucoSquareY);
+            params.square_size = this.getCurrentValue('modal-charuco-square-size', this.config.charucoSquareSize);
+            params.marker_size = this.getCurrentValue('modal-charuco-marker-size', this.config.charucoMarkerSize);
+            
+            const dictElement = document.getElementById('modal-charuco-dictionary');
+            const dictValue = dictElement ? dictElement.value : this.config.charucoDictionary;
+            params.dictionary_id = this.getDictionaryId(dictValue);
+        } else {
+            params.pattern_type = 'standard';
+            params.corner_x = this.getCurrentValue('modal-chessboard-x', this.config.cornerX);
+            params.corner_y = this.getCurrentValue('modal-chessboard-y', this.config.cornerY);
+            params.square_size = this.getCurrentValue('modal-square-size', this.config.squareSize);
+        }
         
-        // Center chessboard on paper
-        const boardOffsetX = offsetX + (drawWidth - boardWidth) / 2;
-        const boardOffsetY = offsetY + (drawHeight - boardHeight) / 2;
+        return params;
+    }
+    
+    getDictionaryId(dictionaryName) {
+        // Map dictionary names to OpenCV constants
+        const dictMap = {
+            'DICT_4X4_50': 0,
+            'DICT_4X4_100': 1,
+            'DICT_4X4_250': 2,
+            'DICT_4X4_1000': 3,
+            'DICT_5X5_50': 4,
+            'DICT_5X5_100': 5,
+            'DICT_5X5_250': 6,
+            'DICT_5X5_1000': 7,
+            'DICT_6X6_50': 8,
+            'DICT_6X6_100': 9,
+            'DICT_6X6_250': 10,
+            'DICT_6X6_1000': 11
+        };
         
-        // Draw chessboard pattern (clean, no indicators)
-        for (let row = 0; row < squaresY; row++) {
-            for (let col = 0; col < squaresX; col++) {
-                const x = boardOffsetX + col * squareSize;
-                const y = boardOffsetY + row * squareSize;
-                
-                // Alternate colors (true chessboard pattern)
-                const isBlack = (row + col) % 2 === 0;
-                ctx.fillStyle = isBlack ? '#000000' : '#ffffff';
-                ctx.fillRect(x, y, squareSize, squareSize);
+        return dictMap[dictionaryName] || 10; // Default to DICT_6X6_250
+    }
+    
+    async downloadPattern() {
+        try {
+            // Get download parameters
+            const quality = document.getElementById('download-quality')?.value || 'high';
+            const border = document.getElementById('download-border')?.value || 'medium';
+            
+            // Map quality settings to pixel_per_square values
+            const qualityMap = {
+                'standard': 100,
+                'high': 150,
+                'ultra': 200
+            };
+            
+            // Map border settings to border_pixels values
+            const borderMap = {
+                'none': 0,
+                'small': 25,
+                'medium': 50,
+                'large': 100
+            };
+            
+            // Get pattern parameters from modal
+            const params = this.getModalPatternParams();
+            
+            // Remove the small preview parameters for download
+            delete params.pixel_per_square;
+            delete params.border_pixels;
+            delete params.width;
+            delete params.height;
+            
+            // Set download-specific parameters
+            params.pixel_per_square = qualityMap[quality];
+            params.border_pixels = borderMap[border];
+            
+            // Generate download URL
+            const url = `/api/pattern_image?${new URLSearchParams(params)}`;
+            
+            // Create download link with descriptive filename
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `pattern_${params.pattern_type}_${params.corner_x}x${params.corner_y}_${quality}quality.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            
+            // Show success message
+            this.showMessage('Pattern downloaded successfully!', 'success');
+            
+        } catch (error) {
+            console.error('Download failed:', error);
+            this.showMessage('Download failed: ' + error.message, 'error');
+        }
+    }
+    
+    showMessage(message, type = 'info') {
+        // Create a simple toast message
+        const toast = document.createElement('div');
+        toast.className = `alert alert-${type === 'error' ? 'danger' : 'success'} position-fixed`;
+        toast.style.top = '20px';
+        toast.style.right = '20px';
+        toast.style.zIndex = '9999';
+        toast.textContent = message;
+        
+        document.body.appendChild(toast);
+        
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
             }
-        }
-        
-        // Draw border around chessboard
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 0.5;
-        ctx.strokeRect(boardOffsetX, boardOffsetY, boardWidth, boardHeight);
-    }
-    
-    downloadChessboard() {
-        // Get parameters
-        const cornerX = this.getCurrentCornerX();
-        const cornerY = this.getCurrentCornerY();
-        const squareSize = this.getCurrentSquareSize();
-        
-        const sizeType = this.getDownloadSizeType();
-        const format = this.getDownloadFormat();
-        const resolution = this.getDownloadResolution();
-        
-        const { width, height } = this.getPaperDimensions(sizeType);
-        
-        // Create high-resolution canvas
-        const pixelWidth = Math.round((width / 25.4) * resolution); // mm to pixels
-        const pixelHeight = Math.round((height / 25.4) * resolution);
-        
-        const canvas = document.createElement('canvas');
-        canvas.width = pixelWidth;
-        canvas.height = pixelHeight;
-        const ctx = canvas.getContext('2d');
-        
-        // Calculate squares and sizing
-        const squaresX = cornerX + 1;
-        const squaresY = cornerY + 1;
-        
-        // Calculate chessboard size with margin
-        const marginPixels = Math.min(pixelWidth, pixelHeight) * 0.1;
-        const availableWidth = pixelWidth - 2 * marginPixels;
-        const availableHeight = pixelHeight - 2 * marginPixels;
-        
-        const squarePixels = Math.min(availableWidth / squaresX, availableHeight / squaresY);
-        const boardWidth = squaresX * squarePixels;
-        const boardHeight = squaresY * squarePixels;
-        
-        // Center on canvas
-        const offsetX = (pixelWidth - boardWidth) / 2;
-        const offsetY = (pixelHeight - boardHeight) / 2;
-        
-        // Fill background white
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, pixelWidth, pixelHeight);
-        
-        // Draw chessboard
-        for (let row = 0; row < squaresY; row++) {
-            for (let col = 0; col < squaresX; col++) {
-                const x = offsetX + col * squarePixels;
-                const y = offsetY + row * squarePixels;
-                
-                const isBlack = (row + col) % 2 === 0;
-                ctx.fillStyle = isBlack ? '#000000' : '#ffffff';
-                ctx.fillRect(x, y, squarePixels, squarePixels);
-            }
-        }
-        
-        // Generate download
-        const filename = `chessboard_${cornerX + 1}x${cornerY + 1}_${(squareSize * 1000).toFixed(1)}mm.${format}`;
-        
-        if (format === 'png') {
-            canvas.toBlob((blob) => {
-                this.downloadBlob(blob, filename);
-            }, 'image/png');
-        } else if (format === 'svg') {
-            this.downloadChessboardSVG(cornerX, cornerY, width, height, squareSize, filename);
-        } else if (format === 'pdf') {
-            this.statusCallback('PDF format coming soon. Downloading as high-resolution PNG instead.', 'info');
-            canvas.toBlob((blob) => {
-                this.downloadBlob(blob, filename.replace('.pdf', '.png'));
-            }, 'image/png');
-        }
-        
-        this.statusCallback('Chessboard pattern generated successfully!', 'success');
-    }
-    
-    downloadChessboardSVG(cornerX, cornerY, paperWidth, paperHeight, squareSize, filename) {
-        const squaresX = cornerX + 1;
-        const squaresY = cornerY + 1;
-        
-        // Calculate board size with margin
-        const margin = Math.min(paperWidth, paperHeight) * 0.1;
-        const availableWidth = paperWidth - 2 * margin;
-        const availableHeight = paperHeight - 2 * margin;
-        
-        const squareSize_mm = Math.min(availableWidth / squaresX, availableHeight / squaresY);
-        const boardWidth = squaresX * squareSize_mm;
-        const boardHeight = squaresY * squareSize_mm;
-        
-        const offsetX = (paperWidth - boardWidth) / 2;
-        const offsetY = (paperHeight - boardHeight) / 2;
-        
-        let svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="${paperWidth}mm" height="${paperHeight}mm" viewBox="0 0 ${paperWidth} ${paperHeight}" xmlns="http://www.w3.org/2000/svg">
-  <rect width="100%" height="100%" fill="white"/>`;
-        
-        // Generate squares
-        for (let row = 0; row < squaresY; row++) {
-            for (let col = 0; col < squaresX; col++) {
-                const x = offsetX + col * squareSize_mm;
-                const y = offsetY + row * squareSize_mm;
-                
-                const isBlack = (row + col) % 2 === 0;
-                if (isBlack) {
-                    svg += `\n  <rect x="${x}" y="${y}" width="${squareSize_mm}" height="${squareSize_mm}" fill="black"/>`;
-                }
-            }
-        }
-        
-        svg += '\n</svg>';
-        
-        const blob = new Blob([svg], { type: 'image/svg+xml' });
-        this.downloadBlob(blob, filename);
-    }
-    
-    downloadBlob(blob, filename) {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
-    }
-    
-    // Helper methods to get current values
-    getCurrentCornerX() {
-        const element = document.getElementById('modal-chessboard-x');
-        return element ? parseInt(element.value) || this.config.cornerX : this.config.cornerX;
-    }
-    
-    getCurrentCornerY() {
-        const element = document.getElementById('modal-chessboard-y');
-        return element ? parseInt(element.value) || this.config.cornerY : this.config.cornerY;
-    }
-    
-    getCurrentSquareSize() {
-        const element = document.getElementById('modal-square-size');
-        return element ? parseFloat(element.value) || this.config.squareSize : this.config.squareSize;
-    }
-    
-    getDownloadSizeType() {
-        const element = document.getElementById('download-size');
-        return element ? element.value : this.config.paperSize;
-    }
-    
-    getDownloadFormat() {
-        const element = document.getElementById('download-format');
-        return element ? element.value : this.config.format;
-    }
-    
-    getDownloadResolution() {
-        const element = document.getElementById('download-resolution');
-        return element ? parseInt(element.value) : this.config.resolution;
-    }
-    
-    getPaperDimensions(sizeType) {
-        switch (sizeType) {
-            case 'a4':
-                return { width: 210, height: 297 };
-            case 'letter':
-                return { width: 216, height: 279 };
-            case 'custom':
-                const widthEl = document.getElementById('custom-width');
-                const heightEl = document.getElementById('custom-height');
-                return {
-                    width: widthEl ? parseInt(widthEl.value) || this.config.customWidth : this.config.customWidth,
-                    height: heightEl ? parseInt(heightEl.value) || this.config.customHeight : this.config.customHeight
-                };
-            default:
-                return { width: 210, height: 297 };
-        }
+        }, 3000);
     }
     
     // Public API methods
-    getConfiguration() {
-        return {
-            cornerX: this.getCurrentCornerX(),
-            cornerY: this.getCurrentCornerY(),
-            squareSize: this.getCurrentSquareSize()
-        };
+    getConfig() {
+        return { ...this.config };
+    }
+
+    setConfig(newConfig) {
+        this.config = { ...this.config, ...newConfig };
+        this.saveToSession();
+        this.updateDisplay();
     }
     
-    setConfiguration(config) {
-        this.config = { ...this.config, ...config };
-        this.updateChessboardDisplay();
+    // Compatibility methods for legacy code
+    updateChessboardDisplay() {
+        this.updateDisplay();
+    }
+    
+    openModal() {
+        const modal = new bootstrap.Modal(document.getElementById('chessboard-config-modal'));
+        modal.show();
     }
 }
 
-// Export for use in other modules
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = ChessboardConfig;
-} else if (typeof window !== 'undefined') {
-    window.ChessboardConfig = ChessboardConfig;
-}
+// Initialize when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM ready, initializing ChessboardConfig');
+    window.chessboardConfig = new ChessboardConfig();
+    window.chessboardConfig.initialize();
+});

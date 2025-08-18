@@ -1,106 +1,182 @@
-<!-- Shared Chessboard Configuration Modal -->
-<div id="chessboardModal" class="config-modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3>📋 Configure Calibration Target</h3>
-            <span class="modal-close" onclick="if(window.chessboardConfig) window.chessboardConfig.closeModal()">&times;</span>
-        </div>
-        <div class="modal-body">
-            <div class="form-group">
-                <label>Target Type:</label>
-                <select id="target-type">
-                    <option value="chessboard" selected>⬛ Chessboard</option>
-                    <option value="circles" disabled>⚪ Circle Grid (Coming Soon)</option>
-                    <option value="asymmetric" disabled>🔘 Asymmetric Circles (Coming Soon)</option>
-                </select>
+<!-- Chessboard Configuration Modal -->
+<div class="modal fade" id="chessboard-config-modal" tabindex="-1" aria-labelledby="chessboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="chessboardModalLabel">
+                    <i class="bi bi-grid-3x3-gap"></i> Configure Calibration Pattern
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            
-            <div id="chessboard-config">
-                <div class="form-group">
-                    <label>Corners (X-axis):</label>
-                    <input type="number" id="modal-chessboard-x" value="11" min="3" max="20" oninput="if(window.chessboardConfig) window.chessboardConfig.drawChessboardPreview(this.value, document.getElementById('modal-chessboard-y').value)">
-                    <small>Number of internal corners along width</small>
-                </div>
+            <div class="modal-body">
                 
-                <div class="form-group">
-                    <label>Corners (Y-axis):</label>
-                    <input type="number" id="modal-chessboard-y" value="8" min="3" max="20" oninput="if(window.chessboardConfig) window.chessboardConfig.drawChessboardPreview(document.getElementById('modal-chessboard-x').value, this.value)">
-                    <small>Number of internal corners along height</small>
-                </div>
-                
-                <div class="form-group">
-                    <label>Square Size (meters):</label>
-                    <input type="number" id="modal-square-size" value="0.02" step="0.001" min="0.001" max="1">
-                    <small>Physical size of each chessboard square</small>
-                </div>
-            </div>
-            
-            <div class="modal-section">
-                <h4>📥 Download Chessboard</h4>
-                <p class="section-description">Generate a clean chessboard pattern for printing and calibration</p>
-                
-                <div class="download-options">
-                    <div class="form-group">
-                        <label>Image Size:</label>
-                        <select id="download-size">
-                            <option value="a4">A4 (210×297mm)</option>
-                            <option value="letter">Letter (216×279mm)</option>
-                            <option value="custom">Custom Size</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Output Format:</label>
-                        <select id="download-format">
-                            <option value="png">PNG (High Quality)</option>
-                            <option value="pdf">PDF (Print Ready)</option>
-                            <option value="svg">SVG (Vector)</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Resolution:</label>
-                        <select id="download-resolution">
-                            <option value="300">300 DPI (High Quality)</option>
-                            <option value="600">600 DPI (Professional)</option>
-                            <option value="150">150 DPI (Standard)</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group" id="custom-size-group" style="display: none;">
-                        <div class="input-row">
-                            <div>
-                                <label>Width (mm):</label>
-                                <input type="number" id="custom-width" value="210" min="50" max="500">
+                <!-- Pattern Type Selection -->
+                <div class="mb-4">
+                    <label class="form-label fw-bold">Pattern Type</label>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="pattern-type" id="pattern-standard" value="standard" checked>
+                                <label class="form-check-label" for="pattern-standard">
+                                    <strong>Standard Chessboard</strong><br>
+                                    <small class="text-muted">Traditional black and white checkerboard</small>
+                                </label>
                             </div>
-                            <div>
-                                <label>Height (mm):</label>
-                                <input type="number" id="custom-height" value="297" min="50" max="500">
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="pattern-type" id="pattern-charuco" value="charuco">
+                                <label class="form-check-label" for="pattern-charuco">
+                                    <strong>ChArUco Board</strong><br>
+                                    <small class="text-muted">Chessboard with ArUco markers</small>
+                                </label>
                             </div>
                         </div>
                     </div>
                 </div>
-                
-                <div class="download-preview">
-                    <canvas id="download-canvas" width="200" height="280" style="border: 1px solid #ddd; background: white;"></canvas>
-                    <div class="preview-info">
-                        <small>Preview (not to scale)</small>
-                        <div id="download-info">
-                            <div>Squares: <span id="download-squares">12×9</span></div>
-                            <div>Size: <span id="download-dimensions">210×297 mm</span></div>
-                            <div>Square: <span id="download-square-size">20.0 mm</span></div>
+
+                <div class="row">
+                    <!-- Configuration Panel -->
+                    <div class="col-md-7">
+                        
+                        <!-- Standard Chessboard Configuration -->
+                        <div id="chessboard-config">
+                            <h6 class="mb-3">Chessboard Parameters</h6>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="modal-chessboard-x" class="form-label">Corners (Width)</label>
+                                        <input type="number" class="form-control" id="modal-chessboard-x" value="11" min="3" max="20">
+                                        <div class="form-text">Internal corners along width</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="modal-chessboard-y" class="form-label">Corners (Height)</label>
+                                        <input type="number" class="form-control" id="modal-chessboard-y" value="8" min="3" max="20">
+                                        <div class="form-text">Internal corners along height</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="modal-square-size" class="form-label">Square Size (meters)</label>
+                                <input type="number" class="form-control" id="modal-square-size" value="0.020" step="0.001" min="0.001" max="1">
+                                <div class="form-text">Physical size of each square</div>
+                            </div>
+                        </div>
+
+                        <!-- ChArUco Configuration -->
+                        <div id="charuco-config" style="display: none;">
+                            <h6 class="mb-3">ChArUco Parameters</h6>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="modal-charuco-x" class="form-label">Squares (Width)</label>
+                                        <input type="number" class="form-control" id="modal-charuco-x" value="5" min="3" max="15">
+                                        <div class="form-text">Number of squares along width</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="modal-charuco-y" class="form-label">Squares (Height)</label>
+                                        <input type="number" class="form-control" id="modal-charuco-y" value="7" min="3" max="15">
+                                        <div class="form-text">Number of squares along height</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="modal-charuco-square-size" class="form-label">Square Size (meters)</label>
+                                        <input type="number" class="form-control" id="modal-charuco-square-size" value="0.040" step="0.001" min="0.001" max="1">
+                                        <div class="form-text">Physical size of each square</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="modal-charuco-marker-size" class="form-label">Marker Size (meters)</label>
+                                        <input type="number" class="form-control" id="modal-charuco-marker-size" value="0.020" step="0.001" min="0.001" max="1">
+                                        <div class="form-text">Size of ArUco markers</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="modal-charuco-dictionary" class="form-label">ArUco Dictionary</label>
+                                <select class="form-select" id="modal-charuco-dictionary">
+                                    <option value="DICT_4X4_50">DICT_4X4_50</option>
+                                    <option value="DICT_4X4_100">DICT_4X4_100</option>
+                                    <option value="DICT_4X4_250">DICT_4X4_250</option>
+                                    <option value="DICT_4X4_1000">DICT_4X4_1000</option>
+                                    <option value="DICT_5X5_50">DICT_5X5_50</option>
+                                    <option value="DICT_5X5_100">DICT_5X5_100</option>
+                                    <option value="DICT_5X5_250">DICT_5X5_250</option>
+                                    <option value="DICT_5X5_1000">DICT_5X5_1000</option>
+                                    <option value="DICT_6X6_50">DICT_6X6_50</option>
+                                    <option value="DICT_6X6_100">DICT_6X6_100</option>
+                                    <option value="DICT_6X6_250" selected>DICT_6X6_250</option>
+                                    <option value="DICT_6X6_1000">DICT_6X6_1000</option>
+                                </select>
+                                <div class="form-text">ArUco marker dictionary to use</div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- Preview Panel -->
+                    <div class="col-md-5">
+                        <h6 class="mb-3">Pattern Preview</h6>
+                        <div class="text-center mb-3">
+                            <img id="chessboard-modal-preview" src="/api/pattern_image?pattern_type=standard&corner_x=11&corner_y=8&square_size=0.020&pixel_per_square=20&border_pixels=0" 
+                                 alt="Pattern Preview" class="img-fluid border rounded" style="max-height: 180px;" />
                         </div>
                     </div>
                 </div>
-                
-                <button class="download-btn" onclick="if(window.chessboardConfig) window.chessboardConfig.downloadChessboard()">
-                    📥 Generate & Download
-                </button>
+
+                <!-- Download Section -->
+                <hr>
+                <div class="mb-3">
+                    <h6 class="mb-3">
+                        <i class="bi bi-download"></i> Download Pattern for Printing
+                    </h6>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="download-quality" class="form-label">Print Quality</label>
+                                <select class="form-select" id="download-quality">
+                                    <option value="standard">Standard Quality (100px/square)</option>
+                                    <option value="high" selected>High Quality (150px/square)</option>
+                                    <option value="ultra">Ultra Quality (200px/square)</option>
+                                </select>
+                                <div class="form-text">Higher quality = larger file size</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="download-border" class="form-label">Border Size</label>
+                                <select class="form-select" id="download-border">
+                                    <option value="none">No Border (0px)</option>
+                                    <option value="small">Small Border (25px)</option>
+                                    <option value="medium" selected>Medium Border (50px)</option>
+                                    <option value="large">Large Border (100px)</option>
+                                </select>
+                                <div class="form-text">Border makes handling easier</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="button" class="btn btn-success" id="download-pattern-btn">
+                            <i class="bi bi-download"></i> Generate & Download Pattern
+                        </button>
+                    </div>
+                </div>
+
             </div>
-        </div>
-        <div class="modal-footer">
-            <button class="secondary-btn" onclick="if(window.chessboardConfig) window.chessboardConfig.closeModal()">Cancel</button>
-            <button class="primary-btn" onclick="if(window.chessboardConfig) window.chessboardConfig.saveConfiguration()">Apply Settings</button>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary btn-apply-config">Apply Configuration</button>
+            </div>
         </div>
     </div>
 </div>

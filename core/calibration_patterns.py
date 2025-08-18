@@ -201,6 +201,36 @@ class CalibrationPattern(ABC):
             return result_img
         return image
 
+    @abstractmethod
+    def generate_pattern_image(self, pixel_per_square: int = 100, 
+                             border_pixels: int = 0) -> np.ndarray:
+        """
+        Generate an image of the calibration pattern for display or printing.
+        
+        Args:
+            pixel_per_square: Size of each square/unit in pixels (default: 100)
+            border_pixels: Border size around the pattern in pixels (default: 0)
+            
+        Returns:
+            Generated pattern image as numpy array (BGR format for OpenCV compatibility)
+        """
+        pass
+
+    def get_pattern_description(self) -> str:
+        """
+        Get a brief description of the pattern for display purposes.
+        
+        Returns:
+            Human-readable description string
+        """
+        info = self.get_info()
+        if self.pattern_id == "standard_chessboard":
+            return f"{info['width']}×{info['height']} corners, {info['square_size']*1000:.1f}mm squares"
+        elif self.pattern_id == "charuco_board":
+            return f"{info['width']}×{info['height']} squares, {info['square_size']*1000:.1f}mm sq, {info['marker_size']*1000:.1f}mm markers"
+        else:
+            return f"{info['name']} - {info.get('total_features', 'N/A')} features"
+
 
 class StandardChessboard(CalibrationPattern):
     """Standard black and white chessboard pattern (2D planar)."""
@@ -264,6 +294,54 @@ class StandardChessboard(CalibrationPattern):
         if corners is not None:
             pattern_size = self.get_pattern_size()
             return cv2.drawChessboardCorners(image, pattern_size, corners, True)
+        return image
+
+    def generate_pattern_image(self, pixel_per_square: int = 100, 
+                             border_pixels: int = 0) -> np.ndarray:
+        """
+        Generate a chessboard pattern image for display or printing.
+        
+        Args:
+            pixel_per_square: Size of each square in pixels (default: 100)
+            border_pixels: Border size around the pattern in pixels (default: 0)
+            
+        Returns:
+            Generated chessboard image as numpy array
+        """
+        # Calculate number of squares (corners + 1)
+        squares_x = self.width + 1
+        squares_y = self.height + 1
+        
+        # Calculate image size from pattern dimensions
+        total_pattern_width = squares_x * pixel_per_square
+        total_pattern_height = squares_y * pixel_per_square
+        
+        image_width = total_pattern_width + 2 * border_pixels
+        image_height = total_pattern_height + 2 * border_pixels
+        
+        # Create blank white image
+        image = np.ones((image_height, image_width, 3), dtype=np.uint8) * 255
+        
+        # Calculate starting position to center the chessboard
+        start_x = border_pixels
+        start_y = border_pixels
+        
+        # Draw chessboard squares
+        for row in range(squares_y):
+            for col in range(squares_x):
+                # Calculate square position
+                x1 = int(start_x + col * pixel_per_square)
+                y1 = int(start_y + row * pixel_per_square)
+                x2 = int(start_x + (col + 1) * pixel_per_square)
+                y2 = int(start_y + (row + 1) * pixel_per_square)
+                
+                # Determine if this square should be black
+                is_black = (row + col) % 2 == 0
+                
+                if is_black:
+                    # Fill black square
+                    cv2.rectangle(image, (x1, y1), (x2, y2), (0, 0, 0), -1)
+        
         return image
     
     def get_info(self) -> Dict[str, Any]:
@@ -440,6 +518,142 @@ class CharucoBoard(CalibrationPattern):
             return cv2.aruco.drawDetectedCornersCharuco(image, corners)
         return image
 
+    def generate_pattern_image(self, pixel_per_square: int = 100, 
+                             border_pixels: int = 0) -> np.ndarray:
+        """
+        Generate a ChArUco board pattern image using OpenCV's proper generation methods.
+        
+        Args:
+            pixel_per_square: Size of each square in pixels (default: 100)
+            border_pixels: Border size around the pattern in pixels (default: 0)
+            
+        Returns:
+            Generated ChArUco board image as numpy array
+        """
+        # Calculate image size from pattern dimensions
+        total_pattern_width = self.width * pixel_per_square
+        total_pattern_height = self.height * pixel_per_square
+        
+        image_width = total_pattern_width + 2 * border_pixels
+        image_height = total_pattern_height + 2 * border_pixels
+        
+        # Use OpenCV's built-in ChArUco board generation
+        try:
+            # Method 1: Try new generateImage() method (OpenCV 4.7+)
+            if hasattr(self.charuco_board, 'generateImage'):
+                board_image = self.charuco_board.generateImage(
+                    (total_pattern_width, total_pattern_height), 
+                    marginSize=0, 
+                    borderBits=1
+                )
+            else:
+                # Method 2: Try legacy drawPlanarBoard (older OpenCV versions)
+                board_image = np.ones((total_pattern_height, total_pattern_width, 3), dtype=np.uint8) * 255
+                cv2.aruco.drawPlanarBoard(
+                    self.charuco_board, 
+                    (total_pattern_width, total_pattern_height), 
+                    board_image, 
+                    marginSize=0, 
+                    borderBits=1
+                )
+                
+        except (AttributeError, TypeError) as e:
+            # Method 3: Manual fallback for very old OpenCV versions
+            print(f"Warning: Using manual ChArUco generation due to: {e}")
+            return self._generate_manual_charuco_pattern(pixel_per_square, border_pixels)
+        
+        # Convert to 3-channel BGR if needed
+        if len(board_image.shape) == 2:
+            board_image = cv2.cvtColor(board_image, cv2.COLOR_GRAY2BGR)
+        
+        # Add border if requested
+        if border_pixels > 0:
+            # Create final image with border
+            final_image = np.ones((image_height, image_width, 3), dtype=np.uint8) * 255
+            
+            # Place the board image in the center
+            start_x = border_pixels
+            start_y = border_pixels
+            end_x = start_x + total_pattern_width
+            end_y = start_y + total_pattern_height
+            
+            final_image[start_y:end_y, start_x:end_x] = board_image
+            
+            return final_image
+        else:
+            return board_image
+    
+    def _generate_manual_charuco_pattern(self, pixel_per_square: int = 100, 
+                                       border_pixels: int = 0) -> np.ndarray:
+        """
+        Manual ChArUco pattern generation as fallback for older OpenCV versions.
+        This is the old implementation kept as a backup.
+        """
+        # Calculate image size from pattern dimensions
+        total_pattern_width = self.width * pixel_per_square
+        total_pattern_height = self.height * pixel_per_square
+        
+        image_width = total_pattern_width + 2 * border_pixels
+        image_height = total_pattern_height + 2 * border_pixels
+        
+        # Create blank white image
+        image = np.ones((image_height, image_width, 3), dtype=np.uint8) * 255
+        
+        # Calculate starting position
+        start_x = border_pixels
+        start_y = border_pixels
+        
+        # Calculate marker size in pixels
+        marker_ratio = self.marker_size / self.square_size
+        marker_size_px = pixel_per_square * marker_ratio
+        
+        marker_id = 0
+        
+        # Draw ChArUco pattern manually
+        for row in range(self.height):
+            for col in range(self.width):
+                # Calculate square position
+                x1 = int(start_x + col * pixel_per_square)
+                y1 = int(start_y + row * pixel_per_square)
+                x2 = int(start_x + (col + 1) * pixel_per_square)
+                y2 = int(start_y + (row + 1) * pixel_per_square)
+                
+                # Determine square color (ChArUco pattern)
+                is_black = (row + col) % 2 == 0
+                
+                if is_black:
+                    # Black square with ArUco marker
+                    cv2.rectangle(image, (x1, y1), (x2, y2), (0, 0, 0), -1)
+                    
+                    # Draw simplified ArUco marker representation
+                    marker_x1 = int(x1 + (pixel_per_square - marker_size_px) / 2)
+                    marker_y1 = int(y1 + (pixel_per_square - marker_size_px) / 2)
+                    marker_x2 = int(marker_x1 + marker_size_px)
+                    marker_y2 = int(marker_y1 + marker_size_px)
+                    
+                    # White marker background
+                    cv2.rectangle(image, (marker_x1, marker_y1), (marker_x2, marker_y2), (255, 255, 255), -1)
+                    
+                    # Black border around marker
+                    cv2.rectangle(image, (marker_x1, marker_y1), (marker_x2, marker_y2), (0, 0, 0), 2)
+                    
+                    marker_id += 1
+                else:
+                    # White square
+                    cv2.rectangle(image, (x1, y1), (x2, y2), (255, 255, 255), -1)
+                
+                # Add square border for clarity
+                cv2.rectangle(image, (x1, y1), (x2, y2), (128, 128, 128), 1)
+        
+        # Add outer border
+        border_thickness = max(2, int(pixel_per_square / 30))
+        cv2.rectangle(image, 
+                     (int(start_x), int(start_y)), 
+                     (int(start_x + total_pattern_width), int(start_y + total_pattern_height)), 
+                     (0, 0, 0), border_thickness)
+        
+        return image
+
 
 class Custom3DPattern(CalibrationPattern):
     """Custom 3D calibration pattern with known 3D coordinates."""
@@ -507,6 +721,66 @@ class Custom3DPattern(CalibrationPattern):
             }
         })
         return info
+
+    def generate_pattern_image(self, pixel_per_square: int = 100, 
+                             border_pixels: int = 0) -> np.ndarray:
+        """
+        Generate a visualization of the 3D pattern projected to 2D.
+        
+        Args:
+            pixel_per_square: Not used for 3D patterns (for compatibility)
+            border_pixels: Border size around the pattern in pixels (default: 0)
+            
+        Returns:
+            Generated pattern visualization as numpy array
+        """
+        # Default size for 3D pattern visualization
+        image_width = 400 + 2 * border_pixels
+        image_height = 300 + 2 * border_pixels
+        
+        # Create blank white image
+        image = np.ones((image_height, image_width, 3), dtype=np.uint8) * 255
+        
+        # Get 2D projection of 3D points (ignoring Z for simple visualization)
+        points_2d = self.object_points_3d[:, :2]  # Take only X and Y
+        
+        if len(points_2d) == 0:
+            return image
+        
+        # Normalize points to fit in image with border
+        x_min, x_max = points_2d[:, 0].min(), points_2d[:, 0].max()
+        y_min, y_max = points_2d[:, 1].min(), points_2d[:, 1].max()
+        
+        # Scale points to fit in image with border
+        if x_max != x_min and y_max != y_min:
+            available_width = image_width - 2 * border_pixels
+            available_height = image_height - 2 * border_pixels
+            
+            scale_x = available_width / (x_max - x_min)
+            scale_y = available_height / (y_max - y_min)
+            scale = min(scale_x, scale_y)
+            
+            # Transform points to image coordinates
+            points_img = np.zeros_like(points_2d)
+            points_img[:, 0] = (points_2d[:, 0] - x_min) * scale + border_pixels
+            points_img[:, 1] = (points_2d[:, 1] - y_min) * scale + border_pixels
+            
+            # Draw points as circles
+            radius = max(3, int(scale * 0.01))
+            for i, point in enumerate(points_img):
+                center = (int(point[0]), int(point[1]))
+                cv2.circle(image, center, radius, (0, 100, 200), -1)
+                
+                # Add point index
+                cv2.putText(image, str(i), (center[0] + radius + 2, center[1]), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (100, 100, 100), 1)
+        
+        # Add title
+        text = f"3D Pattern ({len(points_2d)} points)"
+        cv2.putText(image, text, (border_pixels + 10, border_pixels + 30), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 2)
+        
+        return image
 
 
 class CalibrationPatternManager:

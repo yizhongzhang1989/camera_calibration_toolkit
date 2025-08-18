@@ -1,26 +1,15 @@
 <!-- Shared Chessboard Info Card -->
-<div class="chessboard-info-card" onclick="if(window.chessboardConfig) window.chessboardConfig.openModal()">
-    <div class="chessboard-header">
-        <span class="chessboard-icon">⬛</span>
-        <div class="chessboard-title">
-            <h4>Calibration Target</h4>
-            <small>Click to configure</small>
-        </div>
-        <span class="config-arrow">⚙️</span>
+<div class="chessboard-info-card" data-bs-toggle="modal" data-bs-target="#chessboard-config-modal" style="cursor: pointer;">
+    <div class="chessboard-image-preview">
+        <img id="chessboard-preview-img" src="/api/pattern_image?pattern_type=standard&corner_x=11&corner_y=8&square_size=0.020&pixel_per_square=20&border_pixels=0" 
+             alt="Chessboard Pattern" />
     </div>
     
-    <div class="chessboard-details">
-        <div class="chessboard-row">
-            <span class="detail-label">Pattern:</span>
-            <span id="board-dimensions">11 × 8 corners</span>
+    <div class="pattern-description">
+        <div id="pattern-type-display" class="pattern-type">Standard Chessboard</div>
+        <div id="pattern-specs-display" class="pattern-specs">
+            <strong>Pattern:</strong> 11 × 8 inner corners<br>
+            <strong>Square Size:</strong> 20.0 mm
         </div>
-        <div class="chessboard-row">
-            <span class="detail-label">Square Size:</span>
-            <span id="board-square-size">20.0 mm</span>
-        </div>
-    </div>
-    
-    <div class="chessboard-preview">
-        <canvas id="chessboard-canvas" width="200" height="150"></canvas>
     </div>
 </div>
