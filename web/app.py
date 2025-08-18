@@ -28,47 +28,6 @@ from core.calibration_patterns import create_pattern_from_json, get_pattern_type
 from core.eye_in_hand_calibration import EyeInHandCalibrator
 
 
-def trim_distortion_coefficients(dist_coeffs, distortion_model='standard'):
-    """
-    Trim distortion coefficients based on the distortion model to remove trailing zeros.
-    
-    Args:
-        dist_coeffs: Distortion coefficients array
-        distortion_model: Type of distortion model used
-        
-    Returns:
-        Trimmed distortion coefficients array
-    """
-    # Flatten in case it's 2D
-    flat_coeffs = dist_coeffs.flatten() if hasattr(dist_coeffs, 'flatten') else np.array(dist_coeffs).flatten()
-    
-    # Expected coefficient counts for each model
-    expected_counts = {
-        'standard': 5,    # k1, k2, p1, p2, k3
-        'rational': 8,    # k1-k6, p1, p2  
-        'thin_prism': 12, # k1-k6, p1, p2, s1-s4
-        'tilted': 14      # k1-k6, p1, p2, s1-s4, τx, τy
-    }
-    
-    expected_count = expected_counts.get(distortion_model, 5)
-    
-    # For rational model, specifically check if coefficients beyond index 7 are all zeros
-    if distortion_model == 'rational' and len(flat_coeffs) > 8:
-        has_non_zero_after_8 = np.any(np.abs(flat_coeffs[8:]) > 1e-10)
-        if not has_non_zero_after_8:
-            return flat_coeffs[:8]
-    
-    # General trailing zero removal for all models
-    coeffs_list = flat_coeffs.tolist()
-    while len(coeffs_list) > expected_count and abs(coeffs_list[-1]) < 1e-10:
-        coeffs_list.pop()
-    
-    # Ensure minimum expected length
-    while len(coeffs_list) < expected_count:
-        coeffs_list.append(0.0)
-    
-    return np.array(coeffs_list)
-
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
@@ -497,32 +456,10 @@ def calibrate():
             selected_indices = request.json.get('selected_indices', list(range(len(images))))
             
             print(f"📋 Calibration type: {calibration_type}")
-            print(f"🖼�? Selected {len(selected_indices)} images for processing")
+            print(f"🖼️ Selected {len(selected_indices)} images for processing")
             
             # Extract basic parameters
             distortion_model = parameters.get('distortion_model', 'standard')
-            
-            # For legacy compatibility and logging, try to get pattern dimensions
-            pattern_type = parameters.get('pattern_type', 'standard')
-            if pattern_type == 'standard':
-                pattern_params = parameters.get('pattern_parameters', {})
-                XX = pattern_params.get('width', parameters.get('chessboard_x', 11))
-                YY = pattern_params.get('height', parameters.get('chessboard_y', 8))
-                L = pattern_params.get('square_size', parameters.get('square_size', 0.02))
-                print(f"🏁 Standard Chessboard: {XX}x{YY} corners, Square size: {L}m")
-            elif pattern_type == 'charuco':
-                pattern_params = parameters.get('pattern_parameters', {})
-                XX = pattern_params.get('width', parameters.get('chessboard_x', 8))
-                YY = pattern_params.get('height', parameters.get('chessboard_y', 6))
-                L = pattern_params.get('square_size', parameters.get('square_size', 0.040))
-                marker_size = pattern_params.get('marker_size', parameters.get('marker_size', 0.020))
-                print(f"🎯 ChArUco Board: {XX}x{YY} squares, Square size: {L}m, Marker size: {marker_size}m")
-            else:
-                # Fallback to legacy parameters for unknown types
-                XX = parameters.get('chessboard_x', 11)
-                YY = parameters.get('chessboard_y', 8)
-                L = parameters.get('square_size', 0.02)
-            
             print(f"📐 Distortion model: {distortion_model}")
             print("-" * 50)
             
@@ -530,7 +467,7 @@ def calibrate():
             image_paths = [images[i]['path'] for i in selected_indices if i < len(images)]
             
             if len(image_paths) < 3:
-                print("�?ERROR: Need at least 3 selected images for calibration")
+                print("❌ ERROR: Need at least 3 selected images for calibration")
                 return jsonify({'error': 'Need at least 3 selected images for calibration'}), 400
             
             print(f"📂 Processing image files:")
@@ -560,6 +497,12 @@ def calibrate():
                         # Fallback to create from individual parameters
                         pattern = create_pattern_from_parameters(parameters)
                         print(f"✅ Created pattern using unified JSON system")
+                    
+                    # Log pattern information
+                    pattern_info = pattern.get_info()
+                    print(f"📋 Pattern: {pattern.name}")
+                    print(f"   Info: {pattern_info}")
+                    
                 except Exception as e:
                     print(f"❌ Error creating calibration pattern: {str(e)}")
                     return jsonify({'error': f'Error creating calibration pattern: {str(e)}'}), 400
@@ -613,37 +556,9 @@ def calibrate():
                         include_extrinsics=True
                     )
                     
-                    print("�?Saved main calibration results to calibration_results.json")
-                    
-                    # Save additional JSON with trimmed distortion coefficients for backward compatibility
-                    trimmed_dist_coeffs = trim_distortion_coefficients(dist_coeffs, distortion_model)
-                    
-                    # Save additional legacy format for backward compatibility
-                    legacy_calibration_data = {
-                        "camera_matrix": camera_matrix.tolist(),
-                        "distortion_coefficients": trimmed_dist_coeffs.tolist(),
-                        "distortion_model": distortion_model,
-                        "rms_error": float(rms_error),
-                        "images_used": len(image_paths)
-                    }
-                    
-                    with open(os.path.join(results_folder, 'legacy_calibration_results.json'), 'w') as f:
-                        json.dump(legacy_calibration_data, f, indent=4)
-                    
-                    print("�?Saved legacy format to legacy_calibration_results.json")
-                    
-                    # Also save trimmed distortion coefficients separately
-                    trimmed_dist_dict = {
-                        "distortion_coefficients": trimmed_dist_coeffs.tolist(),
-                        "distortion_model": distortion_model,
-                        "note": f"Trimmed to {len(trimmed_dist_coeffs)} coefficients for {distortion_model} model"
-                    }
-                    with open(os.path.join(results_folder, 'dist_trimmed.json'), 'w') as f:
-                        json.dump(trimmed_dist_dict, f, indent=4)
-                    
-                    print("�?Saved trimmed distortion coefficients to dist_trimmed.json")
+                    print("✅ Saved calibration results to calibration_results.json")
                     print()
-                    print("🖼�? GENERATING VISUALIZATION IMAGES")
+                    print("🖼️ GENERATING VISUALIZATION IMAGES")
                     print("-" * 30)
                     
                     # Use the calibrator's built-in visualization methods
@@ -695,7 +610,7 @@ def calibrate():
                         'corner_images': corner_images,
                         'undistorted_images': undistorted_images,
                         'camera_matrix': camera_matrix.tolist(),
-                        'distortion_coefficients': trimmed_dist_coeffs.tolist(),
+                        'distortion_coefficients': dist_coeffs.tolist(),
                         'distortion_model': distortion_model,
                         'rms_error': float(rms_error),
                         'message': f'Intrinsic calibration completed successfully using {len(image_paths)} images'
@@ -987,11 +902,7 @@ def calibrate():
                         'corner_detection_images': corner_detection_paths,
                         'undistorted_images': undistorted_paths,
                         'reprojection_images': reprojection_paths,
-                        'pattern_info': {
-                            'width': int(XX),
-                            'height': int(YY),
-                            'square_size': float(L)
-                        },
+                        'pattern_info': pattern.get_info() if pattern else {},
                         'message': f'Eye-in-hand calibration completed successfully using {len(image_paths)} images. Improved error from {initial_mean_error:.4f} to {final_mean_error:.4f} pixels ({improvement_percentage:.1f}% improvement)'
                     }
                     
