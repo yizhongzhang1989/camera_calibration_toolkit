@@ -133,7 +133,7 @@ def create_pattern_from_parameters(parameters):
     if pattern_type == 'standard':
         width = pattern_params.get('width', parameters.get('chessboard_x', 11))
         height = pattern_params.get('height', parameters.get('chessboard_y', 8))
-        square_size = pattern_params.get('square_size', parameters.get('square_size', 0.025))
+        square_size = pattern_params.get('square_size', parameters.get('square_size', 0.02))
         
         pattern_json = {
             'pattern_id': 'standard_chessboard',
@@ -347,7 +347,7 @@ def set_parameters():
             parameters['pattern_type'] = pattern_json.get('pattern_id', 'standard')
             parameters['chessboard_x'] = pattern_params.get('width', 11)
             parameters['chessboard_y'] = pattern_params.get('height', 8) 
-            parameters['square_size'] = pattern_params.get('square_size', 0.025)
+            parameters['square_size'] = pattern_params.get('square_size', 0.02)
             
             # Add ChArUco-specific parameters if present
             if 'marker_size' in pattern_params:
@@ -366,7 +366,7 @@ def set_parameters():
             if parameters['pattern_type'] == 'standard':
                 parameters['chessboard_x'] = pattern_config.get('parameters', {}).get('width', 11)
                 parameters['chessboard_y'] = pattern_config.get('parameters', {}).get('height', 8)
-                parameters['square_size'] = pattern_config.get('parameters', {}).get('square_size', 0.025)
+                parameters['square_size'] = pattern_config.get('parameters', {}).get('square_size', 0.02)
             elif parameters['pattern_type'] == 'charuco':
                 parameters['chessboard_x'] = pattern_config.get('parameters', {}).get('width', 8)  # ChArUco squares
                 parameters['chessboard_y'] = pattern_config.get('parameters', {}).get('height', 6)
@@ -467,7 +467,7 @@ def calibrate():
                 pattern_params = parameters.get('pattern_parameters', {})
                 XX = pattern_params.get('width', parameters.get('chessboard_x', 11))
                 YY = pattern_params.get('height', parameters.get('chessboard_y', 8))
-                L = pattern_params.get('square_size', parameters.get('square_size', 0.025))
+                L = pattern_params.get('square_size', parameters.get('square_size', 0.02))
                 print(f"🏁 Standard Chessboard: {XX}x{YY} corners, Square size: {L}m")
             elif pattern_type == 'charuco':
                 pattern_params = parameters.get('pattern_parameters', {})
@@ -480,7 +480,7 @@ def calibrate():
                 # Fallback to legacy parameters for unknown types
                 XX = parameters.get('chessboard_x', 11)
                 YY = parameters.get('chessboard_y', 8)
-                L = parameters.get('square_size', 0.025)
+                L = parameters.get('square_size', 0.02)
             
             print(f"📐 Distortion model: {distortion_model}")
             print("-" * 50)
@@ -750,14 +750,12 @@ def calibrate():
                     dist_coeffs = intrinsic_cal.get_distortion_coefficients()
                 
                 # Create eye-in-hand calibrator instance with modern API
-                from core.calibration_patterns import create_chessboard_pattern
-                pattern = create_chessboard_pattern('standard', width=XX, height=YY, square_size=L)
-                
+                # Reuse the same pattern that was used for intrinsic calibration
                 eye_in_hand_calibrator = EyeInHandCalibrator(
                     camera_matrix=camera_matrix,
                     distortion_coefficients=dist_coeffs,
-                    calibration_pattern=pattern,
-                    pattern_type='standard'
+                    calibration_pattern=pattern,  # Use same pattern from intrinsic calibration
+                    pattern_type=parameters.get('pattern_type', 'standard')
                 )
                 
                 print(f"✅ Eye-in-hand calibrator initialized with modern API")
@@ -1192,7 +1190,7 @@ def get_pattern_image():
         # Handle both legacy (corner_x/corner_y) and new (width/height) parameter names
         width = int(request.args.get('width', request.args.get('corner_x', 11)))
         height = int(request.args.get('height', request.args.get('corner_y', 8)))
-        square_size = float(request.args.get('square_size', 0.025))
+        square_size = float(request.args.get('square_size', 0.02))
         
         # Simplified parameters
         pixel_per_square = int(request.args.get('pixel_per_square', 100))
@@ -1269,7 +1267,7 @@ def get_pattern_description():
         pattern_type = request.args.get('pattern_type', 'standard')
         corner_x = int(request.args.get('corner_x', 11))
         corner_y = int(request.args.get('corner_y', 8))
-        square_size = float(request.args.get('square_size', 0.025))
+        square_size = float(request.args.get('square_size', 0.02))
         
         # ChArUco specific parameters
         marker_size = float(request.args.get('marker_size', 0.0125))
