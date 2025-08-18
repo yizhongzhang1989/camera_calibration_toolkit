@@ -7,14 +7,16 @@ This example demonstrates how to use the EyeInHandCalibrator class for
 hand-in-eye calibration (camera mounted on robot end-effector):
 
 1. Load robot pose images and corresponding end-effector poses
-2. Load camera intrinsic parameters 
+2. Calculate camera intrinsic parameters using actual calibration images
 3. Detect calibration patterns in images
-4. Perform hand-eye calibration using OpenCV methods
-5. Optimize calibration results (optional)
-6. Save calibration results and generate debug images
+4. Compare different OpenCV hand-eye calibration methods
+5. Perform optimization to improve calibration accuracy
+6. Generate before/after reprojection images for comparison
+7. Save calibration results and comprehensive debug images
 
 The class features a clean interface with smart constructor arguments 
 and organized member variables following the same pattern as IntrinsicCalibrator.
+Optimization is seamlessly integrated into the main workflow.
 """
 
 import os
@@ -341,104 +343,83 @@ def test_hand_in_eye_calibration():
         calibrator.save_results(output_dir)
         print(f"\n💾 Calibration results saved to: {output_dir}")
         
+        # Generate reprojection images before optimization
+        print(f"\n📸 Generating reprojection images before optimization...")
+        reprojection_before_dir = os.path.join(output_dir, "reprojection_before_optimization")
+        os.makedirs(reprojection_before_dir, exist_ok=True)
+        
+        try:
+            reprojection_images_before = calibrator.draw_reprojection_on_images()
+            for filename, debug_img in reprojection_images_before:
+                output_path = os.path.join(reprojection_before_dir, f"{filename}_before_opt.jpg")
+                cv2.imwrite(output_path, debug_img)
+            print(f"   Before optimization: {len(reprojection_images_before)} images in {reprojection_before_dir}")
+        except Exception as e:
+            print(f"   ⚠️ Warning: Pre-optimization reprojection images failed: {e}")
+        
+        # Perform optimization to improve calibration results
+        print(f"\n🔍 Performing calibration optimization...")
+        print(f"   Initial RMS error: {best_result['rms_error']:.4f} pixels")
+        print(f"   Note: Optimization refines both target2base and cam2end matrices")
+        print(f"         using nonlinear optimization to minimize reprojection error")
+        
+        optimization_improved = False
+        try:
+            # Use the new optimize_calibration method with member-based approach
+            optimized_error = calibrator.optimize_calibration(
+                iterations=5,        # Number of optimization iterations
+                ftol_rel=1e-6,      # Relative tolerance for convergence
+                verbose=True        # Show optimization progress
+            )
+            
+            if optimized_error > 0 and optimized_error < best_result['rms_error']:
+                improvement = best_result['rms_error'] - optimized_error
+                improvement_pct = (improvement / best_result['rms_error']) * 100
+                print(f"✅ Optimization completed successfully!")
+                print(f"   Optimized RMS error: {optimized_error:.4f} pixels")
+                print(f"   Improvement: {improvement:.4f} pixels ({improvement_pct:.1f}%)")
+                calibrator.rms_error = optimized_error  # Update the RMS error
+                optimization_improved = True
+            else:
+                print(f"⚠️  Optimization completed with no significant improvement")
+                print(f"   Final RMS error: {optimized_error:.4f} pixels" if optimized_error > 0 else f"   Using original RMS error: {best_result['rms_error']:.4f} pixels")
+                
+        except Exception as opt_error:
+            print(f"⚠️  Optimization failed: {opt_error}")
+            print(f"   Using original calibration results")
+            print(f"   RMS error: {best_result['rms_error']:.4f} pixels")
+        
+        # Generate reprojection images after optimization
+        print(f"\n📸 Generating reprojection images after optimization...")
+        reprojection_after_dir = os.path.join(output_dir, "reprojection_after_optimization")
+        os.makedirs(reprojection_after_dir, exist_ok=True)
+        
+        try:
+            reprojection_images_after = calibrator.draw_reprojection_on_images()
+            for filename, debug_img in reprojection_images_after:
+                output_path = os.path.join(reprojection_after_dir, f"{filename}_after_opt.jpg")
+                cv2.imwrite(output_path, debug_img)
+            print(f"   After optimization: {len(reprojection_images_after)} images in {reprojection_after_dir}")
+            
+            if optimization_improved:
+                print(f"   💡 Compare before/after images to see optimization improvements")
+            else:
+                print(f"   ℹ️  Images show final calibration results (optimization had minimal impact)")
+                
+        except Exception as e:
+            print(f"   ⚠️ Warning: Post-optimization reprojection images failed: {e}")
+        
         # Display final results summary
-        print(f"\n✨ Hand-in-Eye Calibration Complete!")
-        print(f"   Calibration matrix (camera to end-effector):")
+        print(f"\n✨ Hand-in-Eye Calibration with Optimization Complete!")
+        print(f"   Final calibration matrix (camera to end-effector):")
         for i, row in enumerate(calibrator.cam2end_matrix):
             print(f"   [{' '.join([f'{val:8.4f}' for val in row])}]")
+        print(f"   Final RMS error: {calibrator.rms_error:.4f} pixels")
         
         return True
         
     except Exception as e:
         print(f"❌ Hand-eye calibration failed: {e}")
-        return False
-
-
-def test_hand_in_eye_with_optimization():
-    """Test hand-in-eye calibration with additional optimization."""
-    print("\n\n🚀 Hand-in-Eye Calibration with Optimization")
-    print("=" * 60)
-    
-    # Check sample data directory
-    sample_dir = os.path.join("sample_data", "hand_in_eye_test_data")
-    if not os.path.exists(sample_dir):
-        print(f"❌ Sample data directory not found: {sample_dir}")
-        return
-    
-    # Calculate camera intrinsic parameters
-    camera_matrix, distortion_coefficients = calculate_camera_intrinsics(sample_dir)
-    if camera_matrix is None or distortion_coefficients is None:
-        print("❌ Failed to calculate camera intrinsics - cannot proceed with optimization test")
-        return False
-    
-    # Create calibration pattern  
-    pattern = create_chessboard_pattern('standard', width=11, height=8, square_size=0.02)
-    
-    # Step-by-step initialization approach
-    calibrator = EyeInHandCalibrator()
-    
-    # Load data step by step
-    calibrator.load_camera_intrinsics(camera_matrix, distortion_coefficients)
-    calibrator.set_calibration_pattern(pattern, 'standard')
-    
-    if not calibrator.load_calibration_data(sample_dir):
-        print("❌ Failed to load calibration data")
-        return
-        
-    # Detect pattern points
-    if not calibrator.detect_pattern_points():
-        print("❌ Failed to detect calibration patterns")
-        return
-    
-    # Perform initial calibration
-    XX = calibrator.pattern_params['XX']
-    YY = calibrator.pattern_params['YY'] 
-    L = calibrator.pattern_params['L']
-    
-    try:
-        # Test different calibration methods first
-        print(f"\n🔬 Testing calibration methods for optimization baseline...")
-        
-        methods = [
-            (cv2.CALIB_HAND_EYE_TSAI, "TSAI"),
-            (cv2.CALIB_HAND_EYE_PARK, "PARK"), 
-            (cv2.CALIB_HAND_EYE_HORAUD, "HORAUD"),
-            (cv2.CALIB_HAND_EYE_ANDREFF, "ANDREFF"),
-            (cv2.CALIB_HAND_EYE_DANIILIDIS, "DANIILIDIS")
-        ]
-        
-        best_method = None
-        best_error = float('inf')
-        
-        for method_const, method_name in methods:
-            rms_error = calibrator.calibrate(method=method_const, verbose=False)
-            if rms_error > 0 and rms_error < best_error:
-                best_error = rms_error
-                best_method = method_name
-        
-        if best_method:
-            print(f"✅ Best method for optimization: {best_method} ({best_error:.4f} pixels)")
-        else:
-            print(f"❌ No method succeeded!")
-            return
-        
-        # Note: The optimize_calibration method may require updates to work with 
-        # the new member-based approach. For now, we'll skip optimization.
-        print(f"\n🔍 Optimization step skipped (requires method updates)")
-        print(f"   Current RMS error: {best_error:.4f} pixels")
-        
-        # Save results
-        output_dir = "data/results/hand_in_eye_optimized"
-        os.makedirs(output_dir, exist_ok=True)
-        calibrator.save_results(output_dir)
-        
-        print(f"\n💾 Results saved to: {output_dir}")
-        print(f"\n✨ Hand-in-Eye Calibration with Optimization Complete!")
-        
-        return True
-            
-    except Exception as e:
-        print(f"❌ Calibration with optimization failed: {e}")
         return False
 
 
@@ -494,13 +475,13 @@ if __name__ == "__main__":
     # Inspect sample data first
     inspect_sample_data()
     
-    # Run basic calibration
+    # Run calibration with integrated optimization
     success = test_hand_in_eye_calibration()
     
-    # Run calibration with optimization if basic calibration succeeded
+    print(f"\n✨ Hand-in-Eye calibration example completed!")
+    print(f"   Results saved to: data/results/hand_in_eye_calibration/")
     if success:
-        test_hand_in_eye_with_optimization()
-    
-    print(f"\n✨ Hand-in-Eye calibration examples completed!")
-    print(f"   Basic results: data/results/hand_in_eye_calibration/")
-    print(f"   Optimized results: data/results/hand_in_eye_optimized/")
+        print(f"   ✅ Calibration and optimization successful")
+        print(f"   📸 Before/after optimization images available for comparison")
+    else:
+        print(f"   ❌ Calibration failed")
