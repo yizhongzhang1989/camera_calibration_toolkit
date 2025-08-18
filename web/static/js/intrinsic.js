@@ -38,12 +38,23 @@ class IntrinsicCalibration extends BaseCalibration {
     // ========================================
     
     initializeEventListeners() {
+        console.log('🔧 Initializing event listeners for intrinsic calibration');
+        
         // File upload
         const imageFiles = document.getElementById('image-files');
         const uploadArea = document.getElementById('image-upload-area');
         
+        console.log('📁 Image files element:', imageFiles);
+        console.log('📂 Upload area element:', uploadArea);
+        
         if (imageFiles) {
-            imageFiles.addEventListener('change', (e) => this.handleImageUpload(e.target.files));
+            imageFiles.addEventListener('change', (e) => {
+                console.log('📷 File input changed, files:', e.target.files);
+                this.handleImageUpload(e.target.files);
+            });
+            console.log('✅ Image files event listener added');
+        } else {
+            console.error('❌ Image files element not found!');
         }
         
         // Drag and drop
@@ -60,8 +71,12 @@ class IntrinsicCalibration extends BaseCalibration {
             uploadArea.addEventListener('drop', (e) => {
                 e.preventDefault();
                 uploadArea.classList.remove('dragover');
+                console.log('📷 Files dropped:', e.dataTransfer.files);
                 this.handleImageUpload(e.dataTransfer.files);
             });
+            console.log('✅ Drag and drop event listeners added');
+        } else {
+            console.error('❌ Upload area element not found!');
         }
         
         // Parameters change listeners
@@ -562,5 +577,11 @@ class IntrinsicCalibration extends BaseCalibration {
 // Initialize the application
 let intrinsicCalib;
 document.addEventListener('DOMContentLoaded', () => {
-    intrinsicCalib = new IntrinsicCalibration();
+    console.log('🚀 DOM Content Loaded - Initializing IntrinsicCalibration');
+    try {
+        intrinsicCalib = new IntrinsicCalibration();
+        console.log('✅ IntrinsicCalibration initialized successfully');
+    } catch (error) {
+        console.error('❌ Failed to initialize IntrinsicCalibration:', error);
+    }
 });

@@ -44,24 +44,11 @@ class BaseCalibration {
         // Set up global access for template onclick handlers
         window.chessboardConfig = this.chessboardConfig;
         
-        // Override saveConfiguration to integrate with calibration
-        const originalSaveConfiguration = this.chessboardConfig.saveConfiguration.bind(this.chessboardConfig);
-        this.chessboardConfig.saveConfiguration = (callback) => {
-            originalSaveConfiguration((config) => {
-                // Update hidden form inputs for backward compatibility
-                document.getElementById('chessboard-x').value = config.cornerX;
-                document.getElementById('chessboard-y').value = config.cornerY;
-                document.getElementById('square-size').value = config.squareSize;
-                
-                // Update parameters on server
-                this.updateParameters();
-                
-                // Call provided callback if any
-                if (callback) callback(config);
-                
-                this.showStatus('Chessboard configuration updated', 'success');
-            });
-        };
+        // Set up integration with chessboard configuration
+        if (this.chessboardConfig.applyConfiguration) {
+            // Store reference to original method
+            this.chessboardConfig._originalApplyConfiguration = this.chessboardConfig.applyConfiguration.bind(this.chessboardConfig);
+        }
         
         // Initial display update
         this.updateChessboardDisplay();
@@ -79,27 +66,50 @@ class BaseCalibration {
     // ========================================
     
     async handleImageUpload(files) {
+        console.log('🚀 handleImageUpload called with files:', files);
+        console.log('📊 Number of files:', files.length);
+        
         const formData = new FormData();
         formData.append('session_id', this.sessionId);
         formData.append('calibration_type', this.calibrationType);
         
+        console.log('🆔 Session ID:', this.sessionId);
+        console.log('📝 Calibration type:', this.calibrationType);
+        
+        let validFiles = 0;
         for (let file of files) {
             if (file.type.startsWith('image/')) {
                 formData.append('files', file);
+                validFiles++;
+                console.log('✅ Added file:', file.name, 'type:', file.type);
+            } else {
+                console.log('❌ Skipped non-image file:', file.name, 'type:', file.type);
             }
         }
         
+        if (validFiles === 0) {
+            console.error('❌ No valid image files found!');
+            this.showStatus('No valid image files selected', 'error');
+            return;
+        }
+        
+        console.log('📤 Uploading', validFiles, 'files...');
+
         try {
             this.showStatus(`Uploading ${this.getImageUploadMessage()}...`, 'info');
             
+            console.log('🌐 Sending request to /api/upload_images');
             const response = await fetch('/api/upload_images', {
                 method: 'POST',
                 body: formData
             });
             
+            console.log('📥 Response received:', response.status, response.statusText);
             const result = await response.json();
+            console.log('📄 Response data:', result);
             
             if (result.error) {
+                console.error('❌ Server error:', result.error);
                 this.showStatus(`Error: ${result.error}`, 'error');
                 return;
             }
@@ -108,12 +118,14 @@ class BaseCalibration {
             const allImages = result.files || [];
             this.uploadedImages = allImages;
             
+            console.log('✅ Upload successful, total images:', allImages.length);
             this.showStatus(result.message, 'success');
             this.updateUI();
             this.displayUploadedImages();
             this.onImagesUploaded(); // Hook for subclasses
             
         } catch (error) {
+            console.error('💥 Upload failed with error:', error);
             this.showStatus(`Upload failed: ${error.message}`, 'error');
         }
     }
