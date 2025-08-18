@@ -378,6 +378,89 @@ class EyeInHandCalibrator:
             print(f"Error detecting pattern points: {e}")
             return False
     
+    def _calculate_optimal_target2base_matrix(self, cam2end_4x4: np.ndarray, verbose: bool = False) -> np.ndarray:
+        """
+        Calculate the single target2base matrix that minimizes overall reprojection error.
+        
+        This method finds the target2base transformation that best explains all the
+        observed target positions across all images, rather than calculating a
+        separate target2base for each image which would result in zero error.
+        
+        Args:
+            cam2end_4x4: The camera to end-effector transformation matrix from calibration
+            verbose: Whether to print detailed information
+            
+        Returns:
+            np.ndarray: 4x4 target to base transformation matrix
+        """
+        if verbose:
+            print("Calculating optimal target2base matrix...")
+        
+        best_error = float('inf')
+        best_target2base = None
+        
+        # Try using each image's target2cam transformation to estimate target2base
+        # Then find the one that gives the smallest overall reprojection error
+        candidate_target2base_matrices = []
+        
+        for i in range(len(self.target2cam_matrices)):
+            # Calculate target2base using this image's measurements
+            candidate_target2base = self.end2base_matrices[i] @ cam2end_4x4 @ self.target2cam_matrices[i]
+            candidate_target2base_matrices.append(candidate_target2base)
+        
+        # Test each candidate to find the one with minimum overall reprojection error
+        for candidate_idx, candidate_target2base in enumerate(candidate_target2base_matrices):
+            total_error = 0.0
+            valid_images = 0
+            
+            for i in range(len(self.image_points)):
+                try:
+                    # Calculate target2cam using the candidate target2base matrix
+                    end2cam_matrix = np.linalg.inv(cam2end_4x4)
+                    base2end_matrix = np.linalg.inv(self.end2base_matrices[i])
+                    eyeinhand_target2cam = end2cam_matrix @ base2end_matrix @ candidate_target2base
+                    
+                    # Project 3D points to image
+                    projected_points, _ = cv2.projectPoints(
+                        self.object_points[i], 
+                        eyeinhand_target2cam[:3, :3], 
+                        eyeinhand_target2cam[:3, 3], 
+                        self.camera_matrix, 
+                        self.distortion_coefficients)
+                    
+                    # Calculate reprojection error for this image
+                    error = cv2.norm(self.image_points[i], projected_points, cv2.NORM_L2) / len(projected_points)
+                    total_error += error * error
+                    valid_images += 1
+                    
+                except Exception as e:
+                    if verbose:
+                        print(f"Warning: Could not test candidate {candidate_idx} for image {i}: {e}")
+                    continue
+            
+            # Calculate RMS error for this candidate
+            if valid_images > 0:
+                rms_error = np.sqrt(total_error / valid_images)
+                if rms_error < best_error:
+                    best_error = rms_error
+                    best_target2base = candidate_target2base.copy()
+                    if verbose:
+                        print(f"  Candidate {candidate_idx}: RMS error = {rms_error:.4f} (best so far)")
+                elif verbose:
+                    print(f"  Candidate {candidate_idx}: RMS error = {rms_error:.4f}")
+        
+        if best_target2base is not None:
+            if verbose:
+                print(f"✅ Optimal target2base matrix found with RMS error: {best_error:.4f}")
+                print("Target2base transformation matrix:")
+                print(best_target2base)
+        else:
+            if verbose:
+                print("⚠️ Could not find optimal target2base matrix, using first candidate")
+            best_target2base = candidate_target2base_matrices[0]
+        
+        return best_target2base
+    
     def calibrate(self, method: int = cv2.CALIB_HAND_EYE_HORAUD, verbose: bool = False) -> float:
         """
         Perform eye-in-hand calibration following OpenCV's calibrateHandEye interface.
@@ -463,22 +546,22 @@ class EyeInHandCalibrator:
             self.cam2end_matrix = cam2end_4x4
             self.calibration_completed = True
             
-            # Calculate reprojection errors
+            # Calculate the single target2base matrix that minimizes reprojection error
+            self.target2base_matrix = self._calculate_optimal_target2base_matrix(cam2end_4x4, verbose)
+            
+            # Calculate reprojection errors using the single target2base matrix
             self.per_image_errors = []
             total_error = 0.0
             valid_images = 0
             
             for i in range(len(self.image_points)):
                 try:
-                    # Calculate reprojected points using hand-eye calibration result
+                    # Calculate reprojected points using hand-eye calibration result and single target2base matrix
                     end2cam_matrix = np.linalg.inv(cam2end_4x4)
                     base2end_matrix = np.linalg.inv(self.end2base_matrices[i])
                     
-                    # Target to base transformation (from calibration result)
-                    target2base_matrix = self.end2base_matrices[i] @ cam2end_4x4 @ self.target2cam_matrices[i]
-                    
-                    # Target to camera using hand-eye calibration
-                    eyeinhand_target2cam = end2cam_matrix @ base2end_matrix @ target2base_matrix
+                    # Target to camera using hand-eye calibration and the single target2base matrix
+                    eyeinhand_target2cam = end2cam_matrix @ base2end_matrix @ self.target2base_matrix
                     
                     # Project 3D points to image
                     projected_points, _ = cv2.projectPoints(
@@ -701,15 +784,12 @@ class EyeInHandCalibrator:
                     self.camera_matrix, np.zeros((4, 1))  # No distortion for undistorted image
                 )
                 
-                # Method 2: Target to camera via hand-eye calibration chain
+                # Method 2: Target to camera via hand-eye calibration chain using single target2base matrix
                 end2cam_matrix = np.linalg.inv(self.cam2end_matrix)
                 base2end_matrix = np.linalg.inv(self.end2base_matrices[i])
                 
-                # Assume target is at the same position relative to base (from direct measurement)
-                target2base_matrix = self.end2base_matrices[i] @ self.cam2end_matrix @ target2cam_direct
-                
-                # Calculate target to camera using hand-eye calibration
-                eyeinhand_target2cam = end2cam_matrix @ base2end_matrix @ target2base_matrix
+                # Use the single target2base matrix calculated during calibration
+                eyeinhand_target2cam = end2cam_matrix @ base2end_matrix @ self.target2base_matrix
                 
                 reprojected_eyeinhand, _ = cv2.projectPoints(
                     objp, eyeinhand_target2cam[:3, :3], eyeinhand_target2cam[:3, 3],
@@ -761,6 +841,102 @@ class EyeInHandCalibrator:
                 filename = f"image_{i:03d}"
             
             debug_images.append((filename, undistorted_img))
+        
+        return debug_images
+    
+    def draw_reprojection_on_images(self) -> List[Tuple[str, np.ndarray]]:
+        """
+        Draw pattern point reprojections on original (distorted) images using hand-eye calibration results.
+        
+        This shows the accuracy of the hand-eye calibration by comparing detected pattern points
+        with points reprojected using the calibrated transformation matrix on the original images.
+        
+        Returns:
+            List of tuples (filename_without_extension, debug_image_array)
+        """
+        if not self.is_calibrated():
+            raise ValueError("Calibration not completed. Run calibrate() first.")
+        
+        if not self.images or not self.object_points or not self.image_points:
+            raise ValueError("No calibration data available.")
+        
+        if not self.target2cam_matrices or not self.end2base_matrices:
+            raise ValueError("No transformation matrices available. Ensure calibration completed successfully.")
+        
+        debug_images = []
+        
+        for i, (img, objp, detected_corners) in enumerate(zip(
+            self.images, self.object_points, self.image_points
+        )):
+            # Use original (distorted) image
+            original_img = img.copy()
+            
+            # Calculate reprojected points using hand-eye calibration
+            try:
+                # Method 1: Direct target to camera from calibration
+                target2cam_direct = self.target2cam_matrices[i]
+                reprojected_direct, _ = cv2.projectPoints(
+                    objp, target2cam_direct[:3, :3], target2cam_direct[:3, 3],
+                    self.camera_matrix, self.distortion_coefficients  # Include distortion for original image
+                )
+                
+                # Method 2: Target to camera via hand-eye calibration chain using single target2base matrix
+                end2cam_matrix = np.linalg.inv(self.cam2end_matrix)
+                base2end_matrix = np.linalg.inv(self.end2base_matrices[i])
+                
+                # Use the single target2base matrix calculated during calibration
+                eyeinhand_target2cam = end2cam_matrix @ base2end_matrix @ self.target2base_matrix
+                
+                reprojected_eyeinhand, _ = cv2.projectPoints(
+                    objp, eyeinhand_target2cam[:3, :3], eyeinhand_target2cam[:3, 3],
+                    self.camera_matrix, self.distortion_coefficients  # Include distortion for original image
+                )
+                
+                # Draw detected corners in green (ground truth)
+                detected_2d = detected_corners.reshape(-1, 2).astype(int)
+                for corner in detected_2d:
+                    cv2.circle(original_img, tuple(corner), 8, (0, 255, 0), 2)
+                
+                # Draw direct reprojection in blue (from direct PnP)
+                direct_2d = reprojected_direct.reshape(-1, 2).astype(int)
+                for corner in direct_2d:
+                    cv2.drawMarker(original_img, tuple(corner), (255, 0, 0), 
+                                 cv2.MARKER_CROSS, 12, 2)
+                
+                # Draw hand-eye reprojection in red (from hand-eye calibration)
+                eyeinhand_2d = reprojected_eyeinhand.reshape(-1, 2).astype(int)
+                for corner in eyeinhand_2d:
+                    cv2.drawMarker(original_img, tuple(corner), (0, 0, 255), 
+                                 cv2.MARKER_TRIANGLE_UP, 12, 2)
+                
+                # Add legend
+                cv2.putText(original_img, "Green: Detected", (10, 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                cv2.putText(original_img, "Blue: Direct PnP", (10, 60), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+                cv2.putText(original_img, "Red: Hand-Eye", (10, 90), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                
+                # Calculate and display error
+                if self.per_image_errors and i < len(self.per_image_errors):
+                    error_text = f"RMS Error: {self.per_image_errors[i]:.3f} px"
+                    cv2.putText(original_img, error_text, (10, original_img.shape[0] - 20), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                
+            except Exception as e:
+                print(f"Warning: Could not generate reprojection for image {i}: {e}")
+                # Just draw detected corners if reprojection fails
+                detected_2d = detected_corners.reshape(-1, 2).astype(int)
+                for corner in detected_2d:
+                    cv2.circle(original_img, tuple(corner), 8, (0, 255, 0), 2)
+            
+            # Get original filename without path and extension
+            if hasattr(self, 'image_paths') and self.image_paths and i < len(self.image_paths):
+                filename = os.path.splitext(os.path.basename(self.image_paths[i]))[0]
+            else:
+                filename = f"image_{i:03d}"
+            
+            debug_images.append((filename, original_img))
         
         return debug_images
     

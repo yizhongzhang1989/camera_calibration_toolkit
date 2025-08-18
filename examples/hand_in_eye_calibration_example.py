@@ -27,14 +27,94 @@ import json
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.eye_in_hand_calibration import EyeInHandCalibrator
+from core.intrinsic_calibration import IntrinsicCalibrator
 from core.calibration_patterns import create_chessboard_pattern
 from core.utils import load_images_from_directory
 
 
+def calculate_camera_intrinsics(sample_dir):
+    """Calculate camera intrinsic parameters using IntrinsicCalibrator.
+    
+    This performs actual intrinsic calibration using the same images that will be
+    used for hand-eye calibration, ensuring the camera parameters are accurate.
+    
+    Args:
+        sample_dir: Directory containing calibration images
+        
+    Returns:
+        tuple: (camera_matrix, distortion_coefficients) or (None, None) if failed
+    """
+    print("📷 Calculating camera intrinsic parameters...")
+    
+    try:
+        # Load images for intrinsic calibration
+        image_paths = load_images_from_directory(sample_dir)
+        if not image_paths:
+            print("❌ No images found for intrinsic calibration")
+            return None, None
+        
+        print(f"   Using {len(image_paths)} images for intrinsic calibration")
+        
+        # Create calibration pattern (same as used for hand-eye calibration)
+        pattern = create_chessboard_pattern('standard', width=11, height=8, square_size=0.02)
+        
+        # Create IntrinsicCalibrator with smart constructor
+        intrinsic_calibrator = IntrinsicCalibrator(
+            image_paths=image_paths,
+            calibration_pattern=pattern,
+            pattern_type='standard'
+        )
+        
+        # Detect pattern points
+        if not intrinsic_calibrator.detect_pattern_points(verbose=True):
+            print("❌ Failed to detect calibration patterns for intrinsic calibration")
+            return None, None
+        
+        # Perform intrinsic calibration
+        print("   Running intrinsic calibration...")
+        rms_error = intrinsic_calibrator.calibrate_camera(verbose=True)
+        
+        if rms_error > 0:
+            camera_matrix = intrinsic_calibrator.get_camera_matrix()
+            distortion_coeffs = intrinsic_calibrator.get_distortion_coefficients()
+            
+            print(f"✅ Intrinsic calibration successful!")
+            print(f"   RMS error: {rms_error:.4f} pixels")
+            print(f"   Camera matrix:")
+            print(f"     fx={camera_matrix[0,0]:.2f}, fy={camera_matrix[1,1]:.2f}")
+            print(f"     cx={camera_matrix[0,2]:.2f}, cy={camera_matrix[1,2]:.2f}")
+            print(f"   Distortion coefficients: {distortion_coeffs.flatten()}")
+            
+            # Save intrinsic calibration results
+            intrinsic_output_dir = "data/results/intrinsic_calibration_for_handeye"
+            os.makedirs(intrinsic_output_dir, exist_ok=True)
+            intrinsic_calibrator.save_calibration(
+                os.path.join(intrinsic_output_dir, 'intrinsic_calibration_results.json'),
+                include_extrinsics=True
+            )
+            print(f"   Intrinsic calibration results saved to: {intrinsic_output_dir}")
+            
+            return camera_matrix, distortion_coeffs
+        else:
+            print("❌ Intrinsic calibration failed")
+            return None, None
+            
+    except Exception as e:
+        print(f"❌ Error during intrinsic calibration: {e}")
+        return None, None
+
+
 def load_sample_camera_intrinsics():
-    """Load sample camera intrinsic parameters for demonstration."""
-    # These are sample intrinsic parameters - in practice, you would load 
-    # these from a previous intrinsic calibration or from camera specifications
+    """Load sample camera intrinsic parameters for demonstration.
+    
+    DEPRECATED: This function is kept for backward compatibility but should
+    not be used. Use calculate_camera_intrinsics() instead for real calibration.
+    """
+    print("⚠️ Warning: Using hardcoded sample intrinsic parameters")
+    print("   For accurate results, use calculate_camera_intrinsics() instead")
+    
+    # These are sample intrinsic parameters - in practice, you should always
+    # calculate these from actual calibration data
     camera_matrix = np.array([
         [800.0, 0.0, 320.0],
         [0.0, 800.0, 240.0],
@@ -64,12 +144,17 @@ def test_hand_in_eye_calibration():
     
     print(f"📁 Using sample data from: {sample_dir}")
     
-    # Load camera intrinsic parameters
-    # In practice, these would come from a previous intrinsic calibration
-    camera_matrix, distortion_coefficients = load_sample_camera_intrinsics()
-    print(f"📷 Camera intrinsics loaded:")
+    # Calculate camera intrinsic parameters first
+    # This is essential for accurate hand-eye calibration
+    camera_matrix, distortion_coefficients = calculate_camera_intrinsics(sample_dir)
+    if camera_matrix is None or distortion_coefficients is None:
+        print("❌ Failed to calculate camera intrinsics - cannot proceed with hand-eye calibration")
+        return False
+        
+    print(f"📷 Camera intrinsics calculated successfully:")
     print(f"   fx={camera_matrix[0,0]:.1f}, fy={camera_matrix[1,1]:.1f}")
     print(f"   cx={camera_matrix[0,2]:.1f}, cy={camera_matrix[1,2]:.1f}")
+    print(f"   Distortion: {distortion_coefficients.flatten()}")
     
     # Create calibration pattern
     # Based on the sample images, they use an 11x8 chessboard pattern
@@ -237,10 +322,10 @@ def test_hand_in_eye_calibration():
             
             print(f"   Undistorted axes images: {len(axes_images)} images in {axes_debug_dir}")
             
-            # Draw pattern point reprojections on undistorted images
+            # Draw pattern point reprojections on original images
             reprojection_debug_dir = os.path.join(output_dir, "reprojection_analysis")
             os.makedirs(reprojection_debug_dir, exist_ok=True)
-            reprojection_images = calibrator.draw_reprojection_on_undistorted_images()
+            reprojection_images = calibrator.draw_reprojection_on_images()
             
             for filename, debug_img in reprojection_images:
                 output_path = os.path.join(reprojection_debug_dir, f"{filename}.jpg")
@@ -280,8 +365,11 @@ def test_hand_in_eye_with_optimization():
         print(f"❌ Sample data directory not found: {sample_dir}")
         return
     
-    # Load camera intrinsic parameters
-    camera_matrix, distortion_coefficients = load_sample_camera_intrinsics()
+    # Calculate camera intrinsic parameters
+    camera_matrix, distortion_coefficients = calculate_camera_intrinsics(sample_dir)
+    if camera_matrix is None or distortion_coefficients is None:
+        print("❌ Failed to calculate camera intrinsics - cannot proceed with optimization test")
+        return False
     
     # Create calibration pattern  
     pattern = create_chessboard_pattern('standard', width=11, height=8, square_size=0.02)
