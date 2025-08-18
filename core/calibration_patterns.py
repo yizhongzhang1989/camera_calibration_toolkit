@@ -258,6 +258,50 @@ class StandardChessboard(CalibrationPattern):
         self.width = width
         self.height = height
         self.square_size = square_size
+    
+    @classmethod
+    def get_configuration_schema(cls):
+        """
+        Get the configuration schema for this pattern type.
+        
+        Returns:
+            Dict containing the pattern configuration schema
+        """
+        return {
+            "name": "Standard Chessboard",
+            "description": "Traditional black and white checkerboard pattern",
+            "icon": "🏁",
+            "parameters": [
+                {
+                    "name": "width",
+                    "label": "Corners (Width)",
+                    "type": "integer",
+                    "default": 11,
+                    "min": 3,
+                    "max": 20,
+                    "description": "Number of internal corners along width"
+                },
+                {
+                    "name": "height", 
+                    "label": "Corners (Height)",
+                    "type": "integer",
+                    "default": 8,
+                    "min": 3,
+                    "max": 20,
+                    "description": "Number of internal corners along height"
+                },
+                {
+                    "name": "square_size",
+                    "label": "Square Size (meters)",
+                    "type": "float",
+                    "default": 0.025,
+                    "min": 0.001,
+                    "max": 1.0,
+                    "step": 0.001,
+                    "description": "Physical size of each square in meters"
+                }
+            ]
+        }
         
     def detect_corners(self, image: np.ndarray, **kwargs) -> Tuple[bool, Optional[np.ndarray], Optional[np.ndarray]]:
         """Detect corners using standard chessboard detection."""
@@ -653,6 +697,82 @@ class CharucoBoard(CalibrationPattern):
                      (0, 0, 0), border_thickness)
         
         return image
+    
+    @classmethod
+    def get_configuration_schema(cls):
+        """
+        Get the configuration schema for this pattern type.
+        
+        Returns:
+            Dict containing the pattern configuration schema
+        """
+        return {
+            "name": "ChArUco Board",
+            "description": "Chessboard pattern with ArUco markers for robust detection",
+            "icon": "🎯",
+            "parameters": [
+                {
+                    "name": "width",
+                    "label": "Squares (Width)",
+                    "type": "integer", 
+                    "default": 8,
+                    "min": 3,
+                    "max": 15,
+                    "description": "Number of squares along width"
+                },
+                {
+                    "name": "height",
+                    "label": "Squares (Height)", 
+                    "type": "integer",
+                    "default": 6,
+                    "min": 3,
+                    "max": 15,
+                    "description": "Number of squares along height"
+                },
+                {
+                    "name": "square_size",
+                    "label": "Square Size (meters)",
+                    "type": "float",
+                    "default": 0.040,
+                    "min": 0.001,
+                    "max": 1.0,
+                    "step": 0.001,
+                    "description": "Physical size of each square in meters"
+                },
+                {
+                    "name": "marker_size",
+                    "label": "Marker Size (meters)",
+                    "type": "float",
+                    "default": 0.020,
+                    "min": 0.001,
+                    "max": 1.0,
+                    "step": 0.001,
+                    "description": "Physical size of ArUco markers in meters"
+                },
+                {
+                    "name": "dictionary_id",
+                    "label": "ArUco Dictionary",
+                    "type": "integer",
+                    "input_type": "select",
+                    "default": cv2.aruco.DICT_6X6_250,
+                    "options": [
+                        {"value": cv2.aruco.DICT_4X4_50, "label": "DICT_4X4_50"},
+                        {"value": cv2.aruco.DICT_4X4_100, "label": "DICT_4X4_100"},
+                        {"value": cv2.aruco.DICT_4X4_250, "label": "DICT_4X4_250"},
+                        {"value": cv2.aruco.DICT_4X4_1000, "label": "DICT_4X4_1000"},
+                        {"value": cv2.aruco.DICT_5X5_50, "label": "DICT_5X5_50"},
+                        {"value": cv2.aruco.DICT_5X5_100, "label": "DICT_5X5_100"},
+                        {"value": cv2.aruco.DICT_5X5_250, "label": "DICT_5X5_250"},
+                        {"value": cv2.aruco.DICT_5X5_1000, "label": "DICT_5X5_1000"},
+                        {"value": cv2.aruco.DICT_6X6_50, "label": "DICT_6X6_50"},
+                        {"value": cv2.aruco.DICT_6X6_100, "label": "DICT_6X6_100"},
+                        {"value": cv2.aruco.DICT_6X6_250, "label": "DICT_6X6_250"},
+                        {"value": cv2.aruco.DICT_6X6_1000, "label": "DICT_6X6_1000"}
+                    ],
+                    "description": "ArUco marker dictionary to use"
+                }
+            ]
+        }
 
 
 class Custom3DPattern(CalibrationPattern):
@@ -934,3 +1054,39 @@ def get_common_pattern(pattern_name: str) -> CalibrationPattern:
     config.pop("description", None)  # Remove description from parameters
     
     return create_chessboard_pattern(pattern_type, **config)
+
+
+def get_pattern_type_configurations():
+    """
+    Get available pattern types and their configuration parameters.
+    Collects configuration schemas from all pattern classes.
+    
+    Returns:
+        Dict containing pattern types and their configuration schemas
+    """
+    # Registry of available pattern classes
+    # To add a new pattern type, simply add it to this dictionary
+    pattern_classes = {
+        "standard": StandardChessboard,
+        "charuco": CharucoBoard,
+        # Future pattern types can be added here:
+        # "circles": CircleGrid,
+        # "apriltag": AprilTagBoard,
+        # "custom3d": Custom3DPattern,
+    }
+    
+    # Collect configurations from all pattern classes
+    pattern_configs = {}
+    for pattern_type, pattern_class in pattern_classes.items():
+        if hasattr(pattern_class, 'get_configuration_schema'):
+            pattern_configs[pattern_type] = pattern_class.get_configuration_schema()
+        else:
+            # Fallback for classes without configuration schema
+            pattern_configs[pattern_type] = {
+                "name": pattern_class.__name__,
+                "description": pattern_class.__doc__ or "No description available",
+                "icon": "❓",
+                "parameters": []
+            }
+    
+    return pattern_configs

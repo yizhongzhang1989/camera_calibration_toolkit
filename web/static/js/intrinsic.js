@@ -109,13 +109,28 @@ class IntrinsicCalibration extends BaseCalibration {
     // ========================================
     
     async updateParameters() {
+        // Get pattern configuration from ChessboardConfig if available
+        let patternConfig = null;
+        if (window.chessboardConfig && window.chessboardConfig.config) {
+            patternConfig = window.chessboardConfig.config;
+        }
+        
         const parameters = {
             session_id: this.sessionId,
-            chessboard_x: parseInt(document.getElementById('chessboard-x').value),
-            chessboard_y: parseInt(document.getElementById('chessboard-y').value),
-            square_size: parseFloat(document.getElementById('square-size').value),
             distortion_model: document.getElementById('distortion-model').value
         };
+        
+        // Use new pattern configuration format if available
+        if (patternConfig && patternConfig.patternType) {
+            parameters.pattern_config = patternConfig;
+            console.log('Using new pattern configuration:', patternConfig);
+        } else {
+            // Fallback to legacy format for backward compatibility
+            parameters.chessboard_x = parseInt(document.getElementById('chessboard-x').value);
+            parameters.chessboard_y = parseInt(document.getElementById('chessboard-y').value);
+            parameters.square_size = parseFloat(document.getElementById('square-size').value);
+            console.log('Using legacy parameter format');
+        }
         
         try {
             const response = await fetch('/api/set_parameters', {

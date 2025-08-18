@@ -24,7 +24,7 @@ import sys
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from core.intrinsic_calibration import IntrinsicCalibrator
-from core.calibration_patterns import create_chessboard_pattern
+from core.calibration_patterns import create_chessboard_pattern, get_pattern_type_configurations
 from core.eye_in_hand_calibration import EyeInHandCalibrator
 from web.visualization_utils import create_calibration_results, trim_distortion_coefficients
 
@@ -150,6 +150,16 @@ def clear_console_output(session_id):
     return jsonify({'success': True})
 
 
+@app.route('/api/pattern_configurations')
+def get_pattern_configurations():
+    """Get available pattern type configurations."""
+    try:
+        configurations = get_pattern_type_configurations()
+        return jsonify({'success': True, 'configurations': configurations})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/chessboard-test')
 def chessboard_test():
     """Chessboard configuration test page."""
@@ -269,13 +279,36 @@ def set_parameters():
         data = request.get_json()
         session_id = data.get('session_id', 'default')
         
-        # Extract parameters directly from the request data
-        parameters = {
-            'chessboard_x': data.get('chessboard_x'),
-            'chessboard_y': data.get('chessboard_y'),
-            'square_size': data.get('square_size'),
-            'distortion_model': data.get('distortion_model', 'standard')
-        }
+        # Extract parameters - handle both legacy and new pattern configuration formats
+        parameters = {}
+        
+        # Pattern configuration (new format)
+        if 'pattern_config' in data:
+            pattern_config = data['pattern_config']
+            parameters['pattern_type'] = pattern_config.get('patternType', 'standard')
+            parameters['pattern_parameters'] = pattern_config.get('parameters', {})
+            
+            # For backward compatibility, also set legacy parameters
+            if parameters['pattern_type'] == 'standard':
+                parameters['chessboard_x'] = pattern_config.get('parameters', {}).get('width', 11)
+                parameters['chessboard_y'] = pattern_config.get('parameters', {}).get('height', 8)
+                parameters['square_size'] = pattern_config.get('parameters', {}).get('square_size', 0.025)
+            elif parameters['pattern_type'] == 'charuco':
+                parameters['chessboard_x'] = pattern_config.get('parameters', {}).get('width', 8)  # ChArUco squares
+                parameters['chessboard_y'] = pattern_config.get('parameters', {}).get('height', 6)
+                parameters['square_size'] = pattern_config.get('parameters', {}).get('square_size', 0.040)
+                parameters['marker_size'] = pattern_config.get('parameters', {}).get('marker_size', 0.020)
+                # Convert dictionary_id to integer to fix OpenCV error
+                dict_id_raw = pattern_config.get('parameters', {}).get('dictionary_id', cv2.aruco.DICT_6X6_250)
+                parameters['dictionary_id'] = int(dict_id_raw) if isinstance(dict_id_raw, (str, float)) else dict_id_raw
+        else:
+            # Legacy format - direct parameter extraction
+            parameters['pattern_type'] = 'standard'  # Default to standard for legacy
+            parameters['chessboard_x'] = data.get('chessboard_x')
+            parameters['chessboard_y'] = data.get('chessboard_y')
+            parameters['square_size'] = data.get('square_size')
+        
+        parameters['distortion_model'] = data.get('distortion_model', 'standard')
         
         # Add eye-in-hand specific parameters
         if data.get('handeye_method'):
@@ -327,21 +360,21 @@ def calibrate():
         with ConsoleCapture(session_id):
             print("=" * 60)
             print(f"🚀 STARTING CALIBRATION FOR SESSION: {session_id}")
-            print(f"⏰ Start time: {time.strftime('%H:%M:%S')}")
+            print(f"�?Start time: {time.strftime('%H:%M:%S')}")
             print("=" * 60)
             
             if session_id not in session_data:
-                print("❌ ERROR: No session data found")
+                print("�?ERROR: No session data found")
                 return jsonify({'error': 'No session data found'}), 400
             
             session_info = session_data[session_id]
             
             # Check required data
             if 'images' not in session_info or 'parameters' not in session_info:
-                print("❌ ERROR: Missing images or parameters")
+                print("�?ERROR: Missing images or parameters")
                 return jsonify({'error': 'Missing images or parameters'}), 400
             
-            print(f"✅ Session data validated - images: {len(session_info.get('images', []))}")
+            print(f"�?Session data validated - images: {len(session_info.get('images', []))}")
             
             images = session_info['images']
             parameters = session_info['parameters']
@@ -349,15 +382,32 @@ def calibrate():
             selected_indices = request.json.get('selected_indices', list(range(len(images))))
             
             print(f"📋 Calibration type: {calibration_type}")
-            print(f"🖼️  Selected {len(selected_indices)} images for processing")
+            print(f"🖼�? Selected {len(selected_indices)} images for processing")
             
-            # Extract parameters
-            XX = int(parameters['chessboard_x'])
-            YY = int(parameters['chessboard_y'])
-            L = float(parameters['square_size'])
+            # Extract basic parameters
             distortion_model = parameters.get('distortion_model', 'standard')
             
-            print(f"🏁 Chessboard: {XX}x{YY}, Square size: {L}mm")
+            # For legacy compatibility and logging, try to get pattern dimensions
+            pattern_type = parameters.get('pattern_type', 'standard')
+            if pattern_type == 'standard':
+                pattern_params = parameters.get('pattern_parameters', {})
+                XX = pattern_params.get('width', parameters.get('chessboard_x', 11))
+                YY = pattern_params.get('height', parameters.get('chessboard_y', 8))
+                L = pattern_params.get('square_size', parameters.get('square_size', 0.025))
+                print(f"🏁 Standard Chessboard: {XX}x{YY} corners, Square size: {L}m")
+            elif pattern_type == 'charuco':
+                pattern_params = parameters.get('pattern_parameters', {})
+                XX = pattern_params.get('width', parameters.get('chessboard_x', 8))
+                YY = pattern_params.get('height', parameters.get('chessboard_y', 6))
+                L = pattern_params.get('square_size', parameters.get('square_size', 0.040))
+                marker_size = pattern_params.get('marker_size', parameters.get('marker_size', 0.020))
+                print(f"🎯 ChArUco Board: {XX}x{YY} squares, Square size: {L}m, Marker size: {marker_size}m")
+            else:
+                # Fallback to legacy parameters for unknown types
+                XX = parameters.get('chessboard_x', 11)
+                YY = parameters.get('chessboard_y', 8)
+                L = parameters.get('square_size', 0.025)
+            
             print(f"📐 Distortion model: {distortion_model}")
             print("-" * 50)
             
@@ -365,7 +415,7 @@ def calibrate():
             image_paths = [images[i]['path'] for i in selected_indices if i < len(images)]
             
             if len(image_paths) < 3:
-                print("❌ ERROR: Need at least 3 selected images for calibration")
+                print("�?ERROR: Need at least 3 selected images for calibration")
                 return jsonify({'error': 'Need at least 3 selected images for calibration'}), 400
             
             print(f"📂 Processing image files:")
@@ -379,25 +429,64 @@ def calibrate():
             if calibration_type == 'intrinsic':
                 print("🔧 INTRINSIC CALIBRATION SETUP")
                 print("-" * 30)
-                    
-                # Create calibration pattern
-                pattern = create_chessboard_pattern(
-                    pattern_type='standard',
-                    width=XX,
-                    height=YY,
-                    square_size=L
-                )
                 
-                print(f"✅ Created chessboard pattern: {XX}x{YY} corners")
-                print(f"   Square size: {L}mm")
-                print(f"   Total corners expected per image: {XX * YY}")
+                # Get pattern configuration
+                pattern_type = parameters.get('pattern_type', 'standard')
+                pattern_params = parameters.get('pattern_parameters', {})
+                
+                print(f"📋 Pattern Type: {pattern_type}")
+                print(f"📋 Pattern Parameters: {pattern_params}")
+                
+                # Create calibration pattern using new configuration
+                if pattern_type == 'standard':
+                    width = pattern_params.get('width', parameters.get('chessboard_x', 11))
+                    height = pattern_params.get('height', parameters.get('chessboard_y', 8))
+                    square_size = pattern_params.get('square_size', parameters.get('square_size', 0.025))
+                    
+                    pattern = create_chessboard_pattern(
+                        pattern_type='standard',
+                        width=width,
+                        height=height,
+                        square_size=square_size
+                    )
+                    
+                    print(f"�?Created standard chessboard: {width}x{height} corners")
+                    print(f"   Square size: {square_size}m")
+                    print(f"   Total corners expected per image: {width * height}")
+                    
+                elif pattern_type == 'charuco':
+                    width = pattern_params.get('width', parameters.get('chessboard_x', 8))
+                    height = pattern_params.get('height', parameters.get('chessboard_y', 6))
+                    square_size = pattern_params.get('square_size', parameters.get('square_size', 0.040))
+                    marker_size = pattern_params.get('marker_size', parameters.get('marker_size', 0.020))
+                    dict_id_raw = pattern_params.get('dictionary_id', parameters.get('dictionary_id', cv2.aruco.DICT_6X6_250))
+                    dictionary_id = int(dict_id_raw) if isinstance(dict_id_raw, (str, float)) else dict_id_raw
+                    
+                    pattern = create_chessboard_pattern(
+                        pattern_type='charuco',
+                        width=width,
+                        height=height,
+                        square_size=square_size,
+                        marker_size=marker_size,
+                        dictionary_id=dictionary_id
+                    )
+                    
+                    print(f" ChArUco Board: {XX}x{YY} squares, Square size: {L}m, Marker size: {marker_size}m")
+                    print(f"   Square size: {square_size}m, Marker size: {marker_size}m")
+                    print(f"   Dictionary: {dictionary_id}")
+                    print(f"   Total corners expected per image: {(width-1) * (height-1)}")
+                    
+                else:
+                    print(f"�?Unsupported pattern type: {pattern_type}")
+                    return jsonify({'error': f'Unsupported pattern type: {pattern_type}'}), 400
+                
                 print()
                 
                 # Create new calibrator instance for this session
                 calibrator = IntrinsicCalibrator(
                     image_paths=image_paths,
                     calibration_pattern=pattern,
-                    pattern_type='standard'
+                    pattern_type=pattern_type
                 )
                 
                 print("🎯 PATTERN DETECTION PHASE")
@@ -407,7 +496,7 @@ def calibrate():
                 detection_success = calibrator.detect_pattern_points(verbose=True)
                     
                 if not detection_success:
-                    print("❌ Pattern detection failed. Check your images and parameters.")
+                    print("�?Pattern detection failed. Check your images and parameters.")
                     return jsonify({'error': 'Pattern detection failed. Check your images and parameters.'}), 400
                 
                 print()
@@ -439,7 +528,7 @@ def calibrate():
                         include_extrinsics=True
                     )
                     
-                    print("✅ Saved main calibration results to calibration_results.json")
+                    print("�?Saved main calibration results to calibration_results.json")
                     
                     # Save additional JSON with trimmed distortion coefficients for backward compatibility
                     trimmed_dist_coeffs = trim_distortion_coefficients(dist_coeffs, distortion_model)
@@ -456,7 +545,7 @@ def calibrate():
                     with open(os.path.join(results_folder, 'legacy_calibration_results.json'), 'w') as f:
                         json.dump(legacy_calibration_data, f, indent=4)
                     
-                    print("✅ Saved legacy format to legacy_calibration_results.json")
+                    print("�?Saved legacy format to legacy_calibration_results.json")
                     
                     # Also save trimmed distortion coefficients separately
                     trimmed_dist_dict = {
@@ -467,9 +556,9 @@ def calibrate():
                     with open(os.path.join(results_folder, 'dist_trimmed.json'), 'w') as f:
                         json.dump(trimmed_dist_dict, f, indent=4)
                     
-                    print("✅ Saved trimmed distortion coefficients to dist_trimmed.json")
+                    print("�?Saved trimmed distortion coefficients to dist_trimmed.json")
                     print()
-                    print("🖼️  GENERATING VISUALIZATION IMAGES")
+                    print("🖼�? GENERATING VISUALIZATION IMAGES")
                     print("-" * 30)
                     
                     # Get extrinsics for visualization
@@ -480,13 +569,13 @@ def calibrate():
                         'intrinsic', session_id, image_paths, selected_indices,
                         camera_matrix, dist_coeffs, results_folder, XX, YY, L,
                         rms_error=float(rms_error), distortion_model=distortion_model,
-                        rvecs=rvecs, tvecs=tvecs
+                        rvecs=rvecs, tvecs=tvecs, pattern_type=pattern_type, pattern=pattern
                     )
                         
-                    print("✅ Generated corner detection and undistorted images")
+                    print("�?Generated corner detection and undistorted images")
                     print()
                     calibration_file_path = os.path.join(results_folder, 'calibration_results.json')
-                    print(f"✅ Calibration data saved to: {calibration_file_path}")
+                    print(f"�?Calibration data saved to: {calibration_file_path}")
                     
                     # Calculate and display total time
                     total_time = time.time() - start_time
@@ -496,13 +585,13 @@ def calibrate():
                     print("=" * 60)
                 else:
                     total_time = time.time() - start_time
-                    print("❌ CALIBRATION FAILED")
+                    print("�?CALIBRATION FAILED")
                     print("-" * 20)
                     print("Possible causes:")
-                    print("• Insufficient pattern detections")
-                    print("• Poor image quality")
-                    print("• Incorrect chessboard parameters")
-                    print("• Images too similar (lack of variety)")
+                    print("�?Insufficient pattern detections")
+                    print("�?Poor image quality")
+                    print("�?Incorrect chessboard parameters")
+                    print("�?Images too similar (lack of variety)")
                     print(f"⏱️  Time elapsed: {total_time:.2f} seconds")
                     print("=" * 60)
                     results = {
@@ -513,7 +602,7 @@ def calibrate():
             elif calibration_type == 'eye_in_hand':
                 # Eye-in-hand calibration
                 if 'poses' not in session_info:
-                    print("❌ ERROR: Pose files required for eye-in-hand calibration")
+                    print("�?ERROR: Pose files required for eye-in-hand calibration")
                     return jsonify({'error': 'Pose files required for eye-in-hand calibration'}), 400
                 
                 # Handle camera intrinsics - either from previous calibration or manual input
@@ -538,24 +627,57 @@ def calibrate():
                 else:
                     # Use intrinsic calibration results
                     # Create a new calibrator for intrinsic calculation if needed
+                    
+                    # Get pattern configuration (same logic as intrinsic calibration)
+                    pattern_type = parameters.get('pattern_type', 'standard')
+                    pattern_params = parameters.get('pattern_parameters', {})
+                    
+                    # Create calibration pattern using new configuration
+                    if pattern_type == 'standard':
+                        width = pattern_params.get('width', parameters.get('chessboard_x', 11))
+                        height = pattern_params.get('height', parameters.get('chessboard_y', 8))
+                        square_size = pattern_params.get('square_size', parameters.get('square_size', 0.025))
+                        
+                        pattern = create_chessboard_pattern(
+                            pattern_type='standard',
+                            width=width,
+                            height=height,
+                            square_size=square_size
+                        )
+                        
+                    elif pattern_type == 'charuco':
+                        width = pattern_params.get('width', parameters.get('chessboard_x', 8))
+                        height = pattern_params.get('height', parameters.get('chessboard_y', 6))
+                        square_size = pattern_params.get('square_size', parameters.get('square_size', 0.040))
+                        marker_size = pattern_params.get('marker_size', parameters.get('marker_size', 0.020))
+                        dict_id_raw = pattern_params.get('dictionary_id', parameters.get('dictionary_id', cv2.aruco.DICT_6X6_250))
+                        dictionary_id = int(dict_id_raw) if isinstance(dict_id_raw, (str, float)) else dict_id_raw
+                        
+                        pattern = create_chessboard_pattern(
+                            pattern_type='charuco',
+                            width=width,
+                            height=height,
+                            square_size=square_size,
+                            marker_size=marker_size,
+                            dictionary_id=dictionary_id
+                        )
+                    else:
+                        print(f"�?Unsupported pattern type for eye-in-hand: {pattern_type}")
+                        return jsonify({'error': f'Unsupported pattern type: {pattern_type}'}), 400
+                    
                     intrinsic_cal = IntrinsicCalibrator(
                         image_paths=image_paths,
-                        calibration_pattern=create_chessboard_pattern(
-                            pattern_type='standard',
-                            width=XX,
-                            height=YY,
-                            square_size=L
-                        ),
-                        pattern_type='standard'
+                        calibration_pattern=pattern,
+                        pattern_type=pattern_type
                     )
                     
                     if not intrinsic_cal.detect_pattern_points(verbose=True):
-                        print("❌ Pattern detection failed for eye-in-hand calibration")
+                        print("�?Pattern detection failed for eye-in-hand calibration")
                         return jsonify({'error': 'Pattern detection failed for eye-in-hand calibration'}), 400
                     
                     rms_error = intrinsic_cal.calibrate_camera(verbose=True)
                     if rms_error <= 0:
-                        print("❌ Intrinsic calibration failed")
+                        print("�?Intrinsic calibration failed")
                         return jsonify({'error': 'Intrinsic calibration failed'}), 500
                     
                     camera_matrix = intrinsic_cal.get_camera_matrix()
@@ -583,7 +705,7 @@ def calibrate():
                                            if os.path.split(x)[-1].split('.')[0].isdigit() else 0)
                     
                     if len(image_paths_sorted) != len(pose_json_paths):
-                        print(f"❌ ERROR: Number of images ({len(image_paths_sorted)}) does not match number of pose files ({len(pose_json_paths)})")
+                        print(f"�?ERROR: Number of images ({len(image_paths_sorted)}) does not match number of pose files ({len(pose_json_paths)})")
                         return jsonify({'error': f'Number of images ({len(image_paths_sorted)}) does not match number of pose files ({len(pose_json_paths)})'}), 400
                     
                     # Load end-effector poses
@@ -677,7 +799,7 @@ def calibrate():
                     )
                     
                 except Exception as e:
-                    print(f"❌ Eye-in-hand calibration failed: {str(e)}")
+                    print(f"�?Eye-in-hand calibration failed: {str(e)}")
                     return jsonify({'error': f'Eye-in-hand calibration failed: {str(e)}'}), 500
             
             # Store results in session
@@ -846,8 +968,10 @@ def get_pattern_image():
     try:
         # Get pattern parameters from query string
         pattern_type = request.args.get('pattern_type', 'standard')
-        corner_x = int(request.args.get('corner_x', 11))
-        corner_y = int(request.args.get('corner_y', 8))
+        
+        # Handle both legacy (corner_x/corner_y) and new (width/height) parameter names
+        width = int(request.args.get('width', request.args.get('corner_x', 11)))
+        height = int(request.args.get('height', request.args.get('corner_y', 8)))
         square_size = float(request.args.get('square_size', 0.025))
         
         # Simplified parameters
@@ -858,17 +982,20 @@ def get_pattern_image():
         marker_size = float(request.args.get('marker_size', 0.0125))
         dictionary_id = int(request.args.get('dictionary_id', cv2.aruco.DICT_6X6_250))
         
+        print(f"API: Creating pattern {pattern_type} with width={width}, height={height}, square_size={square_size}")
+        
         # Create pattern instance
         if pattern_type == 'standard':
             pattern = create_chessboard_pattern('standard', 
-                                              width=corner_x, 
-                                              height=corner_y, 
+                                              width=width, 
+                                              height=height, 
                                               square_size=square_size)
         elif pattern_type == 'charuco':
             # For ChArUco, width and height represent squares, not corners
+            print(f"API: Creating ChArUco with width={width}, height={height}, marker_size={marker_size}, dict={dictionary_id}")
             pattern = create_chessboard_pattern('charuco',
-                                              width=corner_x,
-                                              height=corner_y,
+                                              width=width,
+                                              height=height,
                                               square_size=square_size,
                                               marker_size=marker_size,
                                               dictionary_id=dictionary_id)

@@ -13,110 +13,21 @@
                 <!-- Pattern Type Selection -->
                 <div class="mb-4">
                     <label class="form-label fw-bold">Pattern Type</label>
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="pattern-type" id="pattern-standard" value="standard" checked>
-                                <label class="form-check-label" for="pattern-standard">
-                                    <strong>Standard Chessboard</strong><br>
-                                    <small class="text-muted">Traditional black and white checkerboard</small>
-                                </label>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="pattern-type" id="pattern-charuco" value="charuco">
-                                <label class="form-check-label" for="pattern-charuco">
-                                    <strong>ChArUco Board</strong><br>
-                                    <small class="text-muted">Chessboard with ArUco markers</small>
-                                </label>
-                            </div>
-                        </div>
-                    </div>
+                    <select class="form-select" id="pattern-type-select">
+                        <option value="">Select pattern type...</option>
+                        <!-- Options will be populated dynamically from API -->
+                    </select>
                 </div>
 
                 <div class="row">
                     <!-- Configuration Panel -->
                     <div class="col-md-7">
                         
-                        <!-- Standard Chessboard Configuration -->
-                        <div id="chessboard-config">
-                            <h6 class="mb-3">Chessboard Parameters</h6>
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label for="modal-chessboard-x" class="form-label">Corners (Width)</label>
-                                        <input type="number" class="form-control" id="modal-chessboard-x" value="11" min="3" max="20">
-                                        <div class="form-text">Internal corners along width</div>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label for="modal-chessboard-y" class="form-label">Corners (Height)</label>
-                                        <input type="number" class="form-control" id="modal-chessboard-y" value="8" min="3" max="20">
-                                        <div class="form-text">Internal corners along height</div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="mb-3">
-                                <label for="modal-square-size" class="form-label">Square Size (meters)</label>
-                                <input type="number" class="form-control" id="modal-square-size" value="0.020" step="0.001" min="0.001" max="1">
-                                <div class="form-text">Physical size of each square</div>
-                            </div>
-                        </div>
-
-                        <!-- ChArUco Configuration -->
-                        <div id="charuco-config" style="display: none;">
-                            <h6 class="mb-3">ChArUco Parameters</h6>
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label for="modal-charuco-x" class="form-label">Squares (Width)</label>
-                                        <input type="number" class="form-control" id="modal-charuco-x" value="5" min="3" max="15">
-                                        <div class="form-text">Number of squares along width</div>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label for="modal-charuco-y" class="form-label">Squares (Height)</label>
-                                        <input type="number" class="form-control" id="modal-charuco-y" value="7" min="3" max="15">
-                                        <div class="form-text">Number of squares along height</div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label for="modal-charuco-square-size" class="form-label">Square Size (meters)</label>
-                                        <input type="number" class="form-control" id="modal-charuco-square-size" value="0.040" step="0.001" min="0.001" max="1">
-                                        <div class="form-text">Physical size of each square</div>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label for="modal-charuco-marker-size" class="form-label">Marker Size (meters)</label>
-                                        <input type="number" class="form-control" id="modal-charuco-marker-size" value="0.020" step="0.001" min="0.001" max="1">
-                                        <div class="form-text">Size of ArUco markers</div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="mb-3">
-                                <label for="modal-charuco-dictionary" class="form-label">ArUco Dictionary</label>
-                                <select class="form-select" id="modal-charuco-dictionary">
-                                    <option value="DICT_4X4_50">DICT_4X4_50</option>
-                                    <option value="DICT_4X4_100">DICT_4X4_100</option>
-                                    <option value="DICT_4X4_250">DICT_4X4_250</option>
-                                    <option value="DICT_4X4_1000">DICT_4X4_1000</option>
-                                    <option value="DICT_5X5_50">DICT_5X5_50</option>
-                                    <option value="DICT_5X5_100">DICT_5X5_100</option>
-                                    <option value="DICT_5X5_250">DICT_5X5_250</option>
-                                    <option value="DICT_5X5_1000">DICT_5X5_1000</option>
-                                    <option value="DICT_6X6_50">DICT_6X6_50</option>
-                                    <option value="DICT_6X6_100">DICT_6X6_100</option>
-                                    <option value="DICT_6X6_250" selected>DICT_6X6_250</option>
-                                    <option value="DICT_6X6_1000">DICT_6X6_1000</option>
-                                </select>
-                                <div class="form-text">ArUco marker dictionary to use</div>
+                        <!-- Dynamic Configuration Container -->
+                        <div id="pattern-config-container">
+                            <div class="text-muted text-center p-4">
+                                <i class="bi bi-arrow-up"></i><br>
+                                Select a pattern type to configure its parameters
                             </div>
                         </div>
 

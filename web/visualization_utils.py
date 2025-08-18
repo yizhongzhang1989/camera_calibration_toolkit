@@ -124,7 +124,7 @@ def trim_distortion_coefficients(dist_coeffs, distortion_model='standard'):
 def generate_calibration_visualizations(session_id, image_paths, selected_indices, 
                                        camera_matrix, dist_coeffs, XX, YY, 
                                        results_folder, calibration_type='intrinsic',
-                                       L=1.0, rvecs=None, tvecs=None):
+                                       L=1.0, rvecs=None, tvecs=None, pattern_type=None, pattern=None):
     """
     Generate corner detection and undistorted images for calibration results.
     
@@ -170,25 +170,60 @@ def generate_calibration_visualizations(session_id, image_paths, selected_indice
             
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         
-        # Corner detection visualization
-        find_corners_ret, corners = find_chessboard_corners(gray, XX, YY)
+        # Corner detection visualization - handle different pattern types
+        find_corners_ret = False
+        corners = None
         
-        if find_corners_ret:
-            # Draw corners on the image
-            img_with_corners = img.copy()
-            cv2.drawChessboardCorners(img_with_corners, (XX, YY), corners, find_corners_ret)
+        if pattern_type == 'charuco' and pattern is not None:
+            # ChArUco corner detection
+            try:
+                # Use the pattern object's detection method
+                find_corners_ret, corners = pattern.detect_corners(gray)
+                
+                if find_corners_ret and corners is not None and len(corners) > 0:
+                    # Draw corners on the image
+                    img_with_corners = img.copy()
+                    
+                    # For ChArUco, corners are already in the right format
+                    # Draw each corner point
+                    for corner in corners:
+                        center = tuple(corner[0].astype(int))
+                        cv2.circle(img_with_corners, center, 8, (0, 255, 0), 2)
+                        
+                    corner_filename = f"{original_filename}_corners.jpg"
+                    corner_path = os.path.join(corner_viz_dir, corner_filename)
+                    cv2.imwrite(corner_path, img_with_corners)
+                    
+                    corner_images.append({
+                        'name': corner_filename,
+                        'path': corner_path,
+                        'url': url_for('get_corner_image', session_id=session_id, filename=corner_filename),
+                        'index': original_index,
+                        'original_name': original_filename
+                    })
+                    
+            except Exception as e:
+                print(f"ChArUco corner detection failed for {original_filename}: {e}")
+        else:
+            # Standard chessboard corner detection
+            find_corners_ret, corners = find_chessboard_corners(gray, XX, YY)
             
-            corner_filename = f"{original_filename}_corners.jpg"
-            corner_path = os.path.join(corner_viz_dir, corner_filename)
-            cv2.imwrite(corner_path, img_with_corners)
-            
-            corner_images.append({
-                'name': corner_filename,
-                'path': corner_path,
-                'url': url_for('get_corner_image', session_id=session_id, filename=corner_filename),
-                'index': original_index,
-                'original_name': original_filename
-            })
+            if find_corners_ret:
+                # Draw corners on the image
+                img_with_corners = img.copy()
+                cv2.drawChessboardCorners(img_with_corners, (XX, YY), corners, find_corners_ret)
+                
+                corner_filename = f"{original_filename}_corners.jpg"
+                corner_path = os.path.join(corner_viz_dir, corner_filename)
+                cv2.imwrite(corner_path, img_with_corners)
+                
+                corner_images.append({
+                    'name': corner_filename,
+                    'path': corner_path,
+                    'url': url_for('get_corner_image', session_id=session_id, filename=corner_filename),
+                    'index': original_index,
+                    'original_name': original_filename
+                })
         
         # Generate undistorted image
         undistorted_img = cv2.undistort(img, camera_matrix, dist_coeffs)
@@ -292,7 +327,8 @@ def create_calibration_results(calibration_type, session_id, image_paths, select
     corner_images, undistorted_images = generate_calibration_visualizations(
         session_id, image_paths, selected_indices, camera_matrix, dist_coeffs, 
         XX, YY, results_folder, calibration_type, L,
-        rvecs=kwargs.get('rvecs'), tvecs=kwargs.get('tvecs')
+        rvecs=kwargs.get('rvecs'), tvecs=kwargs.get('tvecs'),
+        pattern_type=kwargs.get('pattern_type'), pattern=kwargs.get('pattern')
     )
     
     # Base result structure
