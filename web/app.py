@@ -214,18 +214,6 @@ def get_pattern_configurations():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/chessboard-test')
-def chessboard_test():
-    """Chessboard configuration test page."""
-    return render_template('chessboard-test.html')
-
-
-@app.route('/simple-test')
-def simple_test():
-    """Simple chessboard configuration test page."""
-    return render_template('simple-test.html')
-
-
 @app.route('/api/upload_images', methods=['POST'])
 def upload_images():
     """Upload calibration images."""
@@ -333,16 +321,16 @@ def set_parameters():
         data = request.get_json()
         session_id = data.get('session_id', 'default')
         
-        # Extract parameters - handle both new JSON pattern and legacy formats
+        # Extract parameters - modern JSON pattern format only
         parameters = {}
         
-        # Pattern JSON (new format)
+        # Pattern JSON (modern format)
         if 'pattern_json' in data:
             pattern_json = data['pattern_json']
             # Store the complete JSON pattern for use with unified pattern system
             parameters['pattern_json'] = pattern_json
             
-            # For backward compatibility, also extract individual parameters
+            # Extract individual parameters for compatibility
             pattern_params = pattern_json.get('parameters', {})
             parameters['pattern_type'] = pattern_json.get('pattern_id', 'standard')
             parameters['chessboard_x'] = pattern_params.get('width', 11)
@@ -355,32 +343,9 @@ def set_parameters():
             if 'dictionary_id' in pattern_params:
                 parameters['dictionary_id'] = pattern_params['dictionary_id']
                 
-            print(f'Using JSON pattern format: {pattern_json}')
-        elif 'pattern_config' in data:
-            # Legacy pattern_config format (for backward compatibility)
-            pattern_config = data['pattern_config']
-            parameters['pattern_type'] = pattern_config.get('patternType', 'standard')
-            parameters['pattern_parameters'] = pattern_config.get('parameters', {})
-            
-            # For backward compatibility, also set legacy parameters
-            if parameters['pattern_type'] == 'standard':
-                parameters['chessboard_x'] = pattern_config.get('parameters', {}).get('width', 11)
-                parameters['chessboard_y'] = pattern_config.get('parameters', {}).get('height', 8)
-                parameters['square_size'] = pattern_config.get('parameters', {}).get('square_size', 0.02)
-            elif parameters['pattern_type'] == 'charuco':
-                parameters['chessboard_x'] = pattern_config.get('parameters', {}).get('width', 8)  # ChArUco squares
-                parameters['chessboard_y'] = pattern_config.get('parameters', {}).get('height', 6)
-                parameters['square_size'] = pattern_config.get('parameters', {}).get('square_size', 0.040)
-                parameters['marker_size'] = pattern_config.get('parameters', {}).get('marker_size', 0.020)
-                # Convert dictionary_id to integer to fix OpenCV error
-                dict_id_raw = pattern_config.get('parameters', {}).get('dictionary_id', cv2.aruco.DICT_6X6_250)
-                parameters['dictionary_id'] = int(dict_id_raw) if isinstance(dict_id_raw, (str, float)) else dict_id_raw
+            print(f'✅ Using modern JSON pattern format: {pattern_json}')
         else:
-            # Legacy format - direct parameter extraction
-            parameters['pattern_type'] = 'standard'  # Default to standard for legacy
-            parameters['chessboard_x'] = data.get('chessboard_x')
-            parameters['chessboard_y'] = data.get('chessboard_y')
-            parameters['square_size'] = data.get('square_size')
+            return jsonify({'error': 'pattern_json parameter is required'}), 400
         
         parameters['distortion_model'] = data.get('distortion_model', 'standard')
         
@@ -975,31 +940,6 @@ def get_results(session_id):
                         'type': 'reprojection'
                     })
         
-        # Fallback: check for images in the old structure or any other location
-        if len(visualization_images) == 0:
-            # Check the old single visualization folder
-            old_viz_folder = os.path.join(RESULTS_FOLDER, session_id, 'visualizations')
-            if os.path.exists(old_viz_folder):
-                for filename in os.listdir(old_viz_folder):
-                    if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
-                        img_path = os.path.join(old_viz_folder, filename)
-                        img_base64 = image_to_base64(img_path)
-                        if img_base64:
-                            # Determine type from filename
-                            img_type = 'other'
-                            if '_corners' in filename:
-                                img_type = 'corner_detection'
-                            elif '_axes' in filename:
-                                img_type = 'undistorted_axes'
-                            elif '_reprojection' in filename:
-                                img_type = 'reprojection'
-                            
-                            visualization_images.append({
-                                'name': filename,
-                                'data': img_base64,
-                                'type': img_type
-                            })
-        
         results['visualization_images'] = visualization_images
         print(f"✅ Added {len(visualization_images)} visualization images to results")
         
@@ -1139,9 +1079,9 @@ def get_pattern_image():
         # Get pattern parameters from query string
         pattern_type = request.args.get('pattern_type', 'standard')
         
-        # Handle both legacy (corner_x/corner_y) and new (width/height) parameter names
-        width = int(request.args.get('width', request.args.get('corner_x', 11)))
-        height = int(request.args.get('height', request.args.get('corner_y', 8)))
+        # Modern parameter names only
+        width = int(request.args.get('width', 11))
+        height = int(request.args.get('height', 8))
         square_size = float(request.args.get('square_size', 0.02))
         
         # Simplified parameters
