@@ -177,8 +177,12 @@ def generate_calibration_visualizations(session_id, image_paths, selected_indice
         if pattern_type == 'charuco' and pattern is not None:
             # ChArUco corner detection
             try:
-                # Use the pattern object's detection method
-                find_corners_ret, corners = pattern.detect_corners(gray)
+                # Use the pattern object's detection method (returns 3 values for ChArUco)
+                detection_result = pattern.detect_corners(gray)
+                if len(detection_result) == 3:
+                    find_corners_ret, corners, ids = detection_result
+                else:
+                    find_corners_ret, corners = detection_result[:2]
                 
                 if find_corners_ret and corners is not None and len(corners) > 0:
                     # Draw corners on the image

@@ -26,7 +26,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from core.intrinsic_calibration import IntrinsicCalibrator
 from core.calibration_patterns import create_chessboard_pattern, get_pattern_type_configurations
 from core.eye_in_hand_calibration import EyeInHandCalibrator
-from web.visualization_utils import create_calibration_results, trim_distortion_coefficients
+from web.visualization_utils import trim_distortion_coefficients
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
@@ -561,16 +561,60 @@ def calibrate():
                     print("🖼�? GENERATING VISUALIZATION IMAGES")
                     print("-" * 30)
                     
-                    # Get extrinsics for visualization
-                    rvecs, tvecs = calibrator.get_extrinsics()
+                    # Use the calibrator's built-in visualization methods
+                    # Generate corner detection images
+                    corner_viz_dir = os.path.join(results_folder, 'corner_visualizations')
+                    os.makedirs(corner_viz_dir, exist_ok=True)
                     
-                    # Use shared visualization utility
-                    results = create_calibration_results(
-                        'intrinsic', session_id, image_paths, selected_indices,
-                        camera_matrix, dist_coeffs, results_folder, XX, YY, L,
-                        rms_error=float(rms_error), distortion_model=distortion_model,
-                        rvecs=rvecs, tvecs=tvecs, pattern_type=pattern_type, pattern=pattern
-                    )
+                    pattern_images = calibrator.draw_pattern_on_images()
+                    corner_images = []
+                    
+                    for filename, debug_img in pattern_images:
+                        corner_filename = f"{filename}_corners.jpg"
+                        corner_path = os.path.join(corner_viz_dir, corner_filename)
+                        cv2.imwrite(corner_path, debug_img)
+                        
+                        corner_images.append({
+                            'name': corner_filename,
+                            'path': corner_path,
+                            'url': url_for('get_corner_image', session_id=session_id, filename=corner_filename),
+                            'index': len(corner_images),  # Use sequential index
+                            'original_name': filename
+                        })
+                    
+                    # Generate undistorted images with 3D axes
+                    undistorted_dir = os.path.join(results_folder, 'undistorted')
+                    os.makedirs(undistorted_dir, exist_ok=True)
+                    
+                    axes_images = calibrator.draw_axes_on_undistorted_images()
+                    undistorted_images = []
+                    
+                    for filename, debug_img in axes_images:
+                        undistorted_filename = f"{filename}_undistorted.jpg"
+                        undistorted_path = os.path.join(undistorted_dir, undistorted_filename)
+                        cv2.imwrite(undistorted_path, debug_img)
+                        
+                        undistorted_images.append({
+                            'name': undistorted_filename,
+                            'path': undistorted_path,
+                            'url': url_for('get_undistorted_image', session_id=session_id, filename=undistorted_filename),
+                            'index': len(undistorted_images),  # Use sequential index
+                            'original_name': filename
+                        })
+                    
+                    # Create results dictionary directly
+                    results = {
+                        'success': True,
+                        'calibration_type': 'intrinsic',
+                        'images_used': len(image_paths),
+                        'corner_images': corner_images,
+                        'undistorted_images': undistorted_images,
+                        'camera_matrix': camera_matrix.tolist(),
+                        'distortion_coefficients': trimmed_dist_coeffs.tolist(),
+                        'distortion_model': distortion_model,
+                        'rms_error': float(rms_error),
+                        'message': f'Intrinsic calibration completed successfully using {len(image_paths)} images'
+                    }
                         
                     print("�?Generated corner detection and undistorted images")
                     print()
