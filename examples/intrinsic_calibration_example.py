@@ -126,11 +126,11 @@ def test_charuco_calibration():
     print(f"Using {len(image_paths)} ChArUco sample images")
     
     # Create ChArUco calibration pattern with specified parameters
-    # Based on: {"dict": 1, "chessboard_w": 10, "chessboard_h": 7, 
+    # Based on: {"dict": 1, "chessboard_w": 9, "chessboard_h": 7, 
     #           "square_length": 1.81e-02, "marker_length": 9.05e-03}
     pattern = create_chessboard_pattern(
         pattern_type='charuco',
-        width=10,                          # chessboard_w
+        width=9,                          # chessboard_w
         height=7,                          # chessboard_h  
         square_size=0.0181,               # square_length (1.8100000917911530e-02)
         marker_size=0.00905,              # marker_length (9.0500004589557648e-03)
