@@ -540,11 +540,20 @@ class ChessboardConfig {
         console.log('🖼️ updateModalPreview called');
         console.log('📊 Current config:', this.config);
         
-        const img = document.getElementById('chessboard-modal-preview');
-        console.log('🎯 Modal preview img element:', img);
+        // Try to use the new modal structure first
+        const previewContainer = document.getElementById('pattern-preview-container');
+        const legacyImg = document.getElementById('chessboard-modal-preview');
         
-        if (!img || !this.config.patternType) {
-            console.warn('⚠️ Cannot update modal preview - img:', img, 'patternType:', this.config.patternType);
+        console.log('🎯 Preview container:', previewContainer);
+        console.log('🎯 Legacy img element:', legacyImg);
+        
+        if (!previewContainer && !legacyImg) {
+            console.warn('⚠️ Cannot update modal preview - no preview elements found');
+            return;
+        }
+        
+        if (!this.config.patternType) {
+            console.warn('⚠️ Cannot update modal preview - no pattern type');
             return;
         }
         
@@ -558,16 +567,26 @@ class ChessboardConfig {
         const url = `/api/pattern_image?${new URLSearchParams(params)}`;
         console.log('🔗 Generated URL (with cache-busting):', url);
         
-        img.src = url;
-        console.log('🔄 Image src set to:', img.src);
-        
-        img.onload = () => {
-            console.log('✅ Modal preview image loaded successfully');
-        };
-        
-        img.onerror = () => {
-            console.error('❌ Failed to load modal preview image:', url);
-        };
+        if (previewContainer) {
+            // Use new modal structure
+            previewContainer.innerHTML = `
+                <img src="${url}" 
+                     alt="Pattern Preview" 
+                     class="img-fluid border rounded" 
+                     style="max-height: 200px;"
+                     onload="console.log('✅ Modal preview image loaded successfully')"
+                     onerror="console.error('❌ Failed to load modal preview image:', '${url}'); this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5vIEltYWdlPC90ZXh0Pjwvc3ZnPg==';">
+            `;
+        } else if (legacyImg) {
+            // Use legacy img element
+            legacyImg.src = url;
+            legacyImg.onload = () => {
+                console.log('✅ Modal preview image loaded successfully');
+            };
+            legacyImg.onerror = () => {
+                console.error('❌ Failed to load modal preview image:', url);
+            };
+        }
     }
     
     // Create a valid JSON pattern object for the backend
@@ -604,13 +623,44 @@ class ChessboardConfig {
             parameters: {}
         };
 
-        // Copy all parameters from the current configuration
+        // Define which parameters are valid for each pattern type
+        const validParametersByType = {
+            'standard': ['width', 'height', 'square_size'],
+            'standard_chessboard': ['width', 'height', 'square_size'],
+            'charuco': ['width', 'height', 'square_size', 'marker_size', 'dictionary_id'],
+            'charuco_board': ['width', 'height', 'square_size', 'marker_size', 'dictionary_id']
+        };
+
+        const validParams = validParametersByType[this.config.patternType] || Object.keys(this.config.parameters);
+
+        // Copy only valid parameters from the current configuration
         for (const [paramName, value] of Object.entries(this.config.parameters)) {
-            // Ensure numeric values are properly converted
-            if (typeof value === 'string' && !isNaN(value)) {
-                patternJSON.parameters[paramName] = paramName.includes('_id') ? parseInt(value) : parseFloat(value);
-            } else {
-                patternJSON.parameters[paramName] = value;
+            if (validParams.includes(paramName)) {
+                // Ensure numeric values are properly converted
+                if (typeof value === 'string' && !isNaN(value)) {
+                    patternJSON.parameters[paramName] = paramName.includes('_id') ? parseInt(value) : parseFloat(value);
+                } else {
+                    patternJSON.parameters[paramName] = value;
+                }
+            }
+        }
+
+        // Ensure ChArUco patterns have valid parameter relationships
+        if (patternJSON.pattern_id === 'charuco_board' && patternJSON.parameters) {
+            // Ensure square_size > marker_size for ChArUco (OpenCV requirement)
+            if (patternJSON.parameters.square_size && patternJSON.parameters.marker_size) {
+                if (patternJSON.parameters.square_size <= patternJSON.parameters.marker_size) {
+                    console.warn('⚠️ ChArUco square_size must be > marker_size, fixing...');
+                    // Use correct defaults: square 40mm, marker 20mm
+                    patternJSON.parameters.square_size = 0.04;
+                    patternJSON.parameters.marker_size = 0.02;
+                }
+            }
+            
+            // Ensure valid dictionary_id
+            if (!patternJSON.parameters.dictionary_id || patternJSON.parameters.dictionary_id < 0) {
+                console.warn('⚠️ Invalid ChArUco dictionary_id, using default...');
+                patternJSON.parameters.dictionary_id = 10; // DICT_6X6_250
             }
         }
 

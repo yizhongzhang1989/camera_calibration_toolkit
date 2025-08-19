@@ -1027,20 +1027,36 @@ def get_visualization_image(session_id, filename):
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/pattern_image')
+@app.route('/api/pattern_image', methods=['GET', 'POST'])
 def get_pattern_image():
     """Generate and serve calibration pattern images."""
     try:
-        # Get pattern JSON from query string or form data
-        pattern_json_str = request.args.get('pattern_json') or request.form.get('pattern_json')
+        # Get pattern JSON from different sources based on request method
+        if request.method == 'POST':
+            if request.is_json:
+                # Direct JSON body (from JavaScript)
+                pattern_json = request.get_json()
+            else:
+                # Form data
+                pattern_json_str = request.form.get('pattern_json')
+                if not pattern_json_str:
+                    return jsonify({'error': 'pattern_json parameter is required'}), 400
+                try:
+                    pattern_json = json.loads(pattern_json_str)
+                except json.JSONDecodeError:
+                    return jsonify({'error': 'Invalid JSON format for pattern_json parameter'}), 400
+        else:
+            # GET request with query string
+            pattern_json_str = request.args.get('pattern_json')
+            if not pattern_json_str:
+                return jsonify({'error': 'pattern_json parameter is required'}), 400
+            try:
+                pattern_json = json.loads(pattern_json_str)
+            except json.JSONDecodeError:
+                return jsonify({'error': 'Invalid JSON format for pattern_json parameter'}), 400
         
-        if not pattern_json_str:
+        if not pattern_json:
             return jsonify({'error': 'pattern_json parameter is required'}), 400
-        
-        try:
-            pattern_json = json.loads(pattern_json_str)
-        except json.JSONDecodeError:
-            return jsonify({'error': 'Invalid JSON format for pattern_json parameter'}), 400
         
         # Pattern generation parameters
         pixel_per_square = int(request.args.get('pixel_per_square', 100))

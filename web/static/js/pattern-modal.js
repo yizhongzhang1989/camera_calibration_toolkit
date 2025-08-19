@@ -1,0 +1,690 @@
+/**
+ * Dynamic Pattern Selection Modal System
+ * ====================================== 
+ * 
+ * Integrates with existing calibration UI to provide dynamic pattern selection
+ * based on the auto-discovery system from the modular pattern architecture.
+ */
+
+class PatternSelectionModal {
+    constructor() {
+        this.availablePatterns = {};
+        this.selectedPattern = null;
+        this.selectedConfig = null;
+        this.initialized = false;
+        
+        // Bind methods to preserve context
+        this.loadPatterns = this.loadPatterns.bind(this);
+        this.onPatternSelected = this.onPatternSelected.bind(this);
+        this.generateParameterForm = this.generateParameterForm.bind(this);
+        this.updatePreview = this.updatePreview.bind(this);
+        this.applyConfiguration = this.applyConfiguration.bind(this);
+    }
+
+    /**
+     * Initialize the pattern selection modal
+     */
+    async initialize() {
+        console.log('🎯 Initializing Pattern Selection Modal');
+        
+        // Set up event listeners
+        this.setupEventListeners();
+        
+        // Load patterns when modal is opened
+        const modal = document.getElementById('chessboard-config-modal');
+        if (modal) {
+            modal.addEventListener('shown.bs.modal', this.loadPatterns);
+        }
+        
+        this.initialized = true;
+        console.log('✅ Pattern Selection Modal initialized');
+    }
+
+    /**
+     * Set up event listeners
+     */
+    setupEventListeners() {
+        // Pattern type selection
+        const patternSelect = document.getElementById('pattern-type-select');
+        if (patternSelect) {
+            patternSelect.addEventListener('change', this.onPatternSelected);
+        }
+
+        // Apply configuration button
+        const applyBtn = document.querySelector('.btn-apply-config');
+        if (applyBtn) {
+            applyBtn.addEventListener('click', this.applyConfiguration);
+        }
+
+        // Download pattern button
+        const downloadBtn = document.getElementById('download-pattern-btn');
+        if (downloadBtn) {
+            downloadBtn.addEventListener('click', this.downloadPattern);
+        }
+    }
+
+    /**
+     * Load available patterns from the API
+     */
+    async loadPatterns() {
+        if (this.initialized && Object.keys(this.availablePatterns).length > 0) {
+            // Already loaded
+            return;
+        }
+
+        console.log('🔍 Loading available patterns from API...');
+        
+        const patternSelect = document.getElementById('pattern-type-select');
+        if (!patternSelect) return;
+
+        try {
+            // Show loading state
+            patternSelect.innerHTML = '<option value="">🔄 Loading patterns...</option>';
+            patternSelect.disabled = true;
+
+            const response = await fetch('/api/pattern_configurations');
+            const data = await response.json();
+
+            if (data.success) {
+                this.availablePatterns = data.configurations;
+                this.populatePatternSelect();
+                console.log(`✅ Loaded ${Object.keys(this.availablePatterns).length} patterns`);
+            } else {
+                throw new Error(data.error || 'Failed to load pattern configurations');
+            }
+        } catch (error) {
+            console.error('❌ Failed to load patterns:', error);
+            patternSelect.innerHTML = '<option value="">❌ Failed to load patterns</option>';
+            this.showError('Failed to load pattern configurations: ' + error.message);
+        } finally {
+            patternSelect.disabled = false;
+        }
+    }
+
+    /**
+     * Populate the pattern selection dropdown
+     */
+    populatePatternSelect() {
+        const patternSelect = document.getElementById('pattern-type-select');
+        if (!patternSelect) return;
+
+        // Clear existing options
+        patternSelect.innerHTML = '<option value="">Select a calibration pattern...</option>';
+
+        // Add pattern options
+        Object.entries(this.availablePatterns).forEach(([patternId, config]) => {
+            const option = document.createElement('option');
+            option.value = patternId;
+            option.textContent = `${config.icon || '📐'} ${config.name}`;
+            option.dataset.description = config.description;
+            patternSelect.appendChild(option);
+        });
+
+        console.log(`📋 Populated ${Object.keys(this.availablePatterns).length} pattern options`);
+    }
+
+    /**
+     * Handle pattern selection
+     */
+    onPatternSelected(event) {
+        const patternId = event.target.value;
+        
+        if (!patternId) {
+            this.clearConfiguration();
+            return;
+        }
+
+        console.log(`🎯 Selected pattern: ${patternId}`);
+        this.selectedPattern = patternId;
+        
+        // Generate parameter form
+        this.generateParameterForm();
+        
+        // Enable apply button when pattern is selected
+        const applyBtn = document.querySelector('.btn-apply-config');
+        if (applyBtn) {
+            applyBtn.disabled = false;
+        }
+    }
+
+    /**
+     * Generate dynamic parameter configuration form
+     */
+    generateParameterForm() {
+        const container = document.getElementById('pattern-config-container');
+        if (!container || !this.selectedPattern) return;
+
+        const config = this.availablePatterns[this.selectedPattern];
+        
+        // Clear existing content
+        container.innerHTML = '';
+
+        // Create form header
+        const header = document.createElement('div');
+        header.className = 'mb-3';
+        header.innerHTML = `
+            <h6 class="mb-2">
+                <i class="bi bi-gear-fill text-primary"></i> ${config.name} Parameters
+            </h6>
+            <small class="text-muted">${config.description}</small>
+        `;
+        container.appendChild(header);
+
+        // Create parameter fields
+        const fieldsContainer = document.createElement('div');
+        fieldsContainer.className = 'pattern-parameters';
+
+        config.parameters.forEach(param => {
+            const field = this.createParameterField(param);
+            fieldsContainer.appendChild(field);
+        });
+
+        container.appendChild(fieldsContainer);
+
+        // Initialize with default values and update preview
+        this.updatePreview();
+    }
+
+    /**
+     * Create a parameter input field
+     */
+    createParameterField(param) {
+        const fieldDiv = document.createElement('div');
+        fieldDiv.className = 'mb-3';
+
+        let inputElement = '';
+        const inputId = `modal-param-${param.name}`;
+
+        switch (param.type) {
+            case 'integer':
+                inputElement = `
+                    <input type="number" 
+                           class="form-control" 
+                           id="${inputId}" 
+                           name="${param.name}"
+                           value="${param.default || ''}"
+                           min="${param.min || ''}"
+                           max="${param.max || ''}"
+                           step="1"
+                           required>
+                `;
+                break;
+
+            case 'float':
+                inputElement = `
+                    <input type="number" 
+                           class="form-control" 
+                           id="${inputId}" 
+                           name="${param.name}"
+                           value="${param.default || ''}"
+                           min="${param.min || ''}"
+                           max="${param.max || ''}"
+                           step="${param.step || '0.001'}"
+                           required>
+                `;
+                break;
+
+            case 'select':
+                const options = param.options.map(opt => 
+                    `<option value="${opt.value}" ${opt.value === param.default ? 'selected' : ''}>${opt.label}</option>`
+                ).join('');
+                inputElement = `
+                    <select class="form-select" id="${inputId}" name="${param.name}" required>
+                        ${options}
+                    </select>
+                `;
+                break;
+
+            default:
+                inputElement = `
+                    <input type="text" 
+                           class="form-control" 
+                           id="${inputId}" 
+                           name="${param.name}"
+                           value="${param.default || ''}"
+                           required>
+                `;
+        }
+
+        fieldDiv.innerHTML = `
+            <label for="${inputId}" class="form-label">
+                ${param.label}
+                ${param.required !== false ? '<span class="text-danger">*</span>' : ''}
+            </label>
+            ${inputElement}
+            <div class="form-text">${param.description}</div>
+            <div class="invalid-feedback"></div>
+        `;
+
+        // Add real-time validation and preview update
+        const input = fieldDiv.querySelector('input, select');
+        if (input) {
+            input.addEventListener('input', () => {
+                this.validateField(param, input);
+                this.updatePreview();
+            });
+        }
+
+        return fieldDiv;
+    }
+
+    /**
+     * Validate a parameter field
+     */
+    validateField(param, input) {
+        let isValid = true;
+        let errorMessage = '';
+
+        const value = input.value;
+
+        if (param.type === 'integer') {
+            const intValue = parseInt(value);
+            if (isNaN(intValue)) {
+                isValid = false;
+                errorMessage = 'Must be an integer';
+            } else if (param.min !== undefined && intValue < param.min) {
+                isValid = false;
+                errorMessage = `Must be at least ${param.min}`;
+            } else if (param.max !== undefined && intValue > param.max) {
+                isValid = false;
+                errorMessage = `Must be at most ${param.max}`;
+            }
+        } else if (param.type === 'float') {
+            const floatValue = parseFloat(value);
+            if (isNaN(floatValue)) {
+                isValid = false;
+                errorMessage = 'Must be a number';
+            } else if (param.min !== undefined && floatValue < param.min) {
+                isValid = false;
+                errorMessage = `Must be at least ${param.min}`;
+            } else if (param.max !== undefined && floatValue > param.max) {
+                isValid = false;
+                errorMessage = `Must be at most ${param.max}`;
+            }
+        }
+
+        // Update field validation state
+        if (isValid) {
+            input.classList.remove('is-invalid');
+            input.classList.add('is-valid');
+        } else {
+            input.classList.remove('is-valid');
+            input.classList.add('is-invalid');
+            const feedback = input.parentNode.querySelector('.invalid-feedback');
+            if (feedback) {
+                feedback.textContent = errorMessage;
+            }
+        }
+
+        return isValid;
+    }
+
+    /**
+     * Get current parameter configuration
+     */
+    getCurrentConfiguration() {
+        if (!this.selectedPattern) return null;
+
+        const config = {
+            pattern_id: this.selectedPattern,
+            parameters: {}
+        };
+
+        const container = document.getElementById('pattern-config-container');
+        const inputs = container.querySelectorAll('input, select');
+
+        inputs.forEach(input => {
+            if (input.name) {
+                let value = input.value;
+                
+                // Convert to appropriate type based on parameter definition
+                const param = this.availablePatterns[this.selectedPattern].parameters
+                    .find(p => p.name === input.name);
+                
+                if (param) {
+                    if (param.type === 'integer') {
+                        value = parseInt(value);
+                    } else if (param.type === 'float') {
+                        value = parseFloat(value);
+                    }
+                }
+                
+                config.parameters[input.name] = value;
+            }
+        });
+
+        return config;
+    }
+
+    /**
+     * Update pattern preview
+     */
+    async updatePreview() {
+        const configuration = this.getCurrentConfiguration();
+        if (!configuration) return;
+
+        console.log('🖼️ Updating pattern preview...', configuration);
+
+        const previewContainer = document.getElementById('pattern-preview-container');
+        const infoDisplay = document.getElementById('pattern-info-display');
+        
+        if (!previewContainer) return;
+
+        try {
+            // Show loading state
+            previewContainer.innerHTML = `
+                <div class="text-center text-muted p-3">
+                    <div class="spinner-border spinner-border-sm" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div><br>
+                    <small>Generating preview...</small>
+                </div>
+            `;
+
+            const response = await fetch('/api/pattern_image', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(configuration)
+            });
+
+            if (response.ok) {
+                const blob = await response.blob();
+                const imageUrl = URL.createObjectURL(blob);
+                
+                previewContainer.innerHTML = `
+                    <img src="${imageUrl}" 
+                         alt="Pattern Preview" 
+                         class="img-fluid border rounded" 
+                         style="max-height: 200px;">
+                `;
+
+                // Update info display
+                if (infoDisplay) {
+                    const patternInfo = this.availablePatterns[this.selectedPattern];
+                    const paramsList = Object.entries(configuration.parameters)
+                        .map(([key, value]) => `<strong>${key}:</strong> ${value}`)
+                        .join('<br>');
+                    
+                    infoDisplay.innerHTML = `
+                        <div class="small">
+                            <strong>${patternInfo.name}</strong><br>
+                            ${paramsList}
+                        </div>
+                    `;
+                }
+
+                // Enable download button
+                const downloadBtn = document.getElementById('download-pattern-btn');
+                if (downloadBtn) {
+                    downloadBtn.disabled = false;
+                }
+
+                console.log('✅ Preview updated successfully');
+            } else {
+                throw new Error('Failed to generate preview');
+            }
+        } catch (error) {
+            console.error('❌ Preview update failed:', error);
+            previewContainer.innerHTML = `
+                <div class="text-center text-danger p-3">
+                    <i class="bi bi-exclamation-triangle"></i><br>
+                    <small>Preview failed to load</small>
+                </div>
+            `;
+        }
+    }
+
+    /**
+     * Apply the current configuration to the main UI
+     */
+    applyConfiguration() {
+        const configuration = this.getCurrentConfiguration();
+        if (!configuration) {
+            this.showError('No configuration to apply');
+            return;
+        }
+
+        console.log('✅ Applying configuration:', configuration);
+
+        // Store the configuration for use by calibration
+        this.selectedConfig = configuration;
+
+        // Update the main UI elements
+        this.updateMainUI();
+
+        // Close the modal
+        const modal = bootstrap.Modal.getInstance(document.getElementById('chessboard-config-modal'));
+        if (modal) {
+            modal.hide();
+        }
+
+        console.log('✅ Configuration applied successfully');
+    }
+
+    /**
+     * Update the main UI with selected pattern
+     */
+    updateMainUI() {
+        if (!this.selectedConfig) return;
+
+        const patternInfo = this.availablePatterns[this.selectedPattern];
+        
+        // Update the pattern display card
+        const patternDisplay = document.getElementById('pattern-type-display');
+        if (patternDisplay) {
+            patternDisplay.textContent = patternInfo.name;
+        }
+
+        const specsDisplay = document.getElementById('pattern-specs-display');
+        if (specsDisplay) {
+            const specs = Object.entries(this.selectedConfig.parameters)
+                .map(([key, value]) => `<strong>${this.formatParameterName(key)}:</strong> ${this.formatParameterValue(key, value)}`)
+                .join('<br>');
+            specsDisplay.innerHTML = specs;
+        }
+
+        // Update the preview image in the main card
+        const previewImg = document.getElementById('chessboard-preview-img');
+        if (previewImg && this.selectedConfig) {
+            // Note: Preview update is delegated to chessboard-config.js to avoid conflicts
+            console.log('🔄 Preview generation delegated to chessboard-config.js');
+        }
+
+        // Set hidden form values for backward compatibility
+        this.setLegacyFormValues();
+
+        // Trigger update in main application if it exists
+        if (window.app && typeof window.app.updateUI === 'function') {
+            window.app.updateUI();
+        }
+    }
+
+    /**
+     * Generate preview for main UI card (disabled to avoid conflicts)
+     */
+    async generatePreviewForMainUI(imgElement) {
+        // Disabled to avoid conflicts with chessboard-config.js
+        // The main preview is handled by the legacy chessboard-config.js system
+        console.log('🔄 Preview generation delegated to chessboard-config.js');
+    }
+
+    /**
+     * Set legacy form values for backward compatibility
+     */
+    setLegacyFormValues() {
+        if (!this.selectedConfig) return;
+
+        const params = this.selectedConfig.parameters;
+
+        // Map common parameter names to legacy form fields
+        const parameterMap = {
+            'width': 'chessboard-x',
+            'height': 'chessboard-y', 
+            'square_size': 'square-size'
+        };
+
+        Object.entries(parameterMap).forEach(([newName, legacyId]) => {
+            const element = document.getElementById(legacyId);
+            if (element && params[newName] !== undefined) {
+                element.value = params[newName];
+            }
+        });
+    }
+
+    /**
+     * Format parameter name for display
+     */
+    formatParameterName(name) {
+        return name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    }
+
+    /**
+     * Format parameter value for display
+     */
+    formatParameterValue(name, value) {
+        if (name.includes('size') && typeof value === 'number') {
+            return value + ' m';
+        }
+        return value;
+    }
+
+    /**
+     * Download pattern with current settings
+     */
+    downloadPattern = async () => {
+        const configuration = this.getCurrentConfiguration();
+        if (!configuration) {
+            this.showError('No pattern configuration available');
+            return;
+        }
+
+        // Add download quality and border settings
+        const quality = document.getElementById('download-quality')?.value || 'high';
+        const border = document.getElementById('download-border')?.value || 'medium';
+
+        const downloadConfig = {
+            ...configuration,
+            download_settings: {
+                quality: quality,
+                border: border
+            }
+        };
+
+        try {
+            console.log('💾 Downloading pattern...', downloadConfig);
+            
+            const response = await fetch('/api/download_pattern', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(downloadConfig)
+            });
+
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${this.selectedPattern}_pattern.png`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                console.log('✅ Pattern downloaded successfully');
+            } else {
+                throw new Error('Download failed');
+            }
+        } catch (error) {
+            console.error('❌ Download failed:', error);
+            this.showError('Failed to download pattern: ' + error.message);
+        }
+    };
+
+    /**
+     * Clear configuration
+     */
+    clearConfiguration() {
+        this.selectedPattern = null;
+        this.selectedConfig = null;
+
+        const container = document.getElementById('pattern-config-container');
+        if (container) {
+            container.innerHTML = `
+                <div class="text-muted text-center p-4">
+                    <i class="bi bi-arrow-up fs-1"></i><br>
+                    <strong>Select a pattern type above</strong><br>
+                    <small>Parameters will appear here automatically</small>
+                </div>
+            `;
+        }
+
+        const previewContainer = document.getElementById('pattern-preview-container');
+        if (previewContainer) {
+            previewContainer.innerHTML = `
+                <div class="preview-placeholder text-muted p-4" style="border: 2px dashed #dee2e6; border-radius: 8px;">
+                    <i class="bi bi-image fs-1"></i><br>
+                    <small>Preview will appear<br>when pattern is configured</small>
+                </div>
+            `;
+        }
+
+        // Disable buttons
+        const applyBtn = document.querySelector('.btn-apply-config');
+        if (applyBtn) applyBtn.disabled = true;
+        
+        const downloadBtn = document.getElementById('download-pattern-btn');
+        if (downloadBtn) downloadBtn.disabled = true;
+    }
+
+    /**
+     * Show error message
+     */
+    showError(message) {
+        console.error('Pattern Modal Error:', message);
+        
+        // Create and show Bootstrap alert
+        const alertHtml = `
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+                <strong>Error:</strong> ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `;
+        
+        // Insert at top of modal body
+        const modalBody = document.querySelector('#chessboard-config-modal .modal-body');
+        if (modalBody) {
+            modalBody.insertAdjacentHTML('afterbegin', alertHtml);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                const alert = modalBody.querySelector('.alert');
+                if (alert) alert.remove();
+            }, 5000);
+        }
+    }
+
+    /**
+     * Get the current selected configuration (for external access)
+     */
+    getSelectedConfiguration() {
+        return this.selectedConfig;
+    }
+}
+
+// Initialize the pattern selection modal when DOM is ready
+let patternModal = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    patternModal = new PatternSelectionModal();
+    patternModal.initialize();
+    
+    // Make it globally accessible
+    window.patternSelectionModal = patternModal;
+    
+    console.log('🎯 Pattern Selection Modal system ready');
+});
