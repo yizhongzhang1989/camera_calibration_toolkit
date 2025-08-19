@@ -38,7 +38,6 @@ from .utils import (
     get_objpoints,
     get_chessboard_corners,
     find_chessboard_corners,
-    calculate_single_image_reprojection_error,
     xyz_rpy_to_matrix,
     matrix_to_xyz_rpy,
     inverse_transform_matrix,

@@ -26,12 +26,6 @@ import json
 import numpy as np
 import cv2
 from typing import Tuple, List, Optional, Union
-from .utils import (
-    get_objpoints, 
-    get_chessboard_corners,
-    find_chessboard_corners,
-    load_images_from_directory
-)
 from .calibration_patterns import CalibrationPattern, create_chessboard_pattern
 
 
