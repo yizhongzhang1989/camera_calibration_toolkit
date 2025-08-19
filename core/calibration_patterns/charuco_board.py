@@ -20,7 +20,44 @@ class CharucoBoard(CalibrationPattern):
         'id': 'charuco_board',
         'name': 'ChArUco Board',
         'icon': '🎯',
-        'category': 'chessboard'
+        'category': 'chessboard',
+        'metadata': {
+            'validation_rules': {
+                'parameter_relationships': [
+                    {
+                        'param1': 'square_size',
+                        'param2': 'marker_size', 
+                        'constraint': 'greater_than',
+                        'fix_values': {
+                            'square_size': 0.04,  # 40mm
+                            'marker_size': 0.02   # 20mm
+                        }
+                    }
+                ],
+                'parameter_ranges': {
+                    'dictionary_id': {
+                        'min': 0,
+                        'max': 20,
+                        'default_value': 10
+                    },
+                    'width': {
+                        'min': 3,
+                        'max': 50,
+                        'default_value': 7
+                    },
+                    'height': {
+                        'min': 3, 
+                        'max': 50,
+                        'default_value': 5
+                    }
+                },
+                'default_corrections': {
+                    'dictionary_id': 10,  # DICT_6X6_250
+                    'square_size': 0.04,
+                    'marker_size': 0.02
+                }
+            }
+        }
     }
     
     def __init__(self, width: int, height: int, square_size: float, marker_size: float, 

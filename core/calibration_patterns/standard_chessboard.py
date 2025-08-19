@@ -19,7 +19,33 @@ class StandardChessboard(CalibrationPattern):
         'id': 'standard_chessboard',
         'name': 'Standard Chessboard',
         'icon': '🏁',
-        'category': 'chessboard'
+        'category': 'chessboard',
+        'metadata': {
+            'validation_rules': {
+                'parameter_ranges': {
+                    'width': {
+                        'min': 3,
+                        'max': 50,
+                        'default_value': 7
+                    },
+                    'height': {
+                        'min': 3, 
+                        'max': 50,
+                        'default_value': 5
+                    },
+                    'square_size': {
+                        'min': 0.001,  # 1mm minimum
+                        'max': 1.0,    # 1m maximum
+                        'default_value': 0.025  # 25mm default
+                    }
+                },
+                'default_corrections': {
+                    'square_size': 0.025,  # 25mm
+                    'width': 7,
+                    'height': 5
+                }
+            }
+        }
     }
     
     def __init__(self, width: int, height: int, square_size: float):

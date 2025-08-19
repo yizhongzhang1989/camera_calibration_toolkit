@@ -88,25 +88,132 @@ class ChessboardConfig {
         } catch (error) {
             console.error('Error loading pattern configurations:', error);
             
-            // Fallback to minimal configuration
-            this.patternConfigurations = {
-                standard: {
-                    name: 'Standard Chessboard',
-                    description: 'Traditional black and white checkerboard',
-                    icon: 'bi-grid-3x3-gap',
-                    parameters: {
-                        width: { type: 'integer', default: 11, min: 3, max: 20, label: 'Corners (Width)' },
-                        height: { type: 'integer', default: 8, min: 3, max: 20, label: 'Corners (Height)' },
-                        square_size: { type: 'float', default: 0.020, min: 0.001, max: 1.0, step: 0.001, label: 'Square Size (meters)' }
-                    }
-                }
-            };
-            
-            this.populatePatternTypeDropdown();
+            // Show error state instead of hardcoded fallback
+            this.patternConfigurations = {};
+            this.showAPIError(error);
             return false;
         }
     }
-    
+
+    // Show API error state
+    /**
+     * Apply dynamic pattern-specific validation based on API metadata
+     * This replaces hardcoded validation rules with dynamic ones from the API
+     */
+    applyDynamicPatternValidation(patternJSON) {
+        const currentPatternConfig = this.patternConfigurations[this.config.patternType];
+        if (!currentPatternConfig) return;
+
+        // Get pattern metadata for validation rules
+        const patternMetadata = currentPatternConfig.metadata || {};
+        const validationRules = patternMetadata.validation_rules || {};
+
+        console.log(`🔍 Applying dynamic validation for ${this.config.patternType}:`, validationRules);
+
+        // Apply parameter relationship constraints
+        if (validationRules.parameter_relationships) {
+            for (const relationship of validationRules.parameter_relationships) {
+                this.applyParameterRelationship(patternJSON, relationship);
+            }
+        }
+
+        // Apply parameter range constraints
+        if (validationRules.parameter_ranges) {
+            for (const [paramName, range] of Object.entries(validationRules.parameter_ranges)) {
+                this.applyParameterRange(patternJSON, paramName, range);
+            }
+        }
+
+        // Apply default value corrections
+        if (validationRules.default_corrections) {
+            for (const [paramName, defaultValue] of Object.entries(validationRules.default_corrections)) {
+                this.applyDefaultCorrection(patternJSON, paramName, defaultValue);
+            }
+        }
+    }
+
+    /**
+     * Apply parameter relationship constraints (e.g., square_size > marker_size)
+     */
+    applyParameterRelationship(patternJSON, relationship) {
+        const { param1, param2, constraint, fix_values } = relationship;
+        
+        if (!patternJSON.parameters[param1] || !patternJSON.parameters[param2]) return;
+
+        const value1 = patternJSON.parameters[param1];
+        const value2 = patternJSON.parameters[param2];
+
+        let constraintMet = false;
+        switch (constraint) {
+            case 'greater_than':
+                constraintMet = value1 > value2;
+                break;
+            case 'less_than':
+                constraintMet = value1 < value2;
+                break;
+            case 'equal':
+                constraintMet = value1 === value2;
+                break;
+        }
+
+        if (!constraintMet && fix_values) {
+            console.warn(`⚠️ Parameter relationship violation: ${param1} ${constraint} ${param2}, applying fix...`);
+            if (fix_values[param1] !== undefined) {
+                patternJSON.parameters[param1] = fix_values[param1];
+            }
+            if (fix_values[param2] !== undefined) {
+                patternJSON.parameters[param2] = fix_values[param2];
+            }
+        }
+    }
+
+    /**
+     * Apply parameter range constraints
+     */
+    applyParameterRange(patternJSON, paramName, range) {
+        if (!patternJSON.parameters[paramName]) return;
+
+        const value = patternJSON.parameters[paramName];
+        const { min, max, default_value } = range;
+
+        if ((min !== undefined && value < min) || (max !== undefined && value > max)) {
+            console.warn(`⚠️ Parameter ${paramName} out of range [${min}, ${max}], using default: ${default_value}`);
+            patternJSON.parameters[paramName] = default_value;
+        }
+    }
+
+    /**
+     * Apply default value corrections for invalid parameters
+     */
+    applyDefaultCorrection(patternJSON, paramName, defaultValue) {
+        if (!patternJSON.parameters[paramName] || patternJSON.parameters[paramName] < 0) {
+            console.warn(`⚠️ Invalid ${paramName}, using default: ${defaultValue}`);
+            patternJSON.parameters[paramName] = defaultValue;
+        }
+    }
+
+    showAPIError(error, context = 'API operation') {
+        console.error('🚨 API Error - showing error state');
+        
+        const selectElement = document.getElementById('pattern-type-select');
+        if (selectElement) {
+            selectElement.innerHTML = '<option value="">❌ Failed to load patterns</option>';
+            selectElement.disabled = true;
+        }
+        
+        const errorMsg = document.createElement('div');
+        errorMsg.className = 'alert alert-danger mt-2';
+        errorMsg.innerHTML = `
+            <strong>Pattern Loading Failed:</strong> ${error.message}<br>
+            <small>Please refresh the page or check your connection.</small>
+        `;
+        
+        const container = selectElement?.parentNode;
+        if (container && !container.querySelector('.alert-danger')) {
+            container.appendChild(errorMsg);
+        }
+    }
+
     // Populate pattern type dropdown
     populatePatternTypeDropdown() {
         console.log('🔄 Starting populatePatternTypeDropdown');
@@ -592,46 +699,53 @@ class ChessboardConfig {
     // Create a valid JSON pattern object for the backend
     getPatternJSON() {
         if (!this.config.patternType || !this.config.parameters) {
-            // Return default standard chessboard pattern
-            return {
-                pattern_id: 'standard_chessboard',
-                name: 'Standard Chessboard',
-                description: 'Traditional black and white checkerboard pattern',
-                is_planar: true,
-                parameters: {
-                    width: 11,
-                    height: 8,
-                    square_size: 0.025
+            // Return first available pattern from API as default, or null if no patterns
+            const availablePatterns = Object.keys(this.patternConfigurations);
+            if (availablePatterns.length > 0) {
+                const defaultPatternId = availablePatterns[0];
+                const defaultConfig = this.patternConfigurations[defaultPatternId];
+                console.log(`🎯 Using first available pattern as default: ${defaultPatternId}`);
+                
+                // Build default parameters from API schema
+                const defaultParameters = {};
+                if (defaultConfig.parameters) {
+                    for (const param of defaultConfig.parameters) {
+                        defaultParameters[param.name] = param.default;
+                    }
                 }
-            };
+                
+                return {
+                    pattern_id: defaultConfig.id || defaultPatternId,
+                    name: defaultConfig.name || defaultPatternId,
+                    description: defaultConfig.description || 'Pattern configuration',
+                    is_planar: true,
+                    parameters: defaultParameters
+                };
+            } else {
+                console.warn('⚠️ No patterns available from API');
+                return null;
+            }
         }
 
-        // Create the base pattern object using configuration data
+        // Create the base pattern object using API data
         const patternConfig = this.patternConfigurations[this.config.patternType];
         
-        // Map frontend pattern types to backend pattern IDs
-        const patternIdMapping = {
-            'standard': 'standard_chessboard',
-            'charuco': 'charuco_board'
-        };
-        
+        // Use the pattern ID directly from API configuration (no hardcoded mapping)
         const patternJSON = {
-            pattern_id: patternIdMapping[this.config.patternType] || this.config.patternType,
-            name: patternConfig ? patternConfig.name : this.config.patternType,
-            description: patternConfig ? patternConfig.description : `${this.config.patternType} calibration pattern`,
+            pattern_id: patternConfig?.id || this.config.patternType,
+            name: patternConfig?.name || this.config.patternType,
+            description: patternConfig?.description || `${this.config.patternType} calibration pattern`,
             is_planar: true,
             parameters: {}
         };
 
-        // Define which parameters are valid for each pattern type
-        const validParametersByType = {
-            'standard': ['width', 'height', 'square_size'],
-            'standard_chessboard': ['width', 'height', 'square_size'],
-            'charuco': ['width', 'height', 'square_size', 'marker_size', 'dictionary_id'],
-            'charuco_board': ['width', 'height', 'square_size', 'marker_size', 'dictionary_id']
-        };
+        // Get valid parameters dynamically from API configuration
+        const currentPatternConfig = this.patternConfigurations[this.config.patternType];
+        const validParams = currentPatternConfig?.parameters ? 
+            Object.keys(currentPatternConfig.parameters) : 
+            Object.keys(this.config.parameters);
 
-        const validParams = validParametersByType[this.config.patternType] || Object.keys(this.config.parameters);
+        console.log(`📋 Valid parameters for ${this.config.patternType}:`, validParams);
 
         // Copy only valid parameters from the current configuration
         for (const [paramName, value] of Object.entries(this.config.parameters)) {
@@ -645,24 +759,8 @@ class ChessboardConfig {
             }
         }
 
-        // Ensure ChArUco patterns have valid parameter relationships
-        if (patternJSON.pattern_id === 'charuco_board' && patternJSON.parameters) {
-            // Ensure square_size > marker_size for ChArUco (OpenCV requirement)
-            if (patternJSON.parameters.square_size && patternJSON.parameters.marker_size) {
-                if (patternJSON.parameters.square_size <= patternJSON.parameters.marker_size) {
-                    console.warn('⚠️ ChArUco square_size must be > marker_size, fixing...');
-                    // Use correct defaults: square 40mm, marker 20mm
-                    patternJSON.parameters.square_size = 0.04;
-                    patternJSON.parameters.marker_size = 0.02;
-                }
-            }
-            
-            // Ensure valid dictionary_id
-            if (!patternJSON.parameters.dictionary_id || patternJSON.parameters.dictionary_id < 0) {
-                console.warn('⚠️ Invalid ChArUco dictionary_id, using default...');
-                patternJSON.parameters.dictionary_id = 10; // DICT_6X6_250
-            }
-        }
+        // Apply dynamic pattern-specific validation based on API metadata
+        this.applyDynamicPatternValidation(patternJSON);
 
         return patternJSON;
     }

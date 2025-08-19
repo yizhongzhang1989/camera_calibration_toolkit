@@ -117,6 +117,10 @@ class CalibrationPatternManager:
                             'category': pattern_info.get('category', 'general'),
                             'icon': pattern_info.get('icon', '❓')
                         })
+                        
+                        # Include metadata (including validation_rules) if available
+                        if 'metadata' in pattern_info:
+                            config['metadata'] = pattern_info['metadata']
                     
                     configurations[pattern_id] = config
                 else:
