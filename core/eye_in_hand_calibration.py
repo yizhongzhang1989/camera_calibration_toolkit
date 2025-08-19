@@ -244,32 +244,6 @@ class EyeInHandCalibrator:
         self.camera_matrix = camera_matrix
         self.distortion_coefficients = distortion_coefficients
     
-    def load_camera_intrinsics_from_file(self, intrinsics_directory: str) -> None:
-        """
-        Load camera intrinsic parameters from files.
-        
-        Args:
-            intrinsics_directory: Directory containing mtx.json and dist.json files
-        """
-        camera_matrix_path = os.path.join(intrinsics_directory, 'mtx.json')
-        distortion_path = os.path.join(intrinsics_directory, 'dist.json')
-        
-        if not os.path.exists(camera_matrix_path):
-            raise FileNotFoundError(f"Camera matrix file not found: {camera_matrix_path}")
-        
-        if not os.path.exists(distortion_path):
-            raise FileNotFoundError(f"Distortion coefficients file not found: {distortion_path}")
-        
-        # Load camera matrix
-        with open(camera_matrix_path, 'r', encoding='utf-8') as f:
-            mtx_dict = json.load(f)
-            self.camera_matrix = np.array(mtx_dict["camera_matrix"])
-        
-        # Load distortion coefficients
-        with open(distortion_path, 'r', encoding='utf-8') as f:
-            dist_dict = json.load(f)
-            self.distortion_coefficients = np.array(dist_dict["distortion_coefficients"])
-    
     def load_calibration_data(self, data_directory: str, 
                             selected_indices: Optional[List[int]] = None) -> bool:
         """
@@ -604,21 +578,9 @@ class EyeInHandCalibrator:
         """Get the camera to end-effector transformation matrix."""
         return self.cam2end_matrix
     
-    def get_extrinsics(self) -> Tuple[Optional[List[np.ndarray]], Optional[List[np.ndarray]]]:
-        """Get rotation and translation vectors for each image (target to camera)."""
-        return self.rvecs, self.tvecs
-    
-    def get_reprojection_error(self) -> Tuple[Optional[float], Optional[List[float]]]:
-        """Get overall and per-image reprojection errors."""
-        return self.rms_error, self.per_image_errors
-    
     def is_calibrated(self) -> bool:
         """Check if calibration has been completed successfully."""
         return self.calibration_completed
-    
-    def is_optimized(self) -> bool:
-        """Check if optimization has been completed successfully."""
-        return self.optimization_completed
     
     def draw_pattern_on_images(self) -> List[Tuple[str, np.ndarray]]:
         """
@@ -739,102 +701,6 @@ class EyeInHandCalibrator:
                        cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 3)
             cv2.putText(undistorted_img, 'Z', (z_end[0] + 15, z_end[1]), 
                        cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 0, 0), 3)
-            
-            # Get original filename without path and extension
-            if hasattr(self, 'image_paths') and self.image_paths and i < len(self.image_paths):
-                filename = os.path.splitext(os.path.basename(self.image_paths[i]))[0]
-            else:
-                filename = f"image_{i:03d}"
-            
-            debug_images.append((filename, undistorted_img))
-        
-        return debug_images
-    
-    def draw_reprojection_on_undistorted_images(self) -> List[Tuple[str, np.ndarray]]:
-        """
-        Draw pattern point reprojections on undistorted images using hand-eye calibration results.
-        
-        This shows the accuracy of the hand-eye calibration by comparing detected pattern points
-        with points reprojected using the calibrated transformation matrix.
-        
-        Returns:
-            List of tuples (filename_without_extension, debug_image_array)
-        """
-        if not self.is_calibrated():
-            raise ValueError("Calibration not completed. Run calibrate() first.")
-        
-        if not self.images or not self.object_points or not self.image_points:
-            raise ValueError("No calibration data available.")
-        
-        if not self.target2cam_matrices or not self.end2base_matrices:
-            raise ValueError("No transformation matrices available. Ensure calibration completed successfully.")
-        
-        debug_images = []
-        
-        for i, (img, objp, detected_corners) in enumerate(zip(
-            self.images, self.object_points, self.image_points
-        )):
-            # Undistort the image
-            undistorted_img = cv2.undistort(img, self.camera_matrix, self.distortion_coefficients)
-            
-            # Calculate reprojected points using hand-eye calibration
-            try:
-                # Method 1: Direct target to camera from calibration
-                target2cam_direct = self.target2cam_matrices[i]
-                reprojected_direct, _ = cv2.projectPoints(
-                    objp, target2cam_direct[:3, :3], target2cam_direct[:3, 3],
-                    self.camera_matrix, np.zeros((4, 1))  # No distortion for undistorted image
-                )
-                
-                # Method 2: Target to camera via hand-eye calibration chain using single target2base matrix
-                end2cam_matrix = np.linalg.inv(self.cam2end_matrix)
-                base2end_matrix = np.linalg.inv(self.end2base_matrices[i])
-                
-                # Use the single target2base matrix calculated during calibration
-                eyeinhand_target2cam = end2cam_matrix @ base2end_matrix @ self.target2base_matrix
-                
-                reprojected_eyeinhand, _ = cv2.projectPoints(
-                    objp, eyeinhand_target2cam[:3, :3], eyeinhand_target2cam[:3, 3],
-                    self.camera_matrix, np.zeros((4, 1))  # No distortion for undistorted image
-                )
-                
-                # Draw detected corners in green (ground truth)
-                detected_2d = detected_corners.reshape(-1, 2).astype(int)
-                for corner in detected_2d:
-                    cv2.circle(undistorted_img, tuple(corner), 8, (0, 255, 0), 2)
-                
-                # Draw direct reprojection in blue (from direct PnP)
-                direct_2d = reprojected_direct.reshape(-1, 2).astype(int)
-                for corner in direct_2d:
-                    cv2.drawMarker(undistorted_img, tuple(corner), (255, 0, 0), 
-                                 cv2.MARKER_CROSS, 12, 2)
-                
-                # Draw hand-eye reprojection in red (from hand-eye calibration)
-                eyeinhand_2d = reprojected_eyeinhand.reshape(-1, 2).astype(int)
-                for corner in eyeinhand_2d:
-                    cv2.drawMarker(undistorted_img, tuple(corner), (0, 0, 255), 
-                                 cv2.MARKER_TRIANGLE_UP, 12, 2)
-                
-                # Add legend
-                cv2.putText(undistorted_img, "Green: Detected", (10, 30), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                cv2.putText(undistorted_img, "Blue: Direct PnP", (10, 60), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
-                cv2.putText(undistorted_img, "Red: Hand-Eye", (10, 90), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                
-                # Calculate and display error
-                if self.per_image_errors and i < len(self.per_image_errors):
-                    error_text = f"RMS Error: {self.per_image_errors[i]:.3f} px"
-                    cv2.putText(undistorted_img, error_text, (10, undistorted_img.shape[0] - 20), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                
-            except Exception as e:
-                print(f"Warning: Could not generate reprojection for image {i}: {e}")
-                # Just draw detected corners if reprojection fails
-                detected_2d = detected_corners.reshape(-1, 2).astype(int)
-                for corner in detected_2d:
-                    cv2.circle(undistorted_img, tuple(corner), 8, (0, 255, 0), 2)
             
             # Get original filename without path and extension
             if hasattr(self, 'image_paths') and self.image_paths and i < len(self.image_paths):
@@ -1266,44 +1132,3 @@ class EyeInHandCalibrator:
             json.dump(results, f, indent=4, ensure_ascii=False)
         
         print(f"Eye-in-hand calibration results saved to: {json_file_path}")
-    
-    def load_results(self, results_file: str) -> None:
-        """
-        Load calibration results from JSON file.
-        
-        Args:
-            results_file: Path to the results JSON file
-        """
-        if not os.path.exists(results_file):
-            raise FileNotFoundError(f"Results file not found: {results_file}")
-        
-        with open(results_file, 'r', encoding='utf-8') as f:
-            results = json.load(f)
-        
-        # Load camera intrinsics
-        if "camera_intrinsics" in results:
-            self.camera_matrix = np.array(results["camera_intrinsics"]["camera_matrix"])
-            self.distortion_coefficients = np.array(results["camera_intrinsics"]["distortion_coefficients"])
-        
-        # Load eye-in-hand calibration results
-        if "eye_in_hand_calibration" in results:
-            self.cam2end_matrix = np.array(results["eye_in_hand_calibration"]["cam2end_matrix"])
-            self.calibration_completed = True
-            
-            if "target2base_matrix" in results["eye_in_hand_calibration"]:
-                self.target2base_matrix = np.array(results["eye_in_hand_calibration"]["target2base_matrix"])
-                self.optimization_completed = True
-        
-        print(f"Eye-in-hand calibration results loaded from: {results_file}")
-    
-    def get_transformation_matrix(self) -> np.ndarray:
-        """
-        Get the camera to end-effector transformation matrix.
-        
-        Returns:
-            4x4 transformation matrix from camera to end-effector
-        """
-        if not self.calibration_completed:
-            raise ValueError("Calibration has not been completed yet")
-        
-        return self.cam2end_matrix
