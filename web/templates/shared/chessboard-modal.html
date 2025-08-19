@@ -1,0 +1,93 @@
+<!-- Chessboard Configuration Modal -->
+<div class="modal fade" id="chessboard-config-modal" tabindex="-1" aria-labelledby="chessboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="chessboardModalLabel">
+                    <i class="bi bi-grid-3x3-gap"></i> Configure Calibration Pattern
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                
+                <!-- Pattern Type Selection -->
+                <div class="mb-4">
+                    <label class="form-label fw-bold">Pattern Type</label>
+                    <select class="form-select" id="pattern-type-select">
+                        <option value="">Select pattern type...</option>
+                        <!-- Options will be populated dynamically from API -->
+                    </select>
+                </div>
+
+                <div class="row">
+                    <!-- Configuration Panel -->
+                    <div class="col-md-7">
+                        
+                        <!-- Dynamic Configuration Container -->
+                        <div id="pattern-config-container">
+                            <div class="text-muted text-center p-4">
+                                <i class="bi bi-arrow-up"></i><br>
+                                Select a pattern type to configure its parameters
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- Preview Panel -->
+                    <div class="col-md-5">
+                        <h6 class="mb-3">Pattern Preview</h6>
+                        <div class="text-center mb-3">
+                            <img id="chessboard-modal-preview" src="/api/pattern_image?pattern_type=standard&corner_x=11&corner_y=8&square_size=0.020&pixel_per_square=20&border_pixels=0" 
+                                 alt="Pattern Preview" class="img-fluid border rounded" style="max-height: 180px;" />
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Download Section -->
+                <hr>
+                <div class="mb-3">
+                    <h6 class="mb-3">
+                        <i class="bi bi-download"></i> Download Pattern for Printing
+                    </h6>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="download-quality" class="form-label">Print Quality</label>
+                                <select class="form-select" id="download-quality">
+                                    <option value="standard">Standard Quality (100px/square)</option>
+                                    <option value="high" selected>High Quality (150px/square)</option>
+                                    <option value="ultra">Ultra Quality (200px/square)</option>
+                                </select>
+                                <div class="form-text">Higher quality = larger file size</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="download-border" class="form-label">Border Size</label>
+                                <select class="form-select" id="download-border">
+                                    <option value="none">No Border (0px)</option>
+                                    <option value="small">Small Border (25px)</option>
+                                    <option value="medium" selected>Medium Border (50px)</option>
+                                    <option value="large">Large Border (100px)</option>
+                                </select>
+                                <div class="form-text">Border makes handling easier</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="button" class="btn btn-success" id="download-pattern-btn">
+                            <i class="bi bi-download"></i> Generate & Download Pattern
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary btn-apply-config">Apply Configuration</button>
+            </div>
+        </div>
+    </div>
+</div>

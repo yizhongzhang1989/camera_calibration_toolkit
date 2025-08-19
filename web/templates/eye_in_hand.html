@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eye-in-Hand Calibration - Camera Calibration Toolkit</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🤖 Eye-in-Hand Calibration</h1>
+            <div class="breadcrumb">
+                <a href="/">Home</a> > Eye-in-Hand Calibration
+            </div>
+        </div>
+
+        <!-- Main Content - Eye-in-Hand Layout -->
+        <div class="intrinsic-layout">
+            <!-- Left Control Panel -->
+            <div class="intrinsic-control-panel">
+                <div class="panel-section">
+                    <h3>📋 Calibration Target</h3>
+                    
+                    {{ include_shared_template('chessboard-card.html') | safe }}
+                    
+                    <!-- Hidden form inputs for backward compatibility -->
+                    <input type="hidden" id="chessboard-x" value="11">
+                    <input type="hidden" id="chessboard-y" value="8">
+                    <input type="hidden" id="square-size" value="0.02">
+                </div>
+
+                <div class="panel-section">
+                    <h3>🔧 Camera Calibration</h3>
+                    <div class="form-group">
+                        <label>Camera Matrix Source:</label>
+                        <select id="camera-matrix-source">
+                            <option value="intrinsic">Use Intrinsic Calibration Results</option>
+                            <option value="manual">Enter Manual Values</option>
+                        </select>
+                        <small>Choose how to obtain camera intrinsic parameters</small>
+                    </div>
+                    
+                    <div id="manual-camera-section" style="display: none;">
+                        <div class="form-group">
+                            <label>Focal Length X (fx):</label>
+                            <input type="number" id="fx" value="800" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label>Focal Length Y (fy):</label>
+                            <input type="number" id="fy" value="800" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label>Principal Point X (cx):</label>
+                            <input type="number" id="cx" value="320" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label>Principal Point Y (cy):</label>
+                            <input type="number" id="cy" value="240" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label>Distortion Coefficients (k1,k2,p1,p2,k3):</label>
+                            <input type="text" id="distortion-coeffs" value="0,0,0,0,0" placeholder="k1,k2,p1,p2,k3">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h3>📁 Upload Images</h3>
+                    <div class="upload-area" id="image-upload-area">
+                        <input type="file" id="image-files" multiple accept="image/*">
+                        <div class="upload-text">
+                            <p>📸 Drop robot pose images here or click to select</p>
+                            <small>Supported: JPG, PNG, BMP, TIFF</small>
+                        </div>
+                    </div>
+                    <button id="clear-all-images-btn" class="secondary-btn" style="display: none; margin-top: 1rem; width: 100%;">
+                        🗑️ Clear All Images
+                    </button>
+                </div>
+
+                <div class="panel-section">
+                    <h3>🦾 Upload Robot Poses</h3>
+                    <div class="upload-area" id="pose-upload-area">
+                        <input type="file" id="pose-files" multiple accept=".json">
+                        <div class="upload-text">
+                            <p>📊 Drop robot pose JSON files here or click to select</p>
+                            <small>Required: JSON files with robot end-effector poses</small>
+                        </div>
+                    </div>
+                    <div class="pose-info" style="margin-top: 1rem; font-size: 0.9em; color: #666;">
+                        <p><strong>📋 JSON Format Expected:</strong></p>
+                        <pre style="background: #f5f5f5; padding: 0.5rem; border-radius: 4px; font-size: 0.8em;">
+{
+  "end_xyzrpy": {
+    "x": 0.1234,
+    "y": 0.5678,
+    "z": 0.9012,
+    "rx": 0.345,
+    "ry": 0.678,
+    "rz": 0.901
+  }
+}</pre>
+                        <p><small>Each image needs a corresponding numbered pose file (0.json, 1.json, etc.)</small></p>
+                    </div>
+                    <button id="clear-all-poses-btn" class="secondary-btn" style="display: none; margin-top: 1rem; width: 100%;">
+                        🗑️ Clear All Poses
+                    </button>
+                </div>
+
+                <div class="panel-section">
+                    <h3>🚀 Eye-in-Hand Calibration</h3>
+                    
+                    <div class="form-group">
+                        <label>Calibration Method:</label>
+                        <select id="handeye-method">
+                            <option value="tsai">Tsai-Lenz Method</option>
+                            <option value="park">Park-Martin Method</option>
+                            <option value="horaud" selected>Horaud-Dornaika Method</option>
+                            <option value="andreff">Andreff Method</option>
+                            <option value="daniilidis">Daniilidis Method</option>
+                        </select>
+                        <small>Choose hand-eye calibration algorithm</small>
+                    </div>
+                    
+                    <button id="calibrate-btn" class="primary-btn" disabled>Start Eye-in-Hand Calibration</button>
+                    
+                    <div id="calibration-status" class="status-display">
+                        <p>Ready to start eye-in-hand calibration</p>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h3>📊 Calibration Results</h3>
+                    <div id="calibration-metrics" class="metrics-display" style="display: none;">
+                        <div class="metrics-grid">
+                            <div class="metric-card">
+                                <h5>Hand-Eye Transform</h5>
+                                <div id="handeye-transform-display"></div>
+                            </div>
+                            <div class="metric-card">
+                                <h5>Rotation Matrix</h5>
+                                <div id="rotation-matrix-display"></div>
+                            </div>
+                            <div class="metric-card">
+                                <h5>Translation Vector</h5>
+                                <div id="translation-vector-display"></div>
+                            </div>
+                            <div class="metric-card">
+                                <h5>Reprojection Error</h5>
+                                <div id="error-display"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h3>📥 Download Results</h3>
+                    <button id="download-btn" class="primary-btn" style="display: none;">
+                        📥 Download Results ZIP
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right Results Panel -->
+            <div class="intrinsic-results-panel">
+                <!-- Upper Results Area -->
+                <div class="results-upper-area">
+                    <div id="progress-info" style="display: none;"></div>
+                    <div class="intrinsic-results-content">
+                        <div id="results-placeholder" style="text-align: center; padding: 3rem; color: #666;">
+                            <div style="font-size: 4rem; margin-bottom: 1rem; opacity: 0.5;">🤖</div>
+                            <h4>Upload Robot Pose Data</h4>
+                            <p>Upload images and corresponding robot pose JSON files</p>
+                            <p style="font-size: 0.9em; margin-top: 1rem;">Both images and poses are required for eye-in-hand calibration</p>
+                        </div>
+                        
+                        <!-- Poses Status Section -->
+                        <div id="poses-status-section" class="panel-section" style="display: none; background: #f8f9fa; border-radius: 8px; padding: 1rem; margin: 1rem 0;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: #495057;">🦾 Robot Poses Status</h4>
+                            <div id="poses-status" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <span id="poses-count" style="font-weight: bold;">0 poses uploaded</span>
+                                    <span id="poses-match-status" style="color: #6c757d; font-size: 0.9rem;">• Waiting for poses</span>
+                                </div>
+                                <div id="poses-validation" style="color: #28a745; font-size: 0.9rem; font-weight: bold;">
+                                    <!-- Validation status will appear here -->
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="table-container">
+                            <table id="image-comparison-table" class="image-comparison-table" style="display: none;">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 10%;">
+                                            <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                                                <input type="checkbox" id="select-all-checkbox" class="select-all-checkbox" checked title="Select/Deselect All">
+                                                <span style="font-size: 0.9rem;">Select</span>
+                                            </div>
+                                        </th>
+                                        <th style="width: 22.5%;">📷 Original Image</th>
+                                        <th style="width: 22.5%;">🎯 Corner Detection</th>
+                                        <th style="width: 22.5%;">✨ Undistorted Image</th>
+                                        <th style="width: 22.5%;">🔄 Reprojected Points</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="image-comparison-body">
+                                    <!-- Dynamic content will be inserted here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Console Resizer -->
+                <div class="console-resizer" id="console-resizer"></div>
+                
+                <!-- Console Area -->
+                <div class="console-area" id="console-area" style="background-color: #f0f0f0; border: 2px solid #007acc; min-height: 150px;">
+                    <div class="console-content">
+                        <div id="console-output" style="background-color: white; min-height: 100px;">Console output will appear here...</div>
+                        <div class="console-controls">
+                            <button id="clear-console-btn" type="button" class="console-btn">Clear</button>
+                            <button id="refresh-console-btn" type="button" class="console-btn">Refresh</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Shared Chessboard Configuration Modal -->
+    {{ include_shared_template('chessboard-modal.html') | safe }}
+
+    <!-- Image Modal -->
+    <div id="imageModal" class="image-modal">
+        <span class="modal-close" id="modalClose">&times;</span>
+        <div class="image-modal-content">
+            <img id="modalImage" class="modal-image" alt="Enlarged view">
+            <div id="modalTitle" class="modal-title"></div>
+        </div>
+    </div>
+
+    <!-- Chessboard configuration script -->
+    <script src="{{ url_for('static', filename='js/chessboard-config.js') }}"></script>
+    
+    <!-- Base calibration class -->
+    <script src="{{ url_for('static', filename='js/base-calibration.js') }}"></script>
+    
+    <!-- Eye-in-Hand calibration script -->
+    <script src="{{ url_for('static', filename='js/eye-in-hand.js') }}"></script>
+    
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
+</body>
+</html>

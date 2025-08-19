@@ -2,8 +2,11 @@
 
 # Core dependencies
 numpy>=1.21.0
-opencv-python>=4.5.0
+opencv-python>=4.8.0          # Updated for ChArUco support (CharucoDetector requires 4.8+)
 scipy>=1.7.0
+
+# YAML export support for OpenCV compatibility
+PyYAML>=6.0
 
 # Web framework
 Flask>=2.0.0

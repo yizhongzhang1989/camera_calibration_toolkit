@@ -157,12 +157,6 @@ temp/
 tmp/
 
 # Calibration data (usually large)
-*.png
-*.jpg
-*.jpeg
-*.bmp
-*.tiff
-*.tif
 !examples/*.png
 !examples/*.jpg
 !docs/images/*

@@ -453,6 +453,13 @@ class CalibrationApp {
             const originalImages = detailResults.original_images || [];
             const vizImages = detailResults.visualization_images || [];
             
+            console.log('📊 Display results debug info:');
+            console.log(`   Original images: ${originalImages.length}`);
+            console.log(`   Visualization images: ${vizImages.length}`);
+            vizImages.forEach((img, idx) => {
+                console.log(`   VizImg ${idx}: ${img.name} (type: ${img.type})`);
+            });
+            
             // Create image rows
             for (let i = 0; i < originalImages.length; i++) {
                 const imageRow = this.createImageRow(i, originalImages[i], vizImages, viewType, results);
@@ -504,6 +511,15 @@ class CalibrationApp {
             }
         }
         
+        // Undistorted axes column  
+        if (viewType === 'axes' || viewType === 'all') {
+            const axesImage = this.findVizImage(vizImages, index, 'axes');
+            if (axesImage) {
+                const axesColumn = this.createImageColumn('Undistorted Axes', axesImage.data);
+                columns.appendChild(axesColumn);
+            }
+        }
+        
         // Reprojection column
         if (viewType === 'reprojection' || viewType === 'all') {
             const reprojImage = this.findVizImage(vizImages, index, 'reproject');
@@ -534,9 +550,41 @@ class CalibrationApp {
     }
     
     findVizImage(vizImages, index, type) {
-        return vizImages.find(img => 
-            img.name.includes(`${index}`) && img.name.includes(type)
-        );
+        // Map the requested type to the actual types stored in the results
+        const typeMapping = {
+            'corners': 'corner_detection',
+            'reproject': 'reprojection',
+            'axes': 'undistorted_axes'
+        };
+        
+        const actualType = typeMapping[type] || type;
+        
+        // Get the original image name for this index
+        const originalImage = this.uploadedImages[index];
+        let result = null;
+        
+        if (originalImage && originalImage.name) {
+            const baseName = originalImage.name.replace(/\.[^/.]+$/, ""); // Remove extension
+            
+            // Look for images that match both the type and the base filename
+            result = vizImages.find(img => 
+                img.type === actualType && img.name.includes(baseName)
+            );
+            
+            console.log(`🔍 Looking for ${type} (${actualType}) image for ${baseName}: ${result ? '✅ Found ' + result.name : '❌ Not found'}`);
+        }
+        
+        // Fallback: try to find by index and type (for legacy compatibility)
+        if (!result) {
+            result = vizImages.find(img => 
+                img.type === actualType && img.name.includes(`${index}`)
+            );
+            if (result) {
+                console.log(`🔍 Fallback found ${type} image by index ${index}: ${result.name}`);
+            }
+        }
+        
+        return result;
     }
     
     visualizeEyeInHandResults(results) {
