@@ -111,7 +111,7 @@ class IntrinsicCalibration extends BaseCalibration {
     async updateParameters() {
         // Get pattern configuration from ChessboardConfig if available
         let patternJSON = null;
-        if (window.chessboardConfig && window.chessboardConfig.config) {
+        if (window.chessboardConfig && window.chessboardConfig.patternConfigJSON) {
             patternJSON = window.chessboardConfig.getPatternJSON();
         }
 

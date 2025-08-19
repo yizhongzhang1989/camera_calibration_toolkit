@@ -166,6 +166,46 @@ def get_pattern_configurations():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/default_pattern_config')
+def get_default_pattern_config():
+    """Get default pattern configuration JSON."""
+    try:
+        configurations = get_pattern_type_configurations()
+        
+        # Return the first available pattern as default
+        if configurations:
+            # Get the first pattern
+            first_pattern_id = list(configurations.keys())[0]
+            pattern_config = configurations[first_pattern_id]
+            
+            # Build default parameters
+            default_parameters = {}
+            if 'parameters' in pattern_config:
+                # Handle both list and dict formats
+                if isinstance(pattern_config['parameters'], list):
+                    for param in pattern_config['parameters']:
+                        default_parameters[param['name']] = param.get('default', 0)
+                else:
+                    for param_name, param_config in pattern_config['parameters'].items():
+                        default_parameters[param_name] = param_config.get('default', 0)
+            
+            # Create the JSON configuration
+            default_json = {
+                'pattern_id': pattern_config.get('id', first_pattern_id),
+                'name': pattern_config.get('name', first_pattern_id),
+                'description': pattern_config.get('description', f'{first_pattern_id} calibration pattern'),
+                'is_planar': True,
+                'parameters': default_parameters
+            }
+            
+            return jsonify({'success': True, 'config': default_json})
+        else:
+            return jsonify({'success': False, 'error': 'No pattern configurations available'}), 404
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/upload_images', methods=['POST'])
 def upload_images():
     """Upload calibration images."""

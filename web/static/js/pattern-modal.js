@@ -112,9 +112,9 @@ class PatternSelectionModal {
         let currentSelection = patternSelect.value;
         
         // Try to get current selection from global chessboard config (more reliable)
-        if (window.chessboardConfig && window.chessboardConfig.config && window.chessboardConfig.config.patternType) {
-            currentSelection = window.chessboardConfig.config.patternType;
-            console.log(`📋 Got current selection from global config: ${currentSelection}`);
+        if (window.chessboardConfig && window.chessboardConfig.patternConfigJSON && window.chessboardConfig.patternConfigJSON.pattern_id) {
+            currentSelection = window.chessboardConfig.patternConfigJSON.pattern_id;
+            console.log(`📋 Got current selection from global config JSON: ${currentSelection}`);
         } else {
             console.log(`📋 Current selection from DOM: ${currentSelection}`);
         }
@@ -158,9 +158,9 @@ class PatternSelectionModal {
             this.onPatternSelected({ target: { value: defaultPatternId } });
         } else if (defaultPatternId === currentSelection) {
             console.log(`✅ Keeping current pattern selection: ${defaultPatternId}`);
-            // Don't trigger onPatternSelected since the pattern hasn't changed
-            // But still enable the apply button since we have a valid pattern
+            // Pattern hasn't changed, but we still need to generate the form and enable apply button
             this.selectedPattern = defaultPatternId;
+            this.generateParameterForm(); // Generate form even if pattern didn't change
             const applyBtn = document.querySelector('.btn-apply-config');
             if (applyBtn) {
                 applyBtn.disabled = false;
@@ -355,7 +355,8 @@ class PatternSelectionModal {
         // Update field validation state
         if (isValid) {
             input.classList.remove('is-invalid');
-            input.classList.add('is-valid');
+            // Remove is-valid class to avoid showing green checkmarks
+            input.classList.remove('is-valid');
         } else {
             input.classList.remove('is-valid');
             input.classList.add('is-invalid');
@@ -369,13 +370,20 @@ class PatternSelectionModal {
     }
 
     /**
-     * Get current parameter configuration
+     * Get current parameter configuration as complete JSON
      */
     getCurrentConfiguration() {
         if (!this.selectedPattern) return null;
 
+        const patternInfo = this.availablePatterns[this.selectedPattern];
+        if (!patternInfo) return null;
+
+        // Build the complete JSON configuration
         const config = {
-            pattern_id: this.selectedPattern,
+            pattern_id: patternInfo.id || this.selectedPattern,
+            name: patternInfo.name || this.selectedPattern,
+            description: patternInfo.description || `${this.selectedPattern} calibration pattern`,
+            is_planar: true,
             parameters: {}
         };
 
@@ -387,8 +395,7 @@ class PatternSelectionModal {
                 let value = input.value;
                 
                 // Convert to appropriate type based on parameter definition
-                const param = this.availablePatterns[this.selectedPattern].parameters
-                    .find(p => p.name === input.name);
+                const param = patternInfo.parameters.find(p => p.name === input.name);
                 
                 if (param) {
                     if (param.type === 'integer') {
@@ -499,6 +506,14 @@ class PatternSelectionModal {
 
         // Store the configuration for use by calibration
         this.selectedConfig = configuration;
+
+        // Update the chessboard config instance with the JSON configuration
+        if (window.chessboardConfig) {
+            console.log('🔗 Updating global chessboard config with JSON configuration');
+            window.chessboardConfig.setPatternConfigJSON(configuration);
+        } else {
+            console.warn('⚠️ Global chessboard config not found - updating UI only');
+        }
 
         // Update the main UI elements
         this.updateMainUI();
