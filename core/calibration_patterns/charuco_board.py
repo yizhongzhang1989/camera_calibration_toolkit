@@ -278,9 +278,21 @@ class CharucoBoard(CalibrationPattern):
     
     def draw_corners(self, image: np.ndarray, corners: np.ndarray, 
                     point_ids: Optional[np.ndarray] = None) -> np.ndarray:
-        """Draw detected ChArUco corners."""
-        if corners is not None:
-            return cv2.aruco.drawDetectedCornersCharuco(image, corners)
+        """Draw detected ChArUco corners with IDs using OpenCV."""
+        if corners is not None and len(corners) > 0:
+            # Make a copy of the image to avoid modifying the original
+            result_image = image.copy()
+            
+            # Use OpenCV's built-in ChArUco corner drawing function
+            if point_ids is not None:
+                cv2.aruco.drawDetectedCornersCharuco(result_image, corners, point_ids, (0, 0, 255))
+            else:
+                # If no point_ids available, just draw red circles
+                for corner in corners:
+                    x, y = corner.ravel().astype(int)
+                    cv2.circle(result_image, (x, y), 5, (0, 0, 255), -1)
+            
+            return result_image
         return image
 
     def generate_pattern_image(self, pixel_per_square: int = 100, 
