@@ -26,7 +26,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.calibration_patterns import (
     CalibrationPattern,
-    Custom3DPattern,
+    # Custom3DPattern,  # TODO: Not yet implemented in modular system
     CalibrationPatternManager,
     create_chessboard_pattern
 )

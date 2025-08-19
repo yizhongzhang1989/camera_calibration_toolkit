@@ -12,11 +12,17 @@
                 
                 <!-- Pattern Type Selection -->
                 <div class="mb-4">
-                    <label class="form-label fw-bold">Pattern Type</label>
+                    <label class="form-label fw-bold">
+                        <i class="bi bi-lightning-charge text-warning"></i> Pattern Type 
+                        <small class="text-muted">(Auto-discovered)</small>
+                    </label>
                     <select class="form-select" id="pattern-type-select">
-                        <option value="">Select pattern type...</option>
-                        <!-- Options will be populated dynamically from API -->
+                        <option value="">🔄 Loading available patterns...</option>
                     </select>
+                    <div class="form-text">
+                        <i class="bi bi-info-circle text-primary"></i> 
+                        Patterns are automatically discovered from the modular system
+                    </div>
                 </div>
 
                 <div class="row">
@@ -26,8 +32,9 @@
                         <!-- Dynamic Configuration Container -->
                         <div id="pattern-config-container">
                             <div class="text-muted text-center p-4">
-                                <i class="bi bi-arrow-up"></i><br>
-                                Select a pattern type to configure its parameters
+                                <i class="bi bi-arrow-up fs-1"></i><br>
+                                <strong>Select a pattern type above</strong><br>
+                                <small>Parameters will appear here automatically</small>
                             </div>
                         </div>
 
@@ -35,10 +42,19 @@
 
                     <!-- Preview Panel -->
                     <div class="col-md-5">
-                        <h6 class="mb-3">Pattern Preview</h6>
+                        <h6 class="mb-3">
+                            <i class="bi bi-eye"></i> Pattern Preview
+                        </h6>
                         <div class="text-center mb-3">
-                            <img id="chessboard-modal-preview" src="/api/pattern_image?pattern_type=standard&corner_x=11&corner_y=8&square_size=0.020&pixel_per_square=20&border_pixels=0" 
-                                 alt="Pattern Preview" class="img-fluid border rounded" style="max-height: 180px;" />
+                            <div id="pattern-preview-container">
+                                <div class="preview-placeholder text-muted p-4" style="border: 2px dashed #dee2e6; border-radius: 8px;">
+                                    <i class="bi bi-image fs-1"></i><br>
+                                    <small>Preview will appear<br>when pattern is configured</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="pattern-info-display" class="small text-muted">
+                            <!-- Pattern information will be displayed here -->
                         </div>
                     </div>
                 </div>
@@ -77,7 +93,7 @@
                     </div>
 
                     <div class="d-grid">
-                        <button type="button" class="btn btn-success" id="download-pattern-btn">
+                        <button type="button" class="btn btn-success" id="download-pattern-btn" disabled>
                             <i class="bi bi-download"></i> Generate & Download Pattern
                         </button>
                     </div>
@@ -85,8 +101,14 @@
 
             </div>
             <div class="modal-footer">
+                <div class="text-start flex-grow-1">
+                    <small class="text-muted">
+                        <i class="bi bi-lightbulb"></i> 
+                        New patterns added to the system will appear automatically
+                    </small>
+                </div>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary btn-apply-config">Apply Configuration</button>
+                <button type="button" class="btn btn-primary btn-apply-config" disabled>Apply Configuration</button>
             </div>
         </div>
     </div>

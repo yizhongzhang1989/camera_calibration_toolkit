@@ -7,11 +7,8 @@ class ChessboardConfig {
     constructor(options = {}) {
         console.log('ChessboardConfig constructor called with options:', options);
         
-        // Default configuration
-        this.config = {
-            patternType: '',
-            parameters: {}
-        };
+        // Store complete pattern configuration as JSON
+        this.patternConfigJSON = null;
         
         // Available pattern configurations (loaded from API)
         this.patternConfigurations = {};
@@ -31,6 +28,9 @@ class ChessboardConfig {
             console.log('📡 Loading pattern configurations from API...');
             await this.loadPatternConfigurations();
             
+            // Ensure we have a default pattern type if none is set
+            await this.ensureDefaultPattern();
+            
             if (!this.eventListenersInitialized) {
                 console.log('👂 Initializing event listeners...');
                 this.initializeEventListeners();
@@ -39,7 +39,7 @@ class ChessboardConfig {
             
             // Load from session storage if available
             console.log('💾 Loading from session storage...');
-            this.loadFromSession();
+            await this.loadFromSession();
             
             // Initial display update
             console.log('🖼️ Updating initial display...');
@@ -78,8 +78,8 @@ class ChessboardConfig {
                 
                 console.log('Loaded pattern configurations:', this.patternConfigurations);
                 
-                // Populate pattern type dropdown
-                this.populatePatternTypeDropdown();
+                // Pattern type selection is now handled by the modal
+                console.log('📋 Pattern configurations ready for modal-based selection');
                 
                 return true;
             } else {
@@ -88,25 +88,147 @@ class ChessboardConfig {
         } catch (error) {
             console.error('Error loading pattern configurations:', error);
             
-            // Fallback to minimal configuration
-            this.patternConfigurations = {
-                standard: {
-                    name: 'Standard Chessboard',
-                    description: 'Traditional black and white checkerboard',
-                    icon: 'bi-grid-3x3-gap',
-                    parameters: {
-                        width: { type: 'integer', default: 11, min: 3, max: 20, label: 'Corners (Width)' },
-                        height: { type: 'integer', default: 8, min: 3, max: 20, label: 'Corners (Height)' },
-                        square_size: { type: 'float', default: 0.020, min: 0.001, max: 1.0, step: 0.001, label: 'Square Size (meters)' }
-                    }
-                }
-            };
-            
-            this.populatePatternTypeDropdown();
+            // Show error state instead of hardcoded fallback
+            this.patternConfigurations = {};
+            this.showAPIError(error);
             return false;
         }
     }
+
+    // Show API error state
+    /**
+     * Apply dynamic pattern-specific validation based on API metadata
+     * This replaces hardcoded validation rules with dynamic ones from the API
+     */
+    applyDynamicPatternValidation(patternJSON) {
+        if (!patternJSON || !patternJSON.pattern_id) return;
+        
+        const currentPatternConfig = this.patternConfigurations[patternJSON.pattern_id];
+        if (!currentPatternConfig) return;
+
+        // Get pattern metadata for validation rules
+        const patternMetadata = currentPatternConfig.metadata || {};
+        const validationRules = patternMetadata.validation_rules || {};
+
+        console.log(`🔍 Applying dynamic validation for ${patternJSON.pattern_id}:`, validationRules);
+
+        // Apply parameter relationship constraints
+        if (validationRules.parameter_relationships) {
+            for (const relationship of validationRules.parameter_relationships) {
+                this.applyParameterRelationship(patternJSON, relationship);
+            }
+        }
+
+        // Apply parameter range constraints
+        if (validationRules.parameter_ranges) {
+            for (const [paramName, range] of Object.entries(validationRules.parameter_ranges)) {
+                this.applyParameterRange(patternJSON, paramName, range);
+            }
+        }
+
+        // Apply default value corrections
+        if (validationRules.default_corrections) {
+            for (const [paramName, defaultValue] of Object.entries(validationRules.default_corrections)) {
+                this.applyDefaultCorrection(patternJSON, paramName, defaultValue);
+            }
+        }
+    }
+
+    /**
+     * Apply parameter relationship constraints (e.g., square_size > marker_size)
+     */
+    applyParameterRelationship(patternJSON, relationship) {
+        const { param1, param2, constraint, fix_values } = relationship;
+        
+        if (!patternJSON.parameters[param1] || !patternJSON.parameters[param2]) return;
+
+        const value1 = patternJSON.parameters[param1];
+        const value2 = patternJSON.parameters[param2];
+
+        let constraintMet = false;
+        switch (constraint) {
+            case 'greater_than':
+                constraintMet = value1 > value2;
+                break;
+            case 'less_than':
+                constraintMet = value1 < value2;
+                break;
+            case 'equal':
+                constraintMet = value1 === value2;
+                break;
+        }
+
+        if (!constraintMet && fix_values) {
+            console.warn(`⚠️ Parameter relationship violation: ${param1} ${constraint} ${param2}, applying fix...`);
+            if (fix_values[param1] !== undefined) {
+                patternJSON.parameters[param1] = fix_values[param1];
+            }
+            if (fix_values[param2] !== undefined) {
+                patternJSON.parameters[param2] = fix_values[param2];
+            }
+        }
+    }
+
+    /**
+     * Apply parameter range constraints
+     */
+    applyParameterRange(patternJSON, paramName, range) {
+        if (!patternJSON.parameters[paramName]) return;
+
+        const value = patternJSON.parameters[paramName];
+        const { min, max, default_value } = range;
+
+        if ((min !== undefined && value < min) || (max !== undefined && value > max)) {
+            console.warn(`⚠️ Parameter ${paramName} out of range [${min}, ${max}], using default: ${default_value}`);
+            patternJSON.parameters[paramName] = default_value;
+        }
+    }
+
+    /**
+     * Apply default value corrections for invalid parameters
+     */
+    applyDefaultCorrection(patternJSON, paramName, defaultValue) {
+        if (!patternJSON.parameters[paramName] || patternJSON.parameters[paramName] < 0) {
+            console.warn(`⚠️ Invalid ${paramName}, using default: ${defaultValue}`);
+            patternJSON.parameters[paramName] = defaultValue;
+        }
+    }
+
+    showAPIError(error, context = 'API operation') {
+        console.error('🚨 API Error - showing error state');
+        
+        const selectElement = document.getElementById('pattern-type-select');
+        if (selectElement) {
+            selectElement.innerHTML = '<option value="">❌ Failed to load patterns</option>';
+            selectElement.disabled = true;
+        }
+        
+        const errorMsg = document.createElement('div');
+        errorMsg.className = 'alert alert-danger mt-2';
+        errorMsg.innerHTML = `
+            <strong>Pattern Loading Failed:</strong> ${error.message}<br>
+            <small>Please refresh the page or check your connection.</small>
+        `;
+        
+        const container = selectElement?.parentNode;
+        if (container && !container.querySelector('.alert-danger')) {
+            container.appendChild(errorMsg);
+        }
+    }
     
+    async ensureDefaultPattern() {
+        console.log('🔍 Ensuring default pattern JSON is set...');
+        
+        // If we already have a pattern configuration JSON, we're good
+        if (this.patternConfigJSON && typeof this.patternConfigJSON === 'object') {
+            console.log('✅ Pattern configuration JSON already set:', this.patternConfigJSON);
+            return;
+        }
+        
+        console.log('📥 No pattern configuration found, loading default...');
+        await this.loadDefaultPatternJSON();
+    }
+
     // Populate pattern type dropdown
     populatePatternTypeDropdown() {
         console.log('🔄 Starting populatePatternTypeDropdown');
@@ -124,10 +246,21 @@ class ChessboardConfig {
         console.log('📝 Current select element innerHTML before:', selectElement.innerHTML);
         console.log('🔢 Current options count:', selectElement.children.length);
         
-        // Clear existing options except the first one
-        while (selectElement.children.length > 1) {
-            console.log('🗑️ Removing option:', selectElement.lastChild.textContent);
-            selectElement.removeChild(selectElement.lastChild);
+        // Clear ALL existing options (including placeholder)
+        selectElement.innerHTML = '';
+        
+        // Determine which pattern should be selected by default
+        let defaultPatternType = null;
+        const patternTypes = Object.keys(this.patternConfigurations);
+        
+        if (this.config.patternType && this.patternConfigurations[this.config.patternType]) {
+            // Use current pattern type if it exists
+            defaultPatternType = this.config.patternType;
+            console.log('🎯 Using current pattern type as default:', defaultPatternType);
+        } else if (patternTypes.length > 0) {
+            // Use first available pattern as default
+            defaultPatternType = patternTypes[0];
+            console.log('🎯 Using first available pattern as default:', defaultPatternType);
         }
         
         // Add options for each pattern type
@@ -136,8 +269,21 @@ class ChessboardConfig {
             const option = document.createElement('option');
             option.value = patternType;
             option.textContent = config.name;
+            
+            // Mark default pattern as selected
+            if (patternType === defaultPatternType) {
+                option.selected = true;
+                console.log('✅ Set as selected:', patternType);
+            }
+            
             selectElement.appendChild(option);
             console.log('✅ Option added successfully');
+        }
+        
+        // Update config to match the selected pattern
+        if (defaultPatternType) {
+            this.config.patternType = defaultPatternType;
+            console.log('🔄 Updated config.patternType to:', defaultPatternType);
         }
         
         console.log('🎉 Pattern type dropdown populated with', Object.keys(this.patternConfigurations).length, 'options');
@@ -189,14 +335,35 @@ class ChessboardConfig {
             return;
         }
         
-        console.log('✅ Valid pattern type, updating config');
-        this.config.patternType = patternType;
-        console.log('📋 Pattern config:', this.patternConfigurations[patternType]);
+        console.log('✅ Valid pattern type, creating default JSON config');
+        
+        // Create a default JSON configuration for this pattern type
+        const patternConfig = this.patternConfigurations[patternType];
+        const defaultParameters = {};
+        
+        // Build default parameters
+        if (patternConfig.parameters) {
+            for (const [paramName, paramInfo] of Object.entries(patternConfig.parameters)) {
+                defaultParameters[paramName] = paramInfo.default || 0;
+            }
+        }
+        
+        // Set the JSON configuration
+        this.patternConfigJSON = {
+            pattern_id: patternConfig.id || patternType,
+            name: patternConfig.name || patternType,
+            description: patternConfig.description || `${patternType} calibration pattern`,
+            is_planar: true,
+            parameters: defaultParameters
+        };
+        
+        console.log('📋 Created default pattern JSON:', this.patternConfigJSON);
         
         this.generateConfigurationForm(patternType);
         
         console.log('🖼️ Calling updateModalPreview...');
         this.updateModalPreview();
+        this.updateModalDescription();
         console.log('✅ handlePatternTypeChange completed');
     }
     
@@ -392,6 +559,7 @@ class ChessboardConfig {
                 this.config.parameters[paramName] = value;
                 console.log('Current config:', this.config);
                 this.updateModalPreview();
+                this.updateModalDescription();
             });
         });
     }
@@ -400,62 +568,89 @@ class ChessboardConfig {
         console.log('Modal shown, loading current config');
         this.loadConfigToModal();
         this.updateModalPreview();
+        this.updateModalDescription();
     }
     
-    loadFromSession() {
+    async loadFromSession() {
         try {
-            const saved = sessionStorage.getItem('chessboard_config');
+            const saved = sessionStorage.getItem('chessboard_pattern_json');
             if (saved) {
-                const savedConfig = JSON.parse(saved);
-                this.config = { ...this.config, ...savedConfig };
-                console.log('Loaded config from session:', this.config);
+                this.patternConfigJSON = JSON.parse(saved);
+                console.log('✅ Loaded pattern JSON from session:', this.patternConfigJSON);
+                return;
             }
         } catch (error) {
-            console.warn('Could not load chessboard config from session:', error);
+            console.warn('Could not load pattern JSON from session:', error);
+        }
+        
+        // If no session data, get default pattern from API
+        await this.loadDefaultPatternJSON();
+    }
+    
+    async loadDefaultPatternJSON() {
+        try {
+            console.log('🎯 Getting default pattern configuration from API...');
+            const response = await fetch('/api/default_pattern_config');
+            const data = await response.json();
+            
+            if (data.success) {
+                this.patternConfigJSON = data.pattern_config;
+                console.log('✅ Loaded default pattern JSON:', this.patternConfigJSON);
+            } else {
+                throw new Error(data.error || 'Failed to get default pattern');
+            }
+        } catch (error) {
+            console.error('❌ Failed to load default pattern:', error);
+            // Fallback to hardcoded default
+            this.patternConfigJSON = {
+                pattern_id: 'standard_chessboard',
+                name: 'Standard Chessboard',
+                description: 'Traditional black and white checkerboard pattern',
+                is_planar: true,
+                parameters: {
+                    width: 11,
+                    height: 8,
+                    square_size: 0.025
+                }
+            };
+            console.log('🔧 Using fallback default pattern:', this.patternConfigJSON);
         }
     }
 
     saveToSession() {
         try {
-            sessionStorage.setItem('chessboard_config', JSON.stringify(this.config));
+            if (this.patternConfigJSON) {
+                sessionStorage.setItem('chessboard_pattern_json', JSON.stringify(this.patternConfigJSON));
+                console.log('💾 Saved pattern JSON to session');
+            }
         } catch (error) {
-            console.warn('Could not save chessboard config to session:', error);
+            console.warn('Could not save pattern JSON to session:', error);
         }
     }
     
     loadConfigToModal() {
-        console.log('loadConfigToModal called with config:', this.config);
+        console.log('loadConfigToModal called with patternConfigJSON:', this.patternConfigJSON);
         
-        if (!this.config.patternType) return;
+        // Since we're using the PatternSelectionModal class, this method might not be needed
+        // But if we need to load current config into modal, we'll work with JSON
+        if (!this.patternConfigJSON || !this.patternConfigJSON.pattern_id) {
+            console.log('No pattern configuration JSON available for modal');
+            return;
+        }
         
-        // Set pattern type dropdown
+        // Set pattern type dropdown if it exists
         const patternTypeSelect = document.getElementById('pattern-type-select');
         if (patternTypeSelect) {
-            patternTypeSelect.value = this.config.patternType;
-            console.log('Set pattern type dropdown to:', this.config.patternType);
+            patternTypeSelect.value = this.patternConfigJSON.pattern_id;
+            console.log('Set pattern type dropdown to:', this.patternConfigJSON.pattern_id);
         }
         
-        // Generate the form for the current pattern type
-        this.generateConfigurationForm(this.config.patternType);
-        
-        // Load parameter values after the form is generated
-        if (this.config.parameters) {
-            console.log('Loading parameter values:', this.config.parameters);
-            for (const [paramName, value] of Object.entries(this.config.parameters)) {
-                const fieldId = `modal-${this.config.patternType}-${paramName.replace(/_/g, '-')}`;
-                const element = document.getElementById(fieldId);
-                if (element) {
-                    element.value = value;
-                    console.log(`Set ${paramName} field to ${value}`);
-                } else {
-                    console.warn(`Could not find element for parameter: ${paramName}, fieldId: ${fieldId}`);
-                }
-            }
-        }
+        // The modal should handle its own parameter loading via PatternSelectionModal
+        console.log('Modal parameter loading delegated to PatternSelectionModal class');
     }
     
     applyConfiguration() {
-        console.log('🔧 Applying configuration:', this.config);
+        console.log('🔧 Applying configuration with patternConfigJSON:', this.patternConfigJSON);
         
         this.saveToSession();
         console.log('💾 Configuration saved to session');
@@ -471,6 +666,22 @@ class ChessboardConfig {
         }
     }
     
+    /**
+     * Set pattern configuration from complete JSON
+     */
+    setPatternConfigJSON(patternConfigJSON) {
+        console.log('🔧 Setting pattern config JSON:', patternConfigJSON);
+        this.patternConfigJSON = patternConfigJSON;
+        
+        // Save to session storage
+        this.saveToSession();
+        
+        // Update displays
+        this.updateDisplay();
+        
+        console.log('✅ Pattern config JSON set successfully');
+    }
+    
     updateDisplay() {
         // Update the main chessboard card display
         this.updatePatternImage();
@@ -479,18 +690,25 @@ class ChessboardConfig {
     
     updatePatternImage() {
         console.log('🖼️ updatePatternImage called');
-        console.log('📊 Current config:', this.config);
+        console.log('📊 Current patternConfigJSON:', this.patternConfigJSON);
         
         const img = document.getElementById('chessboard-preview-img');
         console.log('🎯 Preview img element:', img);
         
-        if (!img || !this.config.patternType) {
-            console.warn('⚠️ Cannot update pattern image - img:', img, 'patternType:', this.config.patternType);
+        if (!img) {
+            console.warn('⚠️ Cannot update pattern image - img element not found');
+            return;
+        }
+        
+        const patternJSON = this.getPatternJSON();
+        if (!patternJSON) {
+            console.warn('⚠️ Cannot update pattern image - no pattern configuration');
+            img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5vIENvbmZpZ3VyYXRpb248L3RleHQ+PC9zdmc+';
             return;
         }
         
         const params = {
-            pattern_json: JSON.stringify(this.getPatternJSON()),
+            pattern_json: JSON.stringify(patternJSON),
             pixel_per_square: 20,
             border_pixels: 0,
             t: Date.now() // Cache busting
@@ -516,40 +734,83 @@ class ChessboardConfig {
         const typeDisplay = document.getElementById('pattern-type-display');
         const specsDisplay = document.getElementById('pattern-specs-display');
         
-        if (!typeDisplay || !specsDisplay || !this.config.patternType) return;
+        if (!typeDisplay || !specsDisplay) return;
         
-        const patternConfig = this.patternConfigurations[this.config.patternType];
-        if (patternConfig) {
-            typeDisplay.textContent = patternConfig.name;
+        const patternJSON = this.getPatternJSON();
+        if (!patternJSON) {
+            typeDisplay.textContent = 'No Pattern';
+            specsDisplay.textContent = 'Please configure a pattern';
+            return;
+        }
+        
+        // Use the pattern name from the JSON configuration
+        typeDisplay.textContent = patternJSON.name || 'Unknown Pattern';
+        
+        // Generate specs display from pattern parameters
+        let specs = [];
+        if (patternJSON.parameters) {
+            // Try to get parameter metadata from API if available
+            const patternConfig = this.patternConfigurations[patternJSON.pattern_id];
             
-            // Generate specs display
-            let specs = [];
-            if (this.config.parameters) {
-                for (const [paramName, value] of Object.entries(this.config.parameters)) {
+            for (const [paramName, value] of Object.entries(patternJSON.parameters)) {
+                let displayValue = value;
+                let label = paramName;
+                
+                // Try to get nice label from API metadata
+                if (patternConfig && patternConfig.parameters) {
                     const paramConfig = patternConfig.parameters[paramName];
                     if (paramConfig) {
-                        specs.push(`${paramConfig.label || paramName}: ${value}`);
+                        label = paramConfig.label || paramName;
+                        
+                        // Format value based on parameter type
+                        if (paramConfig.type === 'float' && typeof value === 'number') {
+                            displayValue = value.toFixed(3);
+                            // Add unit if it's a size parameter
+                            if (paramName.includes('size')) {
+                                displayValue += ' m';
+                            }
+                        }
                     }
                 }
+                
+                specs.push(`${label}: ${displayValue}`);
             }
-            specsDisplay.textContent = specs.join(', ');
         }
+        
+        specsDisplay.textContent = specs.length > 0 ? specs.join(', ') : 'No parameters configured';
     }
     
     updateModalPreview() {
         console.log('🖼️ updateModalPreview called');
-        console.log('📊 Current config:', this.config);
+        console.log('📊 Current patternConfigJSON:', this.patternConfigJSON);
         
-        const img = document.getElementById('chessboard-modal-preview');
-        console.log('🎯 Modal preview img element:', img);
+        // Try to use the new modal structure first
+        const previewContainer = document.getElementById('pattern-preview-container');
+        const legacyImg = document.getElementById('chessboard-modal-preview');
         
-        if (!img || !this.config.patternType) {
-            console.warn('⚠️ Cannot update modal preview - img:', img, 'patternType:', this.config.patternType);
+        console.log('🎯 Preview container:', previewContainer);
+        console.log('🎯 Legacy img element:', legacyImg);
+        
+        if (!previewContainer && !legacyImg) {
+            console.warn('⚠️ Cannot update modal preview - no preview elements found');
+            return;
+        }
+        
+        const patternJSON = this.getPatternJSON();
+        if (!patternJSON) {
+            console.warn('⚠️ Cannot update modal preview - no pattern configuration');
+            const noImageSrc = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5vIENvbmZpZ3VyYXRpb248L3RleHQ+PC9zdmc+';
+            
+            if (previewContainer) {
+                previewContainer.innerHTML = `<img src="${noImageSrc}" alt="No Configuration" class="img-fluid border rounded" style="max-height: 200px;">`;
+            } else if (legacyImg) {
+                legacyImg.src = noImageSrc;
+            }
             return;
         }
         
         const params = {
-            pattern_json: JSON.stringify(this.getPatternJSON()),
+            pattern_json: JSON.stringify(patternJSON),
             pixel_per_square: 20,
             border_pixels: 0,
             t: Date.now() // Cache busting
@@ -558,75 +819,124 @@ class ChessboardConfig {
         const url = `/api/pattern_image?${new URLSearchParams(params)}`;
         console.log('🔗 Generated URL (with cache-busting):', url);
         
-        img.src = url;
-        console.log('🔄 Image src set to:', img.src);
+        if (previewContainer) {
+            // Use new modal structure
+            previewContainer.innerHTML = `
+                <img src="${url}" 
+                     alt="Pattern Preview" 
+                     class="img-fluid border rounded" 
+                     style="max-height: 200px;"
+                     onload="console.log('✅ Modal preview image loaded successfully')"
+                     onerror="console.error('❌ Failed to load modal preview image:', '${url}'); this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5vIEltYWdlPC90ZXh0Pjwvc3ZnPg==';">
+            `;
+        } else if (legacyImg) {
+            // Use legacy img element
+            legacyImg.src = url;
+            legacyImg.onload = () => {
+                console.log('✅ Modal preview image loaded successfully');
+            };
+            legacyImg.onerror = () => {
+                console.error('❌ Failed to load modal preview image:', url);
+            };
+        }
+    }
+    
+    updateModalDescription() {
+        console.log('📝 updateModalDescription called');
+        const infoDisplay = document.getElementById('pattern-info-display');
         
-        img.onload = () => {
-            console.log('✅ Modal preview image loaded successfully');
-        };
+        if (!infoDisplay) {
+            console.log('⚠️ Cannot update modal description - element not found');
+            return;
+        }
         
-        img.onerror = () => {
-            console.error('❌ Failed to load modal preview image:', url);
-        };
+        const patternJSON = this.getPatternJSON();
+        if (!patternJSON) {
+            console.log('⚠️ Cannot update modal description - no pattern configuration');
+            infoDisplay.innerHTML = '<em>No pattern configured</em>';
+            return;
+        }
+        
+        const patternConfig = this.patternConfigurations[patternJSON.pattern_id];
+        if (!patternConfig) {
+            console.log('⚠️ Cannot update modal description - no pattern config found in API');
+            infoDisplay.innerHTML = `
+                <div class="pattern-summary">
+                    <div class="mb-2"><strong>${patternJSON.name || 'Unknown Pattern'}</strong></div>
+                    <div class="small text-muted"><em>No metadata available</em></div>
+                </div>
+            `;
+            return;
+        }
+        
+        // Build description from current parameters
+        let descriptionParts = [];
+        
+        if (patternJSON.parameters) {
+            for (const [paramName, value] of Object.entries(patternJSON.parameters)) {
+                // Find parameter config - handle both array and object formats
+                let paramConfig = null;
+                
+                if (Array.isArray(patternConfig.parameters)) {
+                    paramConfig = patternConfig.parameters.find(p => p.name === paramName);
+                } else {
+                    paramConfig = patternConfig.parameters[paramName];
+                }
+                
+                if (paramConfig) {
+                    const label = paramConfig.label || paramName;
+                    // Format value based on parameter type
+                    let displayValue = value;
+                    if (paramConfig.type === 'float' && typeof value === 'number') {
+                        displayValue = value.toFixed(3);
+                        // Add unit if it's a size parameter
+                        if (paramName.includes('size')) {
+                            displayValue += ' m';
+                        }
+                    }
+                    descriptionParts.push(`<strong>${label}:</strong> ${displayValue}`);
+                }
+            }
+        }
+        
+        // Update the display
+        const descriptionHTML = descriptionParts.length > 0 
+            ? descriptionParts.join('<br>') 
+            : '<em>No parameters configured</em>';
+            
+        infoDisplay.innerHTML = `
+            <div class="pattern-summary">
+                <div class="mb-2"><strong>${patternConfig.name}</strong></div>
+                <div class="small text-muted">${descriptionHTML}</div>
+            </div>
+        `;
+        
+        console.log('📝 Updated modal description:', descriptionParts.join(', '));
     }
     
     // Create a valid JSON pattern object for the backend
     getPatternJSON() {
-        if (!this.config.patternType || !this.config.parameters) {
-            // Return default standard chessboard pattern
-            return {
-                pattern_id: 'standard_chessboard',
-                name: 'Standard Chessboard',
-                description: 'Traditional black and white checkerboard pattern',
-                is_planar: true,
-                parameters: {
-                    width: 11,
-                    height: 8,
-                    square_size: 0.025
-                }
-            };
+        // If we already have a complete JSON configuration, return it directly
+        if (this.patternConfigJSON && typeof this.patternConfigJSON === 'object') {
+            console.log('🎯 Using existing patternConfigJSON:', this.patternConfigJSON);
+            return this.patternConfigJSON;
         }
-
-        // Create the base pattern object using configuration data
-        const patternConfig = this.patternConfigurations[this.config.patternType];
         
-        // Map frontend pattern types to backend pattern IDs
-        const patternIdMapping = {
-            'standard': 'standard_chessboard',
-            'charuco': 'charuco_board'
-        };
-        
-        const patternJSON = {
-            pattern_id: patternIdMapping[this.config.patternType] || this.config.patternType,
-            name: patternConfig ? patternConfig.name : this.config.patternType,
-            description: patternConfig ? patternConfig.description : `${this.config.patternType} calibration pattern`,
-            is_planar: true,
-            parameters: {}
-        };
-
-        // Copy all parameters from the current configuration
-        for (const [paramName, value] of Object.entries(this.config.parameters)) {
-            // Ensure numeric values are properly converted
-            if (typeof value === 'string' && !isNaN(value)) {
-                patternJSON.parameters[paramName] = paramName.includes('_id') ? parseInt(value) : parseFloat(value);
-            } else {
-                patternJSON.parameters[paramName] = value;
-            }
-        }
-
-        return patternJSON;
+        console.log('⚠️ No patternConfigJSON available, returning null');
+        return null;
     }
     
     async downloadPattern() {
-        if (!this.config.patternType) {
+        const patternJSON = this.getPatternJSON();
+        if (!patternJSON) {
             alert('Please select and configure a pattern type first.');
             return;
         }
         
-        console.log('Downloading pattern with config:', this.config);
+        console.log('Downloading pattern with JSON config:', patternJSON);
         
         const params = {
-            pattern_json: JSON.stringify(this.getPatternJSON()),
+            pattern_json: JSON.stringify(patternJSON),
             pixel_per_square: 100,  // Higher resolution for printing
             border_pixels: 50       // Border for printing
         };
@@ -643,7 +953,7 @@ class ChessboardConfig {
             const downloadUrl = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = downloadUrl;
-            a.download = `calibration_pattern_${this.config.patternType}.png`;
+            a.download = `calibration_pattern_${patternJSON.pattern_id || 'unknown'}.png`;
             document.body.appendChild(a);
             a.click();
             window.URL.revokeObjectURL(downloadUrl);

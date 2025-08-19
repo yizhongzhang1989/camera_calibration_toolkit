@@ -62,6 +62,7 @@ class IntrinsicCalibrator:
         self.images = None                    # List of image arrays
         self.image_paths = None              # List of image file paths  
         self.image_points = None             # List of detected 2D points for each image
+        self.point_ids = None                # List of detected point IDs for each image (for ChArUco etc.)
         self.object_points = None            # List of corresponding 3D object points
         self.image_size = None               # Image size (width, height)
         
@@ -171,6 +172,7 @@ class IntrinsicCalibrator:
             raise ValueError("Images and calibration pattern must be set first")
         
         self.image_points = []
+        self.point_ids = []
         self.object_points = []
         successful_detections = 0
         
@@ -182,6 +184,7 @@ class IntrinsicCalibrator:
             
             if success:
                 self.image_points.append(img_pts)
+                self.point_ids.append(point_ids)  # Store point IDs for visualization
                 
                 # Generate corresponding object points
                 if self.calibration_pattern.is_planar:
@@ -522,9 +525,14 @@ class IntrinsicCalibrator:
             # Create copy of original image
             debug_img = img.copy()
             
+            # Get point IDs for this image if available
+            current_point_ids = None
+            if self.point_ids and i < len(self.point_ids):
+                current_point_ids = self.point_ids[i]
+            
             # Draw pattern-specific visualization
             if hasattr(self.calibration_pattern, 'draw_corners'):
-                debug_img = self.calibration_pattern.draw_corners(debug_img, corners)
+                debug_img = self.calibration_pattern.draw_corners(debug_img, corners, current_point_ids)
             else:
                 # Fallback: draw circles at corner locations
                 corners_2d = corners.reshape(-1, 2).astype(int)
