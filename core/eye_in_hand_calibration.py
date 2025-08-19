@@ -976,12 +976,8 @@ class EyeInHandCalibrator:
             print(f"   Convergence tolerance: {ftol_rel}")
         
         # Get pattern parameters from calibration pattern
-        if not hasattr(self.calibration_pattern, 'width') or not hasattr(self.calibration_pattern, 'height') or not hasattr(self.calibration_pattern, 'square_size'):
-            raise ValueError("Optimization requires a calibration pattern with width, height, and square_size attributes")
-            
-        XX = self.calibration_pattern.width
-        YY = self.calibration_pattern.height 
-        L = self.calibration_pattern.square_size
+        if self.calibration_pattern is None:
+            raise ValueError("Optimization requires a calibration pattern to be set")
         
         try:
             # Find the image with minimum reprojection error as optimization starting point
@@ -1003,11 +999,11 @@ class EyeInHandCalibrator:
                 
                 # Optimize the single target2base matrix
                 optimized_target2base = self._optimize_target2base_matrix(
-                    best_target2base, best_cam2end, XX, YY, L, ftol_rel, verbose)
+                    best_target2base, best_cam2end, ftol_rel, verbose)
                 
                 # Calculate error with optimized target2base
                 error_target2base = self._calculate_optimization_error(
-                    best_cam2end, optimized_target2base, XX, YY, L)
+                    best_cam2end, optimized_target2base)
                 
                 if error_target2base < best_error:
                     best_target2base = optimized_target2base
@@ -1017,11 +1013,11 @@ class EyeInHandCalibrator:
                 
                 # Optimize cam2end matrix  
                 optimized_cam2end = self._optimize_cam2end_matrix(
-                    best_cam2end, best_target2base, XX, YY, L, ftol_rel, verbose)
+                    best_cam2end, best_target2base, ftol_rel, verbose)
                 
                 # Calculate error with optimized cam2end
                 error_cam2end = self._calculate_optimization_error(
-                    optimized_cam2end, best_target2base, XX, YY, L)
+                    optimized_cam2end, best_target2base)
                 
                 if error_cam2end < best_error:
                     best_cam2end = optimized_cam2end
@@ -1053,17 +1049,13 @@ class EyeInHandCalibrator:
                 print(f"❌ Optimization failed: {e}")
             return self.rms_error
     
-    def _calculate_optimization_error(self, cam2end_matrix: np.ndarray, target2base_matrix: np.ndarray,
-                                    XX: int, YY: int, L: float) -> float:
+    def _calculate_optimization_error(self, cam2end_matrix: np.ndarray, target2base_matrix: np.ndarray) -> float:
         """
         Calculate RMS reprojection error for given transformation matrices.
         
         Args:
             cam2end_matrix: Camera to end-effector transformation matrix
             target2base_matrix: Target to base transformation matrix
-            XX: Number of chessboard corners along x-axis
-            YY: Number of chessboard corners along y-axis
-            L: Size of chessboard squares in meters
             
         Returns:
             float: RMS reprojection error
@@ -1136,16 +1128,13 @@ class EyeInHandCalibrator:
             self.rms_error = float('inf')
     
     def _optimize_target2base_matrix(self, initial_target2base: np.ndarray, cam2end_matrix: np.ndarray,
-                                   XX: int, YY: int, L: float, ftol_rel: float, verbose: bool) -> np.ndarray:
+                                   ftol_rel: float, verbose: bool) -> np.ndarray:
         """
         Optimize the target2base matrix using NLopt.
         
         Args:
             initial_target2base: Initial target2base transformation matrix
             cam2end_matrix: Fixed camera to end-effector transformation matrix
-            XX: Number of chessboard corners along x-axis  
-            YY: Number of chessboard corners along y-axis
-            L: Size of chessboard squares in meters
             ftol_rel: Relative tolerance for optimization
             verbose: Whether to print detailed information
             
@@ -1167,7 +1156,7 @@ class EyeInHandCalibrator:
             def objective(params, grad):
                 x, y, z, roll, pitch, yaw = params
                 target2base_matrix = xyz_rpy_to_matrix([x, y, z, roll, pitch, yaw])
-                return self._calculate_optimization_error(cam2end_matrix, target2base_matrix, XX, YY, L)
+                return self._calculate_optimization_error(cam2end_matrix, target2base_matrix)
             
             opt.set_min_objective(objective)
             opt.set_ftol_rel(ftol_rel)
@@ -1193,16 +1182,13 @@ class EyeInHandCalibrator:
             return initial_target2base
     
     def _optimize_cam2end_matrix(self, initial_cam2end: np.ndarray, target2base_matrix: np.ndarray,
-                               XX: int, YY: int, L: float, ftol_rel: float, verbose: bool) -> np.ndarray:
+                               ftol_rel: float, verbose: bool) -> np.ndarray:
         """
         Optimize the cam2end matrix using NLopt.
         
         Args:
             initial_cam2end: Initial camera to end-effector transformation matrix
             target2base_matrix: Fixed target to base transformation matrix
-            XX: Number of chessboard corners along x-axis
-            YY: Number of chessboard corners along y-axis  
-            L: Size of chessboard squares in meters
             ftol_rel: Relative tolerance for optimization
             verbose: Whether to print detailed information
             
@@ -1224,7 +1210,7 @@ class EyeInHandCalibrator:
             def objective(params, grad):
                 x, y, z, roll, pitch, yaw = params
                 cam2end_matrix = xyz_rpy_to_matrix([x, y, z, roll, pitch, yaw])
-                return self._calculate_optimization_error(cam2end_matrix, target2base_matrix, XX, YY, L)
+                return self._calculate_optimization_error(cam2end_matrix, target2base_matrix)
             
             opt.set_min_objective(objective)
             opt.set_ftol_rel(ftol_rel)
