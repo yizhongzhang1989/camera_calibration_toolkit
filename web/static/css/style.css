@@ -951,14 +951,11 @@ body {
 }
 
 .modal-title {
-    position: absolute;
-    bottom: -40px;
-    left: 0;
-    right: 0;
-    color: white;
-    text-align: center;
-    font-size: 16px;
+    margin: 0;
+    font-size: 1.25rem;
     font-weight: 500;
+    color: #212529;
+    line-height: 1.5;
 }
 
 @keyframes fadeIn {

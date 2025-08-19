@@ -108,8 +108,33 @@ class PatternSelectionModal {
         const patternSelect = document.getElementById('pattern-type-select');
         if (!patternSelect) return;
 
-        // Clear existing options
-        patternSelect.innerHTML = '<option value="">Select a calibration pattern...</option>';
+        // Store current selection from multiple sources for reliability
+        let currentSelection = patternSelect.value;
+        
+        // Try to get current selection from global chessboard config (more reliable)
+        if (window.chessboardConfig && window.chessboardConfig.config && window.chessboardConfig.config.patternType) {
+            currentSelection = window.chessboardConfig.config.patternType;
+            console.log(`📋 Got current selection from global config: ${currentSelection}`);
+        } else {
+            console.log(`📋 Current selection from DOM: ${currentSelection}`);
+        }
+
+        // Clear existing options (no placeholder option)
+        patternSelect.innerHTML = '';
+        
+        // Determine default pattern - respect current selection if valid
+        const patternIds = Object.keys(this.availablePatterns);
+        let defaultPatternId = null;
+        
+        // First priority: use current selection if it's valid
+        if (currentSelection && this.availablePatterns[currentSelection]) {
+            defaultPatternId = currentSelection;
+            console.log(`🎯 Keeping current selection: ${defaultPatternId}`);
+        } else {
+            // Second priority: use first available pattern
+            defaultPatternId = patternIds[0] || null;
+            console.log(`🎯 Using first available as default: ${defaultPatternId}`);
+        }
 
         // Add pattern options
         Object.entries(this.availablePatterns).forEach(([patternId, config]) => {
@@ -117,10 +142,34 @@ class PatternSelectionModal {
             option.value = patternId;
             option.textContent = `${config.icon || '📐'} ${config.name}`;
             option.dataset.description = config.description;
+            
+            // Set as selected if this is the default pattern
+            if (patternId === defaultPatternId) {
+                option.selected = true;
+            }
+            
             patternSelect.appendChild(option);
         });
+        
+        // Only trigger pattern selection if we're changing to a different pattern
+        if (defaultPatternId && defaultPatternId !== currentSelection) {
+            console.log(`🔄 Changing pattern from ${currentSelection} to ${defaultPatternId}`);
+            patternSelect.value = defaultPatternId;
+            this.onPatternSelected({ target: { value: defaultPatternId } });
+        } else if (defaultPatternId === currentSelection) {
+            console.log(`✅ Keeping current pattern selection: ${defaultPatternId}`);
+            // Don't trigger onPatternSelected since the pattern hasn't changed
+            // But still enable the apply button since we have a valid pattern
+            this.selectedPattern = defaultPatternId;
+            const applyBtn = document.querySelector('.btn-apply-config');
+            if (applyBtn) {
+                applyBtn.disabled = false;
+                console.log(`🔓 Enabled apply button for existing pattern: ${defaultPatternId}`);
+            }
+        }
 
         console.log(`📋 Populated ${Object.keys(this.availablePatterns).length} pattern options`);
+        console.log(`🎯 Default pattern selected: ${defaultPatternId}`);
     }
 
     /**

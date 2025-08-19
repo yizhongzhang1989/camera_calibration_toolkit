@@ -31,6 +31,9 @@ class ChessboardConfig {
             console.log('📡 Loading pattern configurations from API...');
             await this.loadPatternConfigurations();
             
+            // Ensure we have a default pattern type if none is set
+            this.ensureDefaultPattern();
+            
             if (!this.eventListenersInitialized) {
                 console.log('👂 Initializing event listeners...');
                 this.initializeEventListeners();
@@ -213,6 +216,49 @@ class ChessboardConfig {
             container.appendChild(errorMsg);
         }
     }
+    
+    ensureDefaultPattern() {
+        console.log('🔍 Ensuring default pattern is set...');
+        console.log('🎯 Current pattern type:', this.config.patternType);
+        
+        const availablePatterns = Object.keys(this.patternConfigurations);
+        
+        if (!this.config.patternType && availablePatterns.length > 0) {
+            // Set first available pattern as default
+            this.config.patternType = availablePatterns[0];
+            console.log('📌 Set default pattern type:', this.config.patternType);
+            
+            // Initialize default parameters for this pattern
+            this.initializeDefaultParameters();
+        } else if (this.config.patternType) {
+            console.log('✅ Pattern type already set:', this.config.patternType);
+        } else {
+            console.warn('⚠️ No patterns available for default selection');
+        }
+    }
+    
+    initializeDefaultParameters() {
+        if (!this.config.patternType || !this.patternConfigurations[this.config.patternType]) {
+            return;
+        }
+        
+        const patternConfig = this.patternConfigurations[this.config.patternType];
+        this.config.parameters = {};
+        
+        if (Array.isArray(patternConfig.parameters)) {
+            for (const param of patternConfig.parameters) {
+                this.config.parameters[param.name] = param.default;
+                console.log(`📋 Set default parameter ${param.name} = ${param.default}`);
+            }
+        } else {
+            for (const [paramName, param] of Object.entries(patternConfig.parameters)) {
+                this.config.parameters[paramName] = param.default;
+                console.log(`📋 Set default parameter ${paramName} = ${param.default}`);
+            }
+        }
+        
+        console.log('✅ Initialized default parameters:', this.config.parameters);
+    }
 
     // Populate pattern type dropdown
     populatePatternTypeDropdown() {
@@ -231,10 +277,21 @@ class ChessboardConfig {
         console.log('📝 Current select element innerHTML before:', selectElement.innerHTML);
         console.log('🔢 Current options count:', selectElement.children.length);
         
-        // Clear existing options except the first one
-        while (selectElement.children.length > 1) {
-            console.log('🗑️ Removing option:', selectElement.lastChild.textContent);
-            selectElement.removeChild(selectElement.lastChild);
+        // Clear ALL existing options (including placeholder)
+        selectElement.innerHTML = '';
+        
+        // Determine which pattern should be selected by default
+        let defaultPatternType = null;
+        const patternTypes = Object.keys(this.patternConfigurations);
+        
+        if (this.config.patternType && this.patternConfigurations[this.config.patternType]) {
+            // Use current pattern type if it exists
+            defaultPatternType = this.config.patternType;
+            console.log('🎯 Using current pattern type as default:', defaultPatternType);
+        } else if (patternTypes.length > 0) {
+            // Use first available pattern as default
+            defaultPatternType = patternTypes[0];
+            console.log('🎯 Using first available pattern as default:', defaultPatternType);
         }
         
         // Add options for each pattern type
@@ -243,8 +300,21 @@ class ChessboardConfig {
             const option = document.createElement('option');
             option.value = patternType;
             option.textContent = config.name;
+            
+            // Mark default pattern as selected
+            if (patternType === defaultPatternType) {
+                option.selected = true;
+                console.log('✅ Set as selected:', patternType);
+            }
+            
             selectElement.appendChild(option);
             console.log('✅ Option added successfully');
+        }
+        
+        // Update config to match the selected pattern
+        if (defaultPatternType) {
+            this.config.patternType = defaultPatternType;
+            console.log('🔄 Updated config.patternType to:', defaultPatternType);
         }
         
         console.log('🎉 Pattern type dropdown populated with', Object.keys(this.patternConfigurations).length, 'options');
@@ -304,6 +374,7 @@ class ChessboardConfig {
         
         console.log('🖼️ Calling updateModalPreview...');
         this.updateModalPreview();
+        this.updateModalDescription();
         console.log('✅ handlePatternTypeChange completed');
     }
     
@@ -499,6 +570,7 @@ class ChessboardConfig {
                 this.config.parameters[paramName] = value;
                 console.log('Current config:', this.config);
                 this.updateModalPreview();
+                this.updateModalDescription();
             });
         });
     }
@@ -507,6 +579,7 @@ class ChessboardConfig {
         console.log('Modal shown, loading current config');
         this.loadConfigToModal();
         this.updateModalPreview();
+        this.updateModalDescription();
     }
     
     loadFromSession() {
@@ -694,6 +767,66 @@ class ChessboardConfig {
                 console.error('❌ Failed to load modal preview image:', url);
             };
         }
+    }
+    
+    updateModalDescription() {
+        console.log('📝 updateModalDescription called');
+        const infoDisplay = document.getElementById('pattern-info-display');
+        
+        if (!infoDisplay || !this.config.patternType) {
+            console.log('⚠️ Cannot update modal description - element or pattern type missing');
+            return;
+        }
+        
+        const patternConfig = this.patternConfigurations[this.config.patternType];
+        if (!patternConfig) {
+            console.log('⚠️ Cannot update modal description - no pattern config found');
+            return;
+        }
+        
+        // Build description from current parameters
+        let descriptionParts = [];
+        
+        if (this.config.parameters) {
+            for (const [paramName, value] of Object.entries(this.config.parameters)) {
+                // Find parameter config - handle both array and object formats
+                let paramConfig = null;
+                
+                if (Array.isArray(patternConfig.parameters)) {
+                    paramConfig = patternConfig.parameters.find(p => p.name === paramName);
+                } else {
+                    paramConfig = patternConfig.parameters[paramName];
+                }
+                
+                if (paramConfig) {
+                    const label = paramConfig.label || paramName;
+                    // Format value based on parameter type
+                    let displayValue = value;
+                    if (paramConfig.type === 'float' && typeof value === 'number') {
+                        displayValue = value.toFixed(3);
+                        // Add unit if it's a size parameter
+                        if (paramName.includes('size')) {
+                            displayValue += ' m';
+                        }
+                    }
+                    descriptionParts.push(`<strong>${label}:</strong> ${displayValue}`);
+                }
+            }
+        }
+        
+        // Update the display
+        const descriptionHTML = descriptionParts.length > 0 
+            ? descriptionParts.join('<br>') 
+            : '<em>No parameters configured</em>';
+            
+        infoDisplay.innerHTML = `
+            <div class="pattern-summary">
+                <div class="mb-2"><strong>${patternConfig.name}</strong></div>
+                <div class="small text-muted">${descriptionHTML}</div>
+            </div>
+        `;
+        
+        console.log('📝 Updated modal description:', descriptionParts.join(', '));
     }
     
     // Create a valid JSON pattern object for the backend
