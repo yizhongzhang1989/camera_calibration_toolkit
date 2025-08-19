@@ -73,6 +73,7 @@ class IntrinsicCalibrator:
         # Output values and results (set as members)
         self.camera_matrix = None            # Calibrated camera matrix
         self.distortion_coefficients = None  # Calibrated distortion coefficients
+        self.distortion_model = None         # Distortion model used for calibration
         self.rvecs = None                    # Rotation vectors for each image (extrinsics)
         self.tvecs = None                    # Translation vectors for each image (extrinsics)
         self.rms_error = None                # Overall RMS reprojection error
@@ -236,6 +237,13 @@ class IntrinsicCalibrator:
             1. Set images: set_images_from_paths() or set_images_from_arrays()
             2. Set pattern: set_calibration_pattern()  
             3. Detect points: detect_pattern_points()
+            
+        Distortion Model Flags:
+            Use cv2.CALIB_* flags to control distortion models:
+            - Standard (5 coeff): no additional flags 
+            - Rational (8 coeff): cv2.CALIB_RATIONAL_MODEL
+            - Thin Prism (12 coeff): cv2.CALIB_RATIONAL_MODEL | cv2.CALIB_THIN_PRISM_MODEL
+            - Tilted (14 coeff): cv2.CALIB_RATIONAL_MODEL | cv2.CALIB_THIN_PRISM_MODEL | cv2.CALIB_TILTED_MODEL
         """
         if self.image_points is None or self.object_points is None:
             raise ValueError("Point correspondences not available. Call detect_pattern_points() first.")
@@ -287,9 +295,19 @@ class IntrinsicCalibrator:
             )
             
             if ret and mtx is not None:
+                # Determine distortion model from flags
+                distortion_model = 'standard'  # default
+                if calibration_flags & cv2.CALIB_TILTED_MODEL:
+                    distortion_model = 'tilted'
+                elif calibration_flags & cv2.CALIB_THIN_PRISM_MODEL:
+                    distortion_model = 'thin_prism'
+                elif calibration_flags & cv2.CALIB_RATIONAL_MODEL:
+                    distortion_model = 'rational'
+                
                 # Store results in class members
                 self.camera_matrix = mtx
                 self.distortion_coefficients = dist
+                self.distortion_model = distortion_model
                 self.rvecs = rvecs
                 self.tvecs = tvecs
                 self.rms_error = ret
@@ -361,6 +379,7 @@ class IntrinsicCalibrator:
                 "timestamp": __import__('datetime').datetime.now().isoformat(),
                 "image_count": len(self.image_points) if self.image_points else 0,
                 "pattern_type": self.pattern_type,
+                "distortion_model": self.distortion_model,
                 "rms_error": float(self.rms_error)
             },
             "camera_matrix": self.camera_matrix.tolist(),

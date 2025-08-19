@@ -445,8 +445,21 @@ def calibrate():
                 print("Running OpenCV calibrateCamera...")
                 print()
                 
+                # Calculate calibration flags based on distortion model
+                calibration_flags = 0
+                if distortion_model == 'rational':
+                    calibration_flags = cv2.CALIB_RATIONAL_MODEL
+                elif distortion_model == 'thin_prism':
+                    calibration_flags = cv2.CALIB_RATIONAL_MODEL | cv2.CALIB_THIN_PRISM_MODEL
+                elif distortion_model == 'tilted':
+                    calibration_flags = cv2.CALIB_RATIONAL_MODEL | cv2.CALIB_THIN_PRISM_MODEL | cv2.CALIB_TILTED_MODEL
+                # 'standard' uses default flags (0)
+                
                 # Run calibration
-                rms_error = calibrator.calibrate_camera(verbose=True)
+                rms_error = calibrator.calibrate_camera(
+                    flags=calibration_flags,
+                    verbose=True
+                )
                 
                 if rms_error > 0:
                     print()
