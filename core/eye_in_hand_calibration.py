@@ -35,9 +35,6 @@ except ImportError:
     print("Warning: nlopt not available. Optimization methods will be disabled.")
 
 from .utils import (
-    get_objpoints,
-    get_chessboard_corners,
-    find_chessboard_corners,
     xyz_rpy_to_matrix,
     matrix_to_xyz_rpy,
     inverse_transform_matrix,
@@ -319,14 +316,12 @@ class EyeInHandCalibrator:
             print(f"Error loading calibration data: {e}")
             return False
     
-    def detect_pattern_points(self, XX: int = None, YY: int = None, L: float = None) -> bool:
+    def detect_pattern_points(self, verbose: bool = False) -> bool:
         """
-        Detect calibration pattern points in all images, storing results as member variables.
+        Detect calibration pattern points in all images using modern pattern system.
         
         Args:
-            XX: Number of chessboard corners along x-axis (optional if pattern is set)
-            YY: Number of chessboard corners along y-axis (optional if pattern is set)
-            L: Size of chessboard squares in meters (optional if pattern is set)
+            verbose: Whether to print progress information
             
         Returns:
             bool: True if pattern detection completed successfully
@@ -335,60 +330,50 @@ class EyeInHandCalibrator:
             print("Error: No images loaded")
             return False
             
-        try:
-            # Get pattern parameters
-            if self.calibration_pattern is not None:
-                # Use calibration pattern if available - access attributes directly
-                if hasattr(self.calibration_pattern, 'width'):
-                    XX = XX or self.calibration_pattern.width
-                if hasattr(self.calibration_pattern, 'height'):
-                    YY = YY or self.calibration_pattern.height
-                if hasattr(self.calibration_pattern, 'square_size'):
-                    L = L or self.calibration_pattern.square_size
-                    
-                # Also check for parameters dict (alternative format)
-                if hasattr(self.calibration_pattern, 'parameters'):
-                    params = self.calibration_pattern.parameters
-                    XX = XX or params.get('width', None)
-                    YY = YY or params.get('height', None) 
-                    L = L or params.get('square_size', None)
+        if self.calibration_pattern is None:
+            raise ValueError("Calibration pattern must be set first")
+        
+        self.image_points = []
+        self.point_ids = []
+        self.object_points = []
+        successful_detections = 0
+        
+        if verbose:
+            print(f"Detecting patterns in {len(self.images)} images...")
+        
+        for i, img in enumerate(self.images):
+            success, img_pts, point_ids = self.calibration_pattern.detect_corners(img)
             
-            if XX is None or YY is None or L is None:
-                print("Error: Pattern parameters (XX, YY, L) must be provided or set via calibration pattern")
-                return False
-            
-            # Generate 3D object points
-            self.object_points = get_objpoints(len(self.images), XX, YY, L)
-            
-            # Find chessboard corners
-            if self.image_paths:
-                self.image_points = get_chessboard_corners(self.image_paths, XX, YY)
-            else:
-                # Handle case where we have image arrays but no paths
-                self.image_points = []
-                for i, img in enumerate(self.images):
-                    corners = find_chessboard_corners(img, XX, YY)
-                    if corners is not None:
-                        self.image_points.append(corners)
+            if success:
+                self.image_points.append(img_pts)
+                self.point_ids.append(point_ids)  # Store point IDs for visualization
+                
+                # Generate corresponding object points
+                if self.calibration_pattern.is_planar:
+                    if point_ids is not None:
+                        obj_pts = self.calibration_pattern.generate_object_points(point_ids)
                     else:
-                        print(f"Warning: Could not detect pattern in image {i}")
-            
-            if len(self.image_points) != len(self.images):
-                print(f"Warning: Only {len(self.image_points)}/{len(self.images)} images had detectable corners")
+                        obj_pts = self.calibration_pattern.generate_object_points()
+                else:
+                    obj_pts = self.calibration_pattern.generate_object_points(point_ids)
                 
-            if len(self.image_points) < 3:
-                print("Error: Need at least 3 images with detected patterns")
-                return False
+                self.object_points.append(obj_pts)
+                successful_detections += 1
                 
-            # Store pattern parameters for later use
-            self.pattern_params = {'XX': XX, 'YY': YY, 'L': L}
-            
-            print(f"Successfully detected pattern points in {len(self.image_points)} images")
-            return True
-            
-        except Exception as e:
-            print(f"Error detecting pattern points: {e}")
+                if verbose:
+                    print(f"Image {i}: ✅ Detected {len(img_pts)} features")
+            else:
+                if verbose:
+                    print(f"Image {i}: ❌ Pattern detection failed")
+        
+        if successful_detections < 3:
+            print(f"Insufficient detections: need at least 3, got {successful_detections}")
             return False
+        
+        if verbose:
+            print(f"Successfully detected pattern in {successful_detections}/{len(self.images)} images")
+        
+        return True
     
     def _calculate_optimal_target2base_matrix(self, cam2end_4x4: np.ndarray, verbose: bool = False) -> np.ndarray:
         """
@@ -990,10 +975,13 @@ class EyeInHandCalibrator:
             print(f"   Optimization iterations: {iterations}")
             print(f"   Convergence tolerance: {ftol_rel}")
         
-        # Get pattern parameters 
-        XX = self.pattern_params['XX']
-        YY = self.pattern_params['YY'] 
-        L = self.pattern_params['L']
+        # Get pattern parameters from calibration pattern
+        if not hasattr(self.calibration_pattern, 'width') or not hasattr(self.calibration_pattern, 'height') or not hasattr(self.calibration_pattern, 'square_size'):
+            raise ValueError("Optimization requires a calibration pattern with width, height, and square_size attributes")
+            
+        XX = self.calibration_pattern.width
+        YY = self.calibration_pattern.height 
+        L = self.calibration_pattern.square_size
         
         try:
             # Find the image with minimum reprojection error as optimization starting point
