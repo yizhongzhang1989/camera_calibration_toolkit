@@ -246,17 +246,29 @@ class PatternSelectionModal {
 
         switch (param.type) {
             case 'integer':
-                inputElement = `
-                    <input type="number" 
-                           class="form-control" 
-                           id="${inputId}" 
-                           name="${param.name}"
-                           value="${param.default || ''}"
-                           min="${param.min || ''}"
-                           max="${param.max || ''}"
-                           step="1"
-                           required>
-                `;
+                // Check if this should be a select dropdown instead
+                if (param.input_type === 'select' && param.options) {
+                    const options = param.options.map(opt => 
+                        `<option value="${opt.value}" ${opt.value === param.default ? 'selected' : ''}>${opt.label}</option>`
+                    ).join('');
+                    inputElement = `
+                        <select class="form-select" id="${inputId}" name="${param.name}" required>
+                            ${options}
+                        </select>
+                    `;
+                } else {
+                    inputElement = `
+                        <input type="number" 
+                               class="form-control" 
+                               id="${inputId}" 
+                               name="${param.name}"
+                               value="${param.default || ''}"
+                               min="${param.min || ''}"
+                               max="${param.max || ''}"
+                               step="1"
+                               required>
+                    `;
+                }
                 break;
 
             case 'float':
