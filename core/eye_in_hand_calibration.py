@@ -42,9 +42,10 @@ from .utils import (
 )
 
 from .calibration_patterns import CalibrationPattern
+from .base_calibrator import BaseCalibrator
 
 
-class EyeInHandCalibrator:
+class EyeInHandCalibrator(BaseCalibrator):
     """
     Eye-in-hand calibration class for robot-mounted cameras.
     
@@ -75,20 +76,10 @@ class EyeInHandCalibrator:
             calibration_pattern: CalibrationPattern instance or None
             pattern_type: Pattern type string for backwards compatibility or None
         """
-        # Images and related parameters (input data as members)
-        self.images = None                    # List of image arrays
-        self.image_paths = None              # List of image file paths
-        self.image_points = None             # List of detected 2D points for each image
-        self.point_ids = None                # List of detected point IDs for each image (for ChArUco etc.)
-        self.object_points = None            # List of corresponding 3D object points
-        self.image_size = None               # Image size (width, height)
+        # Initialize base class
+        super().__init__()
         
-        # Calibration pattern and related parameters (input data as members)
-        self.calibration_pattern = None      # CalibrationPattern instance
-        self.pattern_type = None             # Pattern type string
-        self.pattern_params = None           # Pattern-specific parameters dict
-        
-        # Robot pose data (input data as members)
+        # Robot pose data (specific to eye-in-hand calibration)
         self.robot_poses = None              # List of robot pose data (original format)
         self.end2base_matrices = None        # List of end-effector to base transformation matrices
         self.base2end_matrices = None        # List of base to end-effector transformation matrices
@@ -102,12 +93,11 @@ class EyeInHandCalibrator:
         self.tvecs = None                    # Target to camera translation vectors
         self.target2cam_matrices = None      # Target to camera transformation matrices
         
-        # Output values and results (output data as members)
+        # Output values and results (specific to eye-in-hand calibration)
         self.cam2end_matrix = None           # Camera to end-effector transformation matrix
         self.target2base_matrix = None       # Target to base transformation matrix
         self.rms_error = None                # Overall RMS reprojection error
         self.per_image_errors = None         # RMS error for each image
-        self.calibration_completed = False   # Whether calibration has been completed successfully
         self.optimization_completed = False  # Whether optimization has been completed
         
         # Initialize with provided data using smart constructor
@@ -124,55 +114,6 @@ class EyeInHandCalibrator:
             
         if calibration_pattern is not None:
             self.set_calibration_pattern(calibration_pattern, pattern_type)
-    
-    def set_images_from_paths(self, image_paths: List[str]) -> bool:
-        """
-        Set images from file paths.
-        
-        Args:
-            image_paths: List of image file paths
-            
-        Returns:
-            bool: True if all images loaded successfully
-        """
-        self.image_paths = image_paths
-        try:
-            self.images = []
-            for path in image_paths:
-                img = cv2.imread(path)
-                if img is None:
-                    print(f"Warning: Could not load image {path}")
-                    return False
-                self.images.append(img)
-                
-            # Set image size from first image
-            if self.images:
-                h, w = self.images[0].shape[:2]
-                self.image_size = (w, h)
-                
-            print(f"Successfully loaded {len(self.images)} images")
-            return True
-        except Exception as e:
-            print(f"Error loading images: {e}")
-            return False
-    
-    def set_images_from_arrays(self, images: List[np.ndarray]) -> bool:
-        """
-        Set images from numpy arrays.
-        
-        Args:
-            images: List of image arrays
-            
-        Returns:
-            bool: True if images set successfully
-        """
-        self.images = images
-        if images:
-            h, w = images[0].shape[:2]
-            self.image_size = (w, h)
-            
-        print(f"Set {len(images)} images from arrays")
-        return True
     
     def set_robot_poses(self, robot_poses: List[Union[Dict, np.ndarray]]) -> bool:
         """
@@ -219,19 +160,6 @@ class EyeInHandCalibrator:
             print(f"Error setting robot poses: {e}")
             return False
     
-    def set_calibration_pattern(self, pattern: CalibrationPattern, pattern_type: str = None, **pattern_params):
-        """
-        Set calibration pattern and related parameters.
-        
-        Args:
-            pattern: CalibrationPattern instance
-            pattern_type: Pattern type string (optional)
-            **pattern_params: Additional pattern parameters
-        """
-        self.calibration_pattern = pattern
-        self.pattern_type = pattern_type
-        self.pattern_params = pattern_params
-        
     def load_camera_intrinsics(self, camera_matrix: np.ndarray, 
                               distortion_coefficients: np.ndarray) -> None:
         """
@@ -289,65 +217,6 @@ class EyeInHandCalibrator:
         except Exception as e:
             print(f"Error loading calibration data: {e}")
             return False
-    
-    def detect_pattern_points(self, verbose: bool = False) -> bool:
-        """
-        Detect calibration pattern points in all images using modern pattern system.
-        
-        Args:
-            verbose: Whether to print progress information
-            
-        Returns:
-            bool: True if pattern detection completed successfully
-        """
-        if self.images is None:
-            print("Error: No images loaded")
-            return False
-            
-        if self.calibration_pattern is None:
-            raise ValueError("Calibration pattern must be set first")
-        
-        self.image_points = []
-        self.point_ids = []
-        self.object_points = []
-        successful_detections = 0
-        
-        if verbose:
-            print(f"Detecting patterns in {len(self.images)} images...")
-        
-        for i, img in enumerate(self.images):
-            success, img_pts, point_ids = self.calibration_pattern.detect_corners(img)
-            
-            if success:
-                self.image_points.append(img_pts)
-                self.point_ids.append(point_ids)  # Store point IDs for visualization
-                
-                # Generate corresponding object points
-                if self.calibration_pattern.is_planar:
-                    if point_ids is not None:
-                        obj_pts = self.calibration_pattern.generate_object_points(point_ids)
-                    else:
-                        obj_pts = self.calibration_pattern.generate_object_points()
-                else:
-                    obj_pts = self.calibration_pattern.generate_object_points(point_ids)
-                
-                self.object_points.append(obj_pts)
-                successful_detections += 1
-                
-                if verbose:
-                    print(f"Image {i}: ✅ Detected {len(img_pts)} features")
-            else:
-                if verbose:
-                    print(f"Image {i}: ❌ Pattern detection failed")
-        
-        if successful_detections < 3:
-            print(f"Insufficient detections: need at least 3, got {successful_detections}")
-            return False
-        
-        if verbose:
-            print(f"Successfully detected pattern in {successful_detections}/{len(self.images)} images")
-        
-        return True
     
     def _calculate_optimal_target2base_matrix(self, cam2end_4x4: np.ndarray, verbose: bool = False) -> np.ndarray:
         """
@@ -577,140 +446,6 @@ class EyeInHandCalibrator:
     def get_transformation_matrix(self) -> Optional[np.ndarray]:
         """Get the camera to end-effector transformation matrix."""
         return self.cam2end_matrix
-    
-    def is_calibrated(self) -> bool:
-        """Check if calibration has been completed successfully."""
-        return self.calibration_completed
-    
-    def draw_pattern_on_images(self) -> List[Tuple[str, np.ndarray]]:
-        """
-        Draw detected calibration patterns on original images.
-        
-        Returns:
-            List of tuples (filename_without_extension, debug_image_array)
-        """
-        if not self.images or not self.image_points:
-            raise ValueError("No images or detected points available. Run detect_pattern_points() first.")
-        
-        debug_images = []
-        
-        for i, (img, corners) in enumerate(zip(self.images, self.image_points)):
-            # Create copy of original image
-            debug_img = img.copy()
-            
-            # Get point IDs for this image if available
-            current_point_ids = None
-            if hasattr(self, 'point_ids') and self.point_ids and i < len(self.point_ids):
-                current_point_ids = self.point_ids[i]
-            
-            # Draw pattern-specific visualization
-            if hasattr(self.calibration_pattern, 'draw_corners'):
-                debug_img = self.calibration_pattern.draw_corners(debug_img, corners, current_point_ids)
-            else:
-                # Fallback: draw circles at corner locations
-                corners_2d = corners.reshape(-1, 2).astype(int)
-                for corner in corners_2d:
-                    cv2.circle(debug_img, tuple(corner), 5, (0, 255, 0), 2)
-            
-            # Get original filename without path and extension
-            if hasattr(self, 'image_paths') and self.image_paths and i < len(self.image_paths):
-                filename = os.path.splitext(os.path.basename(self.image_paths[i]))[0]
-            else:
-                filename = f"image_{i:03d}"
-            
-            debug_images.append((filename, debug_img))
-        
-        return debug_images
-    
-    def draw_axes_on_undistorted_images(self, axis_length: Optional[float] = None) -> List[Tuple[str, np.ndarray]]:
-        """
-        Draw 3D axes on undistorted images to verify calibration accuracy.
-        
-        Args:
-            axis_length: Length of axes in world units. If None, calculates from pattern dimensions
-            
-        Returns:
-            List of tuples (filename_without_extension, debug_image_array)
-        """
-        if not self.is_calibrated():
-            raise ValueError("Calibration not completed. Run calibrate() first.")
-        
-        if not self.images or not self.object_points or not self.image_points:
-            raise ValueError("No calibration data available.")
-        
-        if not self.rvecs or not self.tvecs:
-            raise ValueError("No extrinsic parameters available. Ensure calibration completed successfully.")
-        
-        # Calculate appropriate axis length based on pattern dimensions
-        if axis_length is None:
-            if hasattr(self.calibration_pattern, 'square_size'):
-                if hasattr(self.calibration_pattern, 'width') and hasattr(self.calibration_pattern, 'height'):
-                    # For chessboard: X and Y axes should span the entire chessboard
-                    x_axis_length = (self.calibration_pattern.width - 1) * self.calibration_pattern.square_size
-                    y_axis_length = (self.calibration_pattern.height - 1) * self.calibration_pattern.square_size
-                    z_axis_length = self.calibration_pattern.square_size  # Z-axis is one square size
-                else:
-                    # Default fallback for patterns without width/height
-                    x_axis_length = y_axis_length = self.calibration_pattern.square_size * 3
-                    z_axis_length = self.calibration_pattern.square_size
-            else:
-                # Default for patterns without square_size
-                x_axis_length = y_axis_length = z_axis_length = 0.05  # Default 5cm
-        else:
-            # If axis_length is provided, use it for all axes
-            x_axis_length = y_axis_length = z_axis_length = axis_length
-        
-        debug_images = []
-        
-        # Define 3D axis points with different lengths for each axis
-        axis_3d = np.float32([
-            [0, 0, 0],                    # Origin
-            [x_axis_length, 0, 0],        # X-axis (red) - full chessboard width
-            [0, y_axis_length, 0],        # Y-axis (green) - full chessboard height
-            [0, 0, -z_axis_length]        # Z-axis (blue) - one square size, negative to point up
-        ]).reshape(-1, 3)
-        
-        for i, (img, objp, imgp, rvec, tvec) in enumerate(zip(
-            self.images, self.object_points, self.image_points, self.rvecs, self.tvecs
-        )):
-            # Undistort the image
-            undistorted_img = cv2.undistort(img, self.camera_matrix, self.distortion_coefficients)
-            
-            # Project 3D axis points to image plane
-            axis_2d, _ = cv2.projectPoints(
-                axis_3d, rvec, tvec, self.camera_matrix, 
-                np.zeros((4, 1))  # No distortion for undistorted image
-            )
-            axis_2d = axis_2d.reshape(-1, 2).astype(int)
-            
-            # Draw axes
-            origin = tuple(axis_2d[0])
-            x_end = tuple(axis_2d[1])
-            y_end = tuple(axis_2d[2]) 
-            z_end = tuple(axis_2d[3])
-            
-            # Draw axis lines with thicker lines for better visibility
-            cv2.arrowedLine(undistorted_img, origin, x_end, (0, 0, 255), 5)  # X-axis: red
-            cv2.arrowedLine(undistorted_img, origin, y_end, (0, 255, 0), 5)  # Y-axis: green
-            cv2.arrowedLine(undistorted_img, origin, z_end, (255, 0, 0), 5)  # Z-axis: blue
-            
-            # Add labels with better positioning
-            cv2.putText(undistorted_img, 'X', (x_end[0] + 15, x_end[1]), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 3)
-            cv2.putText(undistorted_img, 'Y', (y_end[0] + 15, y_end[1]), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 3)
-            cv2.putText(undistorted_img, 'Z', (z_end[0] + 15, z_end[1]), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 0, 0), 3)
-            
-            # Get original filename without path and extension
-            if hasattr(self, 'image_paths') and self.image_paths and i < len(self.image_paths):
-                filename = os.path.splitext(os.path.basename(self.image_paths[i]))[0]
-            else:
-                filename = f"image_{i:03d}"
-            
-            debug_images.append((filename, undistorted_img))
-        
-        return debug_images
     
     def draw_reprojection_on_images(self) -> List[Tuple[str, np.ndarray]]:
         """
