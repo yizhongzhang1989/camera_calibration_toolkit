@@ -41,12 +41,12 @@ class GridBoard(CalibrationPattern):
                         'default_value': 10
                     },
                     'markers_x': {
-                        'min': 2,
+                        'min': 1,
                         'max': 20,
                         'default_value': 5
                     },
                     'markers_y': {
-                        'min': 2, 
+                        'min': 1, 
                         'max': 20,
                         'default_value': 7
                     }
@@ -81,8 +81,8 @@ class GridBoard(CalibrationPattern):
             is_planar=is_planar
         )
         
-        # Use base class validation
-        self.validate_dimensions(markers_x, markers_y, min_size=2)
+        # Use base class validation - allow 1x1 grids
+        self.validate_dimensions(markers_x, markers_y, min_size=1)
         self.validate_physical_size(marker_size, "marker_size")
         self.validate_physical_size(marker_separation, "marker_separation")
         
@@ -136,7 +136,7 @@ class GridBoard(CalibrationPattern):
                     "label": "Markers (X-axis)",
                     "type": "integer", 
                     "default": 5,
-                    "min": 2,
+                    "min": 1,
                     "max": 20,
                     "description": "Number of markers along X-axis"
                 },
@@ -145,7 +145,7 @@ class GridBoard(CalibrationPattern):
                     "label": "Markers (Y-axis)", 
                     "type": "integer",
                     "default": 7,
-                    "min": 2,
+                    "min": 1,
                     "max": 20,
                     "description": "Number of markers along Y-axis"
                 },
