@@ -26,6 +26,7 @@ from .manager import CalibrationPatternManager, get_pattern_manager
 # Import concrete pattern classes for backward compatibility
 from .standard_chessboard import StandardChessboard
 from .charuco_board import CharucoBoard
+from .grid_board import GridBoard
 
 # Backward compatibility exports - these maintain the existing API
 from .manager import get_pattern_manager
@@ -45,6 +46,8 @@ def create_pattern_from_json(json_data):
         pattern_id = 'standard_chessboard'
     elif pattern_id == 'charuco':
         pattern_id = 'charuco_board'
+    elif pattern_id == 'grid':
+        pattern_id = 'grid_board'
     
     # Extract parameters from JSON
     parameters = json_data.get('parameters', {})
