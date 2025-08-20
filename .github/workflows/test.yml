@@ -9,11 +9,25 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     
     strategy:
       matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11"]
+        include:
+          # Ubuntu testing - comprehensive Python versions
+          - os: ubuntu-latest
+            python-version: "3.8"
+          - os: ubuntu-latest  
+            python-version: "3.9"
+          - os: ubuntu-latest
+            python-version: "3.10"
+          - os: ubuntu-latest
+            python-version: "3.11"
+          # Windows testing - key versions only
+          - os: windows-latest
+            python-version: "3.9"
+          - os: windows-latest
+            python-version: "3.11"
     
     steps:
     - uses: actions/checkout@v4
@@ -29,8 +43,15 @@ jobs:
         pip install pytest pytest-cov
         # Install headless OpenCV for CI (no GUI dependencies needed)
         pip install numpy opencv-contrib-python-headless scipy PyYAML Pillow
-        # Optional packages for web interface (don't fail if missing)
-        pip install Flask Werkzeug || echo "Web packages skipped"
+        # Optional packages for web interface (try to install, continue if they fail)
+        python -c "
+        try:
+            import subprocess
+            subprocess.run(['pip', 'install', 'Flask', 'Werkzeug'], check=True)
+            print('✅ Web packages installed successfully')
+        except subprocess.CalledProcessError:
+            print('⚠️ Web packages failed to install, continuing without them')
+        "
     
     - name: Verify installation
       run: |
@@ -38,13 +59,29 @@ jobs:
         python -c "import numpy; print(f'NumPy: {numpy.__version__}')"
         python -c "import cv2; print(f'OpenCV: {cv2.__version__}')" 
         python -c "import pytest; print(f'pytest: {pytest.__version__}')"
-        ls -la tests/unit/ || echo "Listing test files"
+    
+    - name: List test files (Unix)
+      if: runner.os != 'Windows'
+      run: ls -la tests/unit/
+    
+    - name: List test files (Windows)
+      if: runner.os == 'Windows'
+      run: Get-ChildItem tests/unit/ -Name
+      shell: powershell
     
     - name: Run tests
       run: |
         python -m pytest tests/unit/test_patterns_simple.py tests/unit/test_utils_simple.py -v --cov=core --cov-report=xml
     
-    - name: Check results
+    - name: Check results (Unix)
+      if: runner.os != 'Windows'
       run: |
         ls -la coverage.xml || echo "No coverage file generated"
-        echo "✅ Tests completed for Python ${{ matrix.python-version }}"
+        echo "✅ Tests completed for Python ${{ matrix.python-version }} on ${{ matrix.os }}"
+    
+    - name: Check results (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        if (Test-Path coverage.xml) { Get-ChildItem coverage.xml } else { Write-Host "No coverage file generated" }
+        Write-Host "✅ Tests completed for Python ${{ matrix.python-version }} on ${{ matrix.os }}"
+      shell: powershell
