@@ -383,17 +383,27 @@ class GridBoard(CalibrationPattern):
                 
                 # Use OpenCV's built-in ArUco marker drawing function
                 try:
-                    cv2.aruco.drawDetectedMarkers(result_image, corners_list, point_ids)
+                    # Ensure point_ids is in the correct format for OpenCV
+                    if point_ids is not None:
+                        # Convert to numpy array and ensure proper shape
+                        ids_array = np.array(point_ids, dtype=np.int32)
+                        if len(ids_array.shape) == 1:
+                            # Reshape from (N,) to (N, 1)
+                            ids_array = ids_array.reshape(-1, 1)
+                        cv2.aruco.drawDetectedMarkers(result_image, corners_list, ids_array)
+                    else:
+                        cv2.aruco.drawDetectedMarkers(result_image, corners_list)
                 except Exception as e:
                     # Fallback: draw simple circles and lines for corners
                     colors = [(0, 255, 0), (255, 0, 0), (0, 0, 255), (255, 255, 0)]
                     for i, corner_set in enumerate(corners_reshaped):
                         # Draw corners as circles with different colors
                         for j, corner in enumerate(corner_set):
-                            x, y = corner.astype(int)
-                            cv2.circle(result_image, (x, y), 5, colors[j % 4], -1)
-                            cv2.putText(result_image, str(j), (x+8, y), 
-                                      cv2.FONT_HERSHEY_SIMPLEX, 0.5, colors[j % 4], 1)
+                            if len(corner) >= 2:  # Ensure corner has x, y coordinates
+                                x, y = int(corner[0]), int(corner[1])
+                                cv2.circle(result_image, (x, y), 5, colors[j % 4], -1)
+                                cv2.putText(result_image, str(j), (x+8, y), 
+                                          cv2.FONT_HERSHEY_SIMPLEX, 0.5, colors[j % 4], 1)
                         
                         # Draw marker outline
                         pts = corner_set.astype(int).reshape((-1, 1, 2))
@@ -402,14 +412,28 @@ class GridBoard(CalibrationPattern):
                         # Draw marker ID if available
                         if point_ids is not None and i < len(point_ids):
                             center = corner_set.mean(axis=0).astype(int)
-                            cv2.putText(result_image, str(point_ids[i]), 
-                                      (center[0]-10, center[1]+5), 
-                                      cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 255), 2)
+                            if len(center) >= 2:  # Ensure center has x, y coordinates
+                                cv2.putText(result_image, str(point_ids[i]), 
+                                          (int(center[0])-10, int(center[1])+5), 
+                                          cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 255), 2)
             else:
                 # Fallback: just draw all points as circles
-                for i, corner in enumerate(corners):
-                    x, y = corner.astype(int)
-                    cv2.circle(result_image, (x, y), 5, (0, 255, 0), -1)
+                # Handle different corner array shapes
+                corners_array = np.array(corners)
+                if len(corners_array.shape) == 3:
+                    # Shape is (N, 1, 2) - flatten to (N*1, 2)
+                    corners_flat = corners_array.reshape(-1, 2)
+                elif len(corners_array.shape) == 2:
+                    # Shape is already (N, 2)
+                    corners_flat = corners_array
+                else:
+                    # Unexpected shape, try to handle gracefully
+                    corners_flat = corners_array.reshape(-1, 2)
+                
+                for i, corner in enumerate(corners_flat):
+                    if len(corner) >= 2:  # Ensure corner has at least x, y coordinates
+                        x, y = int(corner[0]), int(corner[1])
+                        cv2.circle(result_image, (x, y), 5, (0, 255, 0), -1)
             
             return result_image
         return image

@@ -165,6 +165,15 @@ class BaseCalibrator(ABC):
             success, img_pts, point_ids = self.calibration_pattern.detect_corners(img)
             
             if success:
+                # Ensure proper data types and formats for OpenCV calibration
+                img_pts = np.array(img_pts, dtype=np.float32)
+                
+                # For ArUco patterns, ensure proper array shape for calibration
+                if hasattr(self.calibration_pattern, 'pattern_id') and self.calibration_pattern.pattern_id == 'grid_board':
+                    # Grid board returns [N, 2] corners, need [N, 1, 2] for calibration
+                    if len(img_pts.shape) == 2 and img_pts.shape[1] == 2:
+                        img_pts = img_pts.reshape(-1, 1, 2)
+                
                 self.image_points.append(img_pts)
                 self.point_ids.append(point_ids)  # Store point IDs for visualization
                 
@@ -174,6 +183,8 @@ class BaseCalibrator(ABC):
                 else:
                     obj_pts = self.calibration_pattern.generate_object_points()
                 
+                # Ensure proper data type for object points
+                obj_pts = np.array(obj_pts, dtype=np.float32)
                 self.object_points.append(obj_pts)
                 successful_detections += 1
                 
