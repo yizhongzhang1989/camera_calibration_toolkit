@@ -1,0 +1,89 @@
+name: Camera Calibration Tests
+
+on:
+  push:
+    branches: [ main, develop, auto_test ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      matrix:
+        include:
+          # Ubuntu testing - comprehensive Python versions
+          - os: ubuntu-latest
+            python-version: "3.8"
+          - os: ubuntu-latest  
+            python-version: "3.9"
+          - os: ubuntu-latest
+            python-version: "3.10"
+          - os: ubuntu-latest
+            python-version: "3.11"
+          # Windows testing - key versions only
+          - os: windows-latest
+            python-version: "3.9"
+          - os: windows-latest
+            python-version: "3.11"
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        # Create requirements without opencv-contrib-python for CI (use headless version instead)
+        python -c "
+        with open('requirements.txt', 'r') as f:
+            lines = f.readlines()
+        filtered_lines = [line.strip() for line in lines if not line.strip().startswith('#') and line.strip() and 'opencv-contrib-python>=' not in line]
+        with open('requirements_ci.txt', 'w') as f:
+            f.write('\n'.join(filtered_lines))
+        "
+        pip install -r requirements_ci.txt
+        pip install opencv-contrib-python-headless>=4.8.0
+    
+    - name: Verify installation
+      run: |
+        python --version
+        python -c "import numpy; print(f'NumPy: {numpy.__version__}')"
+        python -c "import cv2; print(f'OpenCV: {cv2.__version__}')" 
+        python -c "import pytest; print(f'pytest: {pytest.__version__}')"
+        python -c "import scipy; print(f'SciPy: {scipy.__version__}')"
+        python -c "import yaml; print(f'PyYAML: {yaml.__version__}')"
+        python -c "import flask; print(f'Flask: {flask.__version__}')"
+        python -c "import PIL; print(f'Pillow: {PIL.__version__}')"
+    
+    - name: List test files (Unix)
+      if: runner.os != 'Windows'
+      run: ls -la tests/unit/
+    
+    - name: List test files (Windows)
+      if: runner.os == 'Windows'
+      run: Get-ChildItem tests/unit/ -Name
+      shell: powershell
+    
+    - name: Run tests
+      run: |
+        python -m pytest tests/unit/test_patterns_simple.py tests/unit/test_utils_simple.py -v --cov=core --cov-report=xml
+    
+    - name: Check results (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        ls -la coverage.xml || echo "No coverage file generated"
+        echo "Tests completed for Python ${{ matrix.python-version }} on ${{ matrix.os }}"
+    
+    - name: Check results (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        if (Test-Path coverage.xml) { Get-ChildItem coverage.xml } else { Write-Host "No coverage file generated" }
+        Write-Host "Tests completed for Python ${{ matrix.python-version }} on ${{ matrix.os }}"
+      shell: powershell
