@@ -41,7 +41,7 @@ class TestMathematicalUtilities:
         
         # Verify scaling is applied correctly
         assert objpoints[0][0, 0] == 0.0  # First corner at origin
-        assert objpoints[0][1, 0] == L    # Next corner scaled by square size
+        assert np.allclose(objpoints[0][1, 0], L)  # Next corner scaled by square size
         
         # Verify all z-coordinates are zero (pattern is planar)
         for objp in objpoints:
