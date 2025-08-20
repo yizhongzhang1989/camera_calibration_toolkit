@@ -1,10 +1,13 @@
 /**
- * Dynamic Pattern Selection Modal System
+ * Dynamic Pattern Selection Modal System - v2.0.1 (2025-08-20)
  * ====================================== 
  * 
  * Integrates with existing calibration UI to provide dynamic pattern selection
  * based on the auto-discovery system from the modular pattern architecture.
+ * UPDATED: Added horizontal form layout (label + input on same row)
  */
+
+console.log('🎨 PatternModal v2.0.1 loaded with horizontal layout support');
 
 class PatternSelectionModal {
     constructor() {
@@ -252,14 +255,14 @@ class PatternSelectionModal {
                         `<option value="${opt.value}" ${opt.value === param.default ? 'selected' : ''}>${opt.label}</option>`
                     ).join('');
                     inputElement = `
-                        <select class="form-select" id="${inputId}" name="${param.name}" required>
+                        <select class="form-select form-select-sm" id="${inputId}" name="${param.name}" required>
                             ${options}
                         </select>
                     `;
                 } else {
                     inputElement = `
                         <input type="number" 
-                               class="form-control" 
+                               class="form-control form-control-sm" 
                                id="${inputId}" 
                                name="${param.name}"
                                value="${param.default || ''}"
@@ -274,7 +277,7 @@ class PatternSelectionModal {
             case 'float':
                 inputElement = `
                     <input type="number" 
-                           class="form-control" 
+                           class="form-control form-control-sm" 
                            id="${inputId}" 
                            name="${param.name}"
                            value="${param.default || ''}"
@@ -290,7 +293,7 @@ class PatternSelectionModal {
                     `<option value="${opt.value}" ${opt.value === param.default ? 'selected' : ''}>${opt.label}</option>`
                 ).join('');
                 inputElement = `
-                    <select class="form-select" id="${inputId}" name="${param.name}" required>
+                    <select class="form-select form-select-sm" id="${inputId}" name="${param.name}" required>
                         ${options}
                     </select>
                 `;
@@ -299,7 +302,7 @@ class PatternSelectionModal {
             default:
                 inputElement = `
                     <input type="text" 
-                           class="form-control" 
+                           class="form-control form-control-sm" 
                            id="${inputId}" 
                            name="${param.name}"
                            value="${param.default || ''}"
@@ -308,12 +311,18 @@ class PatternSelectionModal {
         }
 
         fieldDiv.innerHTML = `
-            <label for="${inputId}" class="form-label">
-                ${param.label}
-                ${param.required !== false ? '<span class="text-danger">*</span>' : ''}
-            </label>
-            ${inputElement}
-            <div class="form-text">${param.description}</div>
+            <div class="row align-items-center">
+                <div class="col-sm-5">
+                    <label for="${inputId}" class="form-label mb-0">
+                        ${param.label}
+                        ${param.required !== false ? '<span class="text-danger">*</span>' : ''}
+                    </label>
+                </div>
+                <div class="col-sm-7">
+                    ${inputElement}
+                </div>
+            </div>
+            <div class="form-text mt-1 small text-muted">${param.description}</div>
             <div class="invalid-feedback"></div>
         `;
 

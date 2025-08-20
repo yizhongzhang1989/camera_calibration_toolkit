@@ -1,8 +1,10 @@
 /**
- * Chessboard Configuration Module
+ * Chessboard Configuration Module - v2.0.1 (2025-08-20)
  * Handles dynamic chessboard pattern configuration and display
+ * UPDATED: Added horizontal form layout (label + input on same row)
  */
 
+console.log('🎨 ChessboardConfig v2.0.1 loaded with horizontal layout support');
 class ChessboardConfig {
     constructor(options = {}) {
         console.log('ChessboardConfig constructor called with options:', options);
@@ -412,23 +414,10 @@ class ChessboardConfig {
             console.log('📋 Using object format parameters, count:', paramList.length);
         }
         
-        // Organize into rows (2 per row for most cases)
-        for (let i = 0; i < paramList.length; i += 2) {
-            html += '<div class="row">';
-            
-            // First column
-            if (i < paramList.length) {
-                const paramConfig = paramList[i];
-                html += `<div class="col-md-6">${this.generateParameterField(paramConfig.name, paramConfig)}</div>`;
-            }
-            
-            // Second column (if exists)
-            if (i + 1 < paramList.length) {
-                const paramConfig = paramList[i + 1];
-                html += `<div class="col-md-6">${this.generateParameterField(paramConfig.name, paramConfig)}</div>`;
-            }
-            
-            html += '</div>';
+        // Generate form fields - one parameter per row for better horizontal layout
+        for (let i = 0; i < paramList.length; i++) {
+            const paramConfig = paramList[i];
+            html += this.generateParameterField(paramConfig.name, paramConfig);
         }
         
         container.innerHTML = html;
@@ -444,14 +433,23 @@ class ChessboardConfig {
     
     // Generate a single parameter field
     generateParameterField(paramName, paramConfig) {
+        console.log('🎨 generateParameterField called with horizontal layout for:', paramName);
         const fieldId = `modal-${this.config.patternType}-${paramName.replace(/_/g, '-')}`;
         
         let html = `<div class="mb-3">`;
-        html += `<label for="${fieldId}" class="form-label">${paramConfig.label || paramName}</label>`;
+        
+        // Use horizontal layout: label and input on same row
+        html += `<div class="row align-items-center">`;
+        html += `<div class="col-sm-5">`;
+        html += `<label for="${fieldId}" class="form-label mb-0">${paramConfig.label || paramName}</label>`;
+        html += `</div>`;
+        html += `<div class="col-sm-7">`;
+        
+        console.log('🔧 Building horizontal form field HTML for:', paramName);
         
         if (paramConfig.options && Array.isArray(paramConfig.options)) {
             // Dropdown for options
-            html += `<select class="form-select" id="${fieldId}" data-param="${paramName}">`;
+            html += `<select class="form-select form-select-sm" id="${fieldId}" data-param="${paramName}">`;
             for (const option of paramConfig.options) {
                 const selected = option.value == paramConfig.default ? 'selected' : '';
                 html += `<option value="${option.value}" ${selected}>${option.label}</option>`;
@@ -459,7 +457,7 @@ class ChessboardConfig {
             html += '</select>';
         } else if (paramConfig.input_type === 'select' && paramConfig.options) {
             // Handle input_type: select for dropdown elements
-            html += `<select class="form-select" id="${fieldId}" data-param="${paramName}">`;
+            html += `<select class="form-select form-select-sm" id="${fieldId}" data-param="${paramName}">`;
             for (const option of paramConfig.options) {
                 const selected = option.value == paramConfig.default ? 'selected' : '';
                 html += `<option value="${option.value}" ${selected}>${option.label}</option>`;
@@ -472,13 +470,17 @@ class ChessboardConfig {
             const min = paramConfig.min || '';
             const max = paramConfig.max || '';
             
-            html += `<input type="${inputType}" class="form-control" id="${fieldId}" 
+            html += `<input type="${inputType}" class="form-control form-control-sm" id="${fieldId}" 
                      data-param="${paramName}" value="${paramConfig.default}" 
                      step="${step}" min="${min}" max="${max}">`;
         }
         
+        html += `</div>`; // End col-sm-7
+        html += `</div>`; // End row
+        
+        // Description below the row
         if (paramConfig.description) {
-            html += `<div class="form-text">${paramConfig.description}</div>`;
+            html += `<div class="form-text mt-1 small text-muted">${paramConfig.description}</div>`;
         }
         
         html += '</div>';
