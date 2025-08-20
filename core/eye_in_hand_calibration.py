@@ -35,10 +35,6 @@ except ImportError:
     print("Warning: nlopt not available. Optimization methods will be disabled.")
 
 from .utils import (
-    get_objpoints,
-    get_chessboard_corners,
-    find_chessboard_corners,
-    calculate_single_image_reprojection_error,
     xyz_rpy_to_matrix,
     matrix_to_xyz_rpy,
     inverse_transform_matrix,
@@ -46,9 +42,10 @@ from .utils import (
 )
 
 from .calibration_patterns import CalibrationPattern
+from .base_calibrator import BaseCalibrator
 
 
-class EyeInHandCalibrator:
+class EyeInHandCalibrator(BaseCalibrator):
     """
     Eye-in-hand calibration class for robot-mounted cameras.
     
@@ -79,20 +76,10 @@ class EyeInHandCalibrator:
             calibration_pattern: CalibrationPattern instance or None
             pattern_type: Pattern type string for backwards compatibility or None
         """
-        # Images and related parameters (input data as members)
-        self.images = None                    # List of image arrays
-        self.image_paths = None              # List of image file paths
-        self.image_points = None             # List of detected 2D points for each image
-        self.point_ids = None                # List of detected point IDs for each image (for ChArUco etc.)
-        self.object_points = None            # List of corresponding 3D object points
-        self.image_size = None               # Image size (width, height)
+        # Initialize base class
+        super().__init__()
         
-        # Calibration pattern and related parameters (input data as members)
-        self.calibration_pattern = None      # CalibrationPattern instance
-        self.pattern_type = None             # Pattern type string
-        self.pattern_params = None           # Pattern-specific parameters dict
-        
-        # Robot pose data (input data as members)
+        # Robot pose data (specific to eye-in-hand calibration)
         self.robot_poses = None              # List of robot pose data (original format)
         self.end2base_matrices = None        # List of end-effector to base transformation matrices
         self.base2end_matrices = None        # List of base to end-effector transformation matrices
@@ -106,12 +93,11 @@ class EyeInHandCalibrator:
         self.tvecs = None                    # Target to camera translation vectors
         self.target2cam_matrices = None      # Target to camera transformation matrices
         
-        # Output values and results (output data as members)
+        # Output values and results (specific to eye-in-hand calibration)
         self.cam2end_matrix = None           # Camera to end-effector transformation matrix
         self.target2base_matrix = None       # Target to base transformation matrix
         self.rms_error = None                # Overall RMS reprojection error
         self.per_image_errors = None         # RMS error for each image
-        self.calibration_completed = False   # Whether calibration has been completed successfully
         self.optimization_completed = False  # Whether optimization has been completed
         
         # Initialize with provided data using smart constructor
@@ -128,55 +114,6 @@ class EyeInHandCalibrator:
             
         if calibration_pattern is not None:
             self.set_calibration_pattern(calibration_pattern, pattern_type)
-    
-    def set_images_from_paths(self, image_paths: List[str]) -> bool:
-        """
-        Set images from file paths.
-        
-        Args:
-            image_paths: List of image file paths
-            
-        Returns:
-            bool: True if all images loaded successfully
-        """
-        self.image_paths = image_paths
-        try:
-            self.images = []
-            for path in image_paths:
-                img = cv2.imread(path)
-                if img is None:
-                    print(f"Warning: Could not load image {path}")
-                    return False
-                self.images.append(img)
-                
-            # Set image size from first image
-            if self.images:
-                h, w = self.images[0].shape[:2]
-                self.image_size = (w, h)
-                
-            print(f"Successfully loaded {len(self.images)} images")
-            return True
-        except Exception as e:
-            print(f"Error loading images: {e}")
-            return False
-    
-    def set_images_from_arrays(self, images: List[np.ndarray]) -> bool:
-        """
-        Set images from numpy arrays.
-        
-        Args:
-            images: List of image arrays
-            
-        Returns:
-            bool: True if images set successfully
-        """
-        self.images = images
-        if images:
-            h, w = images[0].shape[:2]
-            self.image_size = (w, h)
-            
-        print(f"Set {len(images)} images from arrays")
-        return True
     
     def set_robot_poses(self, robot_poses: List[Union[Dict, np.ndarray]]) -> bool:
         """
@@ -223,19 +160,6 @@ class EyeInHandCalibrator:
             print(f"Error setting robot poses: {e}")
             return False
     
-    def set_calibration_pattern(self, pattern: CalibrationPattern, pattern_type: str = None, **pattern_params):
-        """
-        Set calibration pattern and related parameters.
-        
-        Args:
-            pattern: CalibrationPattern instance
-            pattern_type: Pattern type string (optional)
-            **pattern_params: Additional pattern parameters
-        """
-        self.calibration_pattern = pattern
-        self.pattern_type = pattern_type
-        self.pattern_params = pattern_params
-        
     def load_camera_intrinsics(self, camera_matrix: np.ndarray, 
                               distortion_coefficients: np.ndarray) -> None:
         """
@@ -247,32 +171,6 @@ class EyeInHandCalibrator:
         """
         self.camera_matrix = camera_matrix
         self.distortion_coefficients = distortion_coefficients
-    
-    def load_camera_intrinsics_from_file(self, intrinsics_directory: str) -> None:
-        """
-        Load camera intrinsic parameters from files.
-        
-        Args:
-            intrinsics_directory: Directory containing mtx.json and dist.json files
-        """
-        camera_matrix_path = os.path.join(intrinsics_directory, 'mtx.json')
-        distortion_path = os.path.join(intrinsics_directory, 'dist.json')
-        
-        if not os.path.exists(camera_matrix_path):
-            raise FileNotFoundError(f"Camera matrix file not found: {camera_matrix_path}")
-        
-        if not os.path.exists(distortion_path):
-            raise FileNotFoundError(f"Distortion coefficients file not found: {distortion_path}")
-        
-        # Load camera matrix
-        with open(camera_matrix_path, 'r', encoding='utf-8') as f:
-            mtx_dict = json.load(f)
-            self.camera_matrix = np.array(mtx_dict["camera_matrix"])
-        
-        # Load distortion coefficients
-        with open(distortion_path, 'r', encoding='utf-8') as f:
-            dist_dict = json.load(f)
-            self.distortion_coefficients = np.array(dist_dict["distortion_coefficients"])
     
     def load_calibration_data(self, data_directory: str, 
                             selected_indices: Optional[List[int]] = None) -> bool:
@@ -318,77 +216,6 @@ class EyeInHandCalibrator:
             
         except Exception as e:
             print(f"Error loading calibration data: {e}")
-            return False
-    
-    def detect_pattern_points(self, XX: int = None, YY: int = None, L: float = None) -> bool:
-        """
-        Detect calibration pattern points in all images, storing results as member variables.
-        
-        Args:
-            XX: Number of chessboard corners along x-axis (optional if pattern is set)
-            YY: Number of chessboard corners along y-axis (optional if pattern is set)
-            L: Size of chessboard squares in meters (optional if pattern is set)
-            
-        Returns:
-            bool: True if pattern detection completed successfully
-        """
-        if self.images is None:
-            print("Error: No images loaded")
-            return False
-            
-        try:
-            # Get pattern parameters
-            if self.calibration_pattern is not None:
-                # Use calibration pattern if available - access attributes directly
-                if hasattr(self.calibration_pattern, 'width'):
-                    XX = XX or self.calibration_pattern.width
-                if hasattr(self.calibration_pattern, 'height'):
-                    YY = YY or self.calibration_pattern.height
-                if hasattr(self.calibration_pattern, 'square_size'):
-                    L = L or self.calibration_pattern.square_size
-                    
-                # Also check for parameters dict (alternative format)
-                if hasattr(self.calibration_pattern, 'parameters'):
-                    params = self.calibration_pattern.parameters
-                    XX = XX or params.get('width', None)
-                    YY = YY or params.get('height', None) 
-                    L = L or params.get('square_size', None)
-            
-            if XX is None or YY is None or L is None:
-                print("Error: Pattern parameters (XX, YY, L) must be provided or set via calibration pattern")
-                return False
-            
-            # Generate 3D object points
-            self.object_points = get_objpoints(len(self.images), XX, YY, L)
-            
-            # Find chessboard corners
-            if self.image_paths:
-                self.image_points = get_chessboard_corners(self.image_paths, XX, YY)
-            else:
-                # Handle case where we have image arrays but no paths
-                self.image_points = []
-                for i, img in enumerate(self.images):
-                    corners = find_chessboard_corners(img, XX, YY)
-                    if corners is not None:
-                        self.image_points.append(corners)
-                    else:
-                        print(f"Warning: Could not detect pattern in image {i}")
-            
-            if len(self.image_points) != len(self.images):
-                print(f"Warning: Only {len(self.image_points)}/{len(self.images)} images had detectable corners")
-                
-            if len(self.image_points) < 3:
-                print("Error: Need at least 3 images with detected patterns")
-                return False
-                
-            # Store pattern parameters for later use
-            self.pattern_params = {'XX': XX, 'YY': YY, 'L': L}
-            
-            print(f"Successfully detected pattern points in {len(self.image_points)} images")
-            return True
-            
-        except Exception as e:
-            print(f"Error detecting pattern points: {e}")
             return False
     
     def _calculate_optimal_target2base_matrix(self, cam2end_4x4: np.ndarray, verbose: bool = False) -> np.ndarray:
@@ -620,248 +447,6 @@ class EyeInHandCalibrator:
         """Get the camera to end-effector transformation matrix."""
         return self.cam2end_matrix
     
-    def get_extrinsics(self) -> Tuple[Optional[List[np.ndarray]], Optional[List[np.ndarray]]]:
-        """Get rotation and translation vectors for each image (target to camera)."""
-        return self.rvecs, self.tvecs
-    
-    def get_reprojection_error(self) -> Tuple[Optional[float], Optional[List[float]]]:
-        """Get overall and per-image reprojection errors."""
-        return self.rms_error, self.per_image_errors
-    
-    def is_calibrated(self) -> bool:
-        """Check if calibration has been completed successfully."""
-        return self.calibration_completed
-    
-    def is_optimized(self) -> bool:
-        """Check if optimization has been completed successfully."""
-        return self.optimization_completed
-    
-    def draw_pattern_on_images(self) -> List[Tuple[str, np.ndarray]]:
-        """
-        Draw detected calibration patterns on original images.
-        
-        Returns:
-            List of tuples (filename_without_extension, debug_image_array)
-        """
-        if not self.images or not self.image_points:
-            raise ValueError("No images or detected points available. Run detect_pattern_points() first.")
-        
-        debug_images = []
-        
-        for i, (img, corners) in enumerate(zip(self.images, self.image_points)):
-            # Create copy of original image
-            debug_img = img.copy()
-            
-            # Get point IDs for this image if available
-            current_point_ids = None
-            if hasattr(self, 'point_ids') and self.point_ids and i < len(self.point_ids):
-                current_point_ids = self.point_ids[i]
-            
-            # Draw pattern-specific visualization
-            if hasattr(self.calibration_pattern, 'draw_corners'):
-                debug_img = self.calibration_pattern.draw_corners(debug_img, corners, current_point_ids)
-            else:
-                # Fallback: draw circles at corner locations
-                corners_2d = corners.reshape(-1, 2).astype(int)
-                for corner in corners_2d:
-                    cv2.circle(debug_img, tuple(corner), 5, (0, 255, 0), 2)
-            
-            # Get original filename without path and extension
-            if hasattr(self, 'image_paths') and self.image_paths and i < len(self.image_paths):
-                filename = os.path.splitext(os.path.basename(self.image_paths[i]))[0]
-            else:
-                filename = f"image_{i:03d}"
-            
-            debug_images.append((filename, debug_img))
-        
-        return debug_images
-    
-    def draw_axes_on_undistorted_images(self, axis_length: Optional[float] = None) -> List[Tuple[str, np.ndarray]]:
-        """
-        Draw 3D axes on undistorted images to verify calibration accuracy.
-        
-        Args:
-            axis_length: Length of axes in world units. If None, calculates from pattern dimensions
-            
-        Returns:
-            List of tuples (filename_without_extension, debug_image_array)
-        """
-        if not self.is_calibrated():
-            raise ValueError("Calibration not completed. Run calibrate() first.")
-        
-        if not self.images or not self.object_points or not self.image_points:
-            raise ValueError("No calibration data available.")
-        
-        if not self.rvecs or not self.tvecs:
-            raise ValueError("No extrinsic parameters available. Ensure calibration completed successfully.")
-        
-        # Calculate appropriate axis length based on pattern dimensions
-        if axis_length is None:
-            if hasattr(self.calibration_pattern, 'square_size'):
-                if hasattr(self.calibration_pattern, 'width') and hasattr(self.calibration_pattern, 'height'):
-                    # For chessboard: X and Y axes should span the entire chessboard
-                    x_axis_length = (self.calibration_pattern.width - 1) * self.calibration_pattern.square_size
-                    y_axis_length = (self.calibration_pattern.height - 1) * self.calibration_pattern.square_size
-                    z_axis_length = self.calibration_pattern.square_size  # Z-axis is one square size
-                else:
-                    # Default fallback for patterns without width/height
-                    x_axis_length = y_axis_length = self.calibration_pattern.square_size * 3
-                    z_axis_length = self.calibration_pattern.square_size
-            else:
-                # Default for patterns without square_size
-                x_axis_length = y_axis_length = z_axis_length = 0.05  # Default 5cm
-        else:
-            # If axis_length is provided, use it for all axes
-            x_axis_length = y_axis_length = z_axis_length = axis_length
-        
-        debug_images = []
-        
-        # Define 3D axis points with different lengths for each axis
-        axis_3d = np.float32([
-            [0, 0, 0],                    # Origin
-            [x_axis_length, 0, 0],        # X-axis (red) - full chessboard width
-            [0, y_axis_length, 0],        # Y-axis (green) - full chessboard height
-            [0, 0, -z_axis_length]        # Z-axis (blue) - one square size, negative to point up
-        ]).reshape(-1, 3)
-        
-        for i, (img, objp, imgp, rvec, tvec) in enumerate(zip(
-            self.images, self.object_points, self.image_points, self.rvecs, self.tvecs
-        )):
-            # Undistort the image
-            undistorted_img = cv2.undistort(img, self.camera_matrix, self.distortion_coefficients)
-            
-            # Project 3D axis points to image plane
-            axis_2d, _ = cv2.projectPoints(
-                axis_3d, rvec, tvec, self.camera_matrix, 
-                np.zeros((4, 1))  # No distortion for undistorted image
-            )
-            axis_2d = axis_2d.reshape(-1, 2).astype(int)
-            
-            # Draw axes
-            origin = tuple(axis_2d[0])
-            x_end = tuple(axis_2d[1])
-            y_end = tuple(axis_2d[2]) 
-            z_end = tuple(axis_2d[3])
-            
-            # Draw axis lines with thicker lines for better visibility
-            cv2.arrowedLine(undistorted_img, origin, x_end, (0, 0, 255), 5)  # X-axis: red
-            cv2.arrowedLine(undistorted_img, origin, y_end, (0, 255, 0), 5)  # Y-axis: green
-            cv2.arrowedLine(undistorted_img, origin, z_end, (255, 0, 0), 5)  # Z-axis: blue
-            
-            # Add labels with better positioning
-            cv2.putText(undistorted_img, 'X', (x_end[0] + 15, x_end[1]), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 3)
-            cv2.putText(undistorted_img, 'Y', (y_end[0] + 15, y_end[1]), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 3)
-            cv2.putText(undistorted_img, 'Z', (z_end[0] + 15, z_end[1]), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 0, 0), 3)
-            
-            # Get original filename without path and extension
-            if hasattr(self, 'image_paths') and self.image_paths and i < len(self.image_paths):
-                filename = os.path.splitext(os.path.basename(self.image_paths[i]))[0]
-            else:
-                filename = f"image_{i:03d}"
-            
-            debug_images.append((filename, undistorted_img))
-        
-        return debug_images
-    
-    def draw_reprojection_on_undistorted_images(self) -> List[Tuple[str, np.ndarray]]:
-        """
-        Draw pattern point reprojections on undistorted images using hand-eye calibration results.
-        
-        This shows the accuracy of the hand-eye calibration by comparing detected pattern points
-        with points reprojected using the calibrated transformation matrix.
-        
-        Returns:
-            List of tuples (filename_without_extension, debug_image_array)
-        """
-        if not self.is_calibrated():
-            raise ValueError("Calibration not completed. Run calibrate() first.")
-        
-        if not self.images or not self.object_points or not self.image_points:
-            raise ValueError("No calibration data available.")
-        
-        if not self.target2cam_matrices or not self.end2base_matrices:
-            raise ValueError("No transformation matrices available. Ensure calibration completed successfully.")
-        
-        debug_images = []
-        
-        for i, (img, objp, detected_corners) in enumerate(zip(
-            self.images, self.object_points, self.image_points
-        )):
-            # Undistort the image
-            undistorted_img = cv2.undistort(img, self.camera_matrix, self.distortion_coefficients)
-            
-            # Calculate reprojected points using hand-eye calibration
-            try:
-                # Method 1: Direct target to camera from calibration
-                target2cam_direct = self.target2cam_matrices[i]
-                reprojected_direct, _ = cv2.projectPoints(
-                    objp, target2cam_direct[:3, :3], target2cam_direct[:3, 3],
-                    self.camera_matrix, np.zeros((4, 1))  # No distortion for undistorted image
-                )
-                
-                # Method 2: Target to camera via hand-eye calibration chain using single target2base matrix
-                end2cam_matrix = np.linalg.inv(self.cam2end_matrix)
-                base2end_matrix = np.linalg.inv(self.end2base_matrices[i])
-                
-                # Use the single target2base matrix calculated during calibration
-                eyeinhand_target2cam = end2cam_matrix @ base2end_matrix @ self.target2base_matrix
-                
-                reprojected_eyeinhand, _ = cv2.projectPoints(
-                    objp, eyeinhand_target2cam[:3, :3], eyeinhand_target2cam[:3, 3],
-                    self.camera_matrix, np.zeros((4, 1))  # No distortion for undistorted image
-                )
-                
-                # Draw detected corners in green (ground truth)
-                detected_2d = detected_corners.reshape(-1, 2).astype(int)
-                for corner in detected_2d:
-                    cv2.circle(undistorted_img, tuple(corner), 8, (0, 255, 0), 2)
-                
-                # Draw direct reprojection in blue (from direct PnP)
-                direct_2d = reprojected_direct.reshape(-1, 2).astype(int)
-                for corner in direct_2d:
-                    cv2.drawMarker(undistorted_img, tuple(corner), (255, 0, 0), 
-                                 cv2.MARKER_CROSS, 12, 2)
-                
-                # Draw hand-eye reprojection in red (from hand-eye calibration)
-                eyeinhand_2d = reprojected_eyeinhand.reshape(-1, 2).astype(int)
-                for corner in eyeinhand_2d:
-                    cv2.drawMarker(undistorted_img, tuple(corner), (0, 0, 255), 
-                                 cv2.MARKER_TRIANGLE_UP, 12, 2)
-                
-                # Add legend
-                cv2.putText(undistorted_img, "Green: Detected", (10, 30), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                cv2.putText(undistorted_img, "Blue: Direct PnP", (10, 60), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
-                cv2.putText(undistorted_img, "Red: Hand-Eye", (10, 90), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                
-                # Calculate and display error
-                if self.per_image_errors and i < len(self.per_image_errors):
-                    error_text = f"RMS Error: {self.per_image_errors[i]:.3f} px"
-                    cv2.putText(undistorted_img, error_text, (10, undistorted_img.shape[0] - 20), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                
-            except Exception as e:
-                print(f"Warning: Could not generate reprojection for image {i}: {e}")
-                # Just draw detected corners if reprojection fails
-                detected_2d = detected_corners.reshape(-1, 2).astype(int)
-                for corner in detected_2d:
-                    cv2.circle(undistorted_img, tuple(corner), 8, (0, 255, 0), 2)
-            
-            # Get original filename without path and extension
-            if hasattr(self, 'image_paths') and self.image_paths and i < len(self.image_paths):
-                filename = os.path.splitext(os.path.basename(self.image_paths[i]))[0]
-            else:
-                filename = f"image_{i:03d}"
-            
-            debug_images.append((filename, undistorted_img))
-        
-        return debug_images
-    
     def draw_reprojection_on_images(self) -> List[Tuple[str, np.ndarray]]:
         """
         Draw pattern point reprojections on original (distorted) images using hand-eye calibration results.
@@ -991,10 +576,9 @@ class EyeInHandCalibrator:
             print(f"   Optimization iterations: {iterations}")
             print(f"   Convergence tolerance: {ftol_rel}")
         
-        # Get pattern parameters 
-        XX = self.pattern_params['XX']
-        YY = self.pattern_params['YY'] 
-        L = self.pattern_params['L']
+        # Get pattern parameters from calibration pattern
+        if self.calibration_pattern is None:
+            raise ValueError("Optimization requires a calibration pattern to be set")
         
         try:
             # Find the image with minimum reprojection error as optimization starting point
@@ -1016,11 +600,11 @@ class EyeInHandCalibrator:
                 
                 # Optimize the single target2base matrix
                 optimized_target2base = self._optimize_target2base_matrix(
-                    best_target2base, best_cam2end, XX, YY, L, ftol_rel, verbose)
+                    best_target2base, best_cam2end, ftol_rel, verbose)
                 
                 # Calculate error with optimized target2base
                 error_target2base = self._calculate_optimization_error(
-                    best_cam2end, optimized_target2base, XX, YY, L)
+                    best_cam2end, optimized_target2base)
                 
                 if error_target2base < best_error:
                     best_target2base = optimized_target2base
@@ -1030,11 +614,11 @@ class EyeInHandCalibrator:
                 
                 # Optimize cam2end matrix  
                 optimized_cam2end = self._optimize_cam2end_matrix(
-                    best_cam2end, best_target2base, XX, YY, L, ftol_rel, verbose)
+                    best_cam2end, best_target2base, ftol_rel, verbose)
                 
                 # Calculate error with optimized cam2end
                 error_cam2end = self._calculate_optimization_error(
-                    optimized_cam2end, best_target2base, XX, YY, L)
+                    optimized_cam2end, best_target2base)
                 
                 if error_cam2end < best_error:
                     best_cam2end = optimized_cam2end
@@ -1066,17 +650,13 @@ class EyeInHandCalibrator:
                 print(f"❌ Optimization failed: {e}")
             return self.rms_error
     
-    def _calculate_optimization_error(self, cam2end_matrix: np.ndarray, target2base_matrix: np.ndarray,
-                                    XX: int, YY: int, L: float) -> float:
+    def _calculate_optimization_error(self, cam2end_matrix: np.ndarray, target2base_matrix: np.ndarray) -> float:
         """
         Calculate RMS reprojection error for given transformation matrices.
         
         Args:
             cam2end_matrix: Camera to end-effector transformation matrix
             target2base_matrix: Target to base transformation matrix
-            XX: Number of chessboard corners along x-axis
-            YY: Number of chessboard corners along y-axis
-            L: Size of chessboard squares in meters
             
         Returns:
             float: RMS reprojection error
@@ -1149,16 +729,13 @@ class EyeInHandCalibrator:
             self.rms_error = float('inf')
     
     def _optimize_target2base_matrix(self, initial_target2base: np.ndarray, cam2end_matrix: np.ndarray,
-                                   XX: int, YY: int, L: float, ftol_rel: float, verbose: bool) -> np.ndarray:
+                                   ftol_rel: float, verbose: bool) -> np.ndarray:
         """
         Optimize the target2base matrix using NLopt.
         
         Args:
             initial_target2base: Initial target2base transformation matrix
             cam2end_matrix: Fixed camera to end-effector transformation matrix
-            XX: Number of chessboard corners along x-axis  
-            YY: Number of chessboard corners along y-axis
-            L: Size of chessboard squares in meters
             ftol_rel: Relative tolerance for optimization
             verbose: Whether to print detailed information
             
@@ -1180,7 +757,7 @@ class EyeInHandCalibrator:
             def objective(params, grad):
                 x, y, z, roll, pitch, yaw = params
                 target2base_matrix = xyz_rpy_to_matrix([x, y, z, roll, pitch, yaw])
-                return self._calculate_optimization_error(cam2end_matrix, target2base_matrix, XX, YY, L)
+                return self._calculate_optimization_error(cam2end_matrix, target2base_matrix)
             
             opt.set_min_objective(objective)
             opt.set_ftol_rel(ftol_rel)
@@ -1206,16 +783,13 @@ class EyeInHandCalibrator:
             return initial_target2base
     
     def _optimize_cam2end_matrix(self, initial_cam2end: np.ndarray, target2base_matrix: np.ndarray,
-                               XX: int, YY: int, L: float, ftol_rel: float, verbose: bool) -> np.ndarray:
+                               ftol_rel: float, verbose: bool) -> np.ndarray:
         """
         Optimize the cam2end matrix using NLopt.
         
         Args:
             initial_cam2end: Initial camera to end-effector transformation matrix
             target2base_matrix: Fixed target to base transformation matrix
-            XX: Number of chessboard corners along x-axis
-            YY: Number of chessboard corners along y-axis  
-            L: Size of chessboard squares in meters
             ftol_rel: Relative tolerance for optimization
             verbose: Whether to print detailed information
             
@@ -1237,7 +811,7 @@ class EyeInHandCalibrator:
             def objective(params, grad):
                 x, y, z, roll, pitch, yaw = params
                 cam2end_matrix = xyz_rpy_to_matrix([x, y, z, roll, pitch, yaw])
-                return self._calculate_optimization_error(cam2end_matrix, target2base_matrix, XX, YY, L)
+                return self._calculate_optimization_error(cam2end_matrix, target2base_matrix)
             
             opt.set_min_objective(objective)
             opt.set_ftol_rel(ftol_rel)
@@ -1293,44 +867,3 @@ class EyeInHandCalibrator:
             json.dump(results, f, indent=4, ensure_ascii=False)
         
         print(f"Eye-in-hand calibration results saved to: {json_file_path}")
-    
-    def load_results(self, results_file: str) -> None:
-        """
-        Load calibration results from JSON file.
-        
-        Args:
-            results_file: Path to the results JSON file
-        """
-        if not os.path.exists(results_file):
-            raise FileNotFoundError(f"Results file not found: {results_file}")
-        
-        with open(results_file, 'r', encoding='utf-8') as f:
-            results = json.load(f)
-        
-        # Load camera intrinsics
-        if "camera_intrinsics" in results:
-            self.camera_matrix = np.array(results["camera_intrinsics"]["camera_matrix"])
-            self.distortion_coefficients = np.array(results["camera_intrinsics"]["distortion_coefficients"])
-        
-        # Load eye-in-hand calibration results
-        if "eye_in_hand_calibration" in results:
-            self.cam2end_matrix = np.array(results["eye_in_hand_calibration"]["cam2end_matrix"])
-            self.calibration_completed = True
-            
-            if "target2base_matrix" in results["eye_in_hand_calibration"]:
-                self.target2base_matrix = np.array(results["eye_in_hand_calibration"]["target2base_matrix"])
-                self.optimization_completed = True
-        
-        print(f"Eye-in-hand calibration results loaded from: {results_file}")
-    
-    def get_transformation_matrix(self) -> np.ndarray:
-        """
-        Get the camera to end-effector transformation matrix.
-        
-        Returns:
-            4x4 transformation matrix from camera to end-effector
-        """
-        if not self.calibration_completed:
-            raise ValueError("Calibration has not been completed yet")
-        
-        return self.cam2end_matrix

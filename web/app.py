@@ -101,7 +101,7 @@ def get_session_folder(session_id):
 def image_to_base64(image_path):
     """Convert image to base64 for web display."""
     if not os.path.exists(image_path):
-        print(f"❌ Image not found: {image_path}")
+        print(f"�?Image not found: {image_path}")
         return None
     
     try:
@@ -118,10 +118,10 @@ def image_to_base64(image_path):
                 format_str = 'jpeg'  # default
             
             result = f"data:image/{format_str};base64,{img_base64}"
-            print(f"✅ Converted image to base64: {image_path} ({len(img_data)} bytes -> {len(result)} chars)")
+            print(f"�?Converted image to base64: {image_path} ({len(img_data)} bytes -> {len(result)} chars)")
             return result
     except Exception as e:
-        print(f"❌ Failed to convert image to base64: {image_path}, error: {e}")
+        print(f"�?Failed to convert image to base64: {image_path}, error: {e}")
         return None
 
 
@@ -198,7 +198,7 @@ def get_default_pattern_config():
                 'parameters': default_parameters
             }
             
-            return jsonify({'success': True, 'config': default_json})
+            return jsonify({'success': True, 'pattern_config': default_json})
         else:
             return jsonify({'success': False, 'error': 'No pattern configurations available'}), 404
             
@@ -335,7 +335,7 @@ def set_parameters():
             if 'dictionary_id' in pattern_params:
                 parameters['dictionary_id'] = pattern_params['dictionary_id']
                 
-            print(f'✅ Using modern JSON pattern format: {pattern_json}')
+            print(f'�?Using modern JSON pattern format: {pattern_json}')
         else:
             return jsonify({'error': 'pattern_json parameter is required'}), 400
         
@@ -413,7 +413,7 @@ def calibrate():
             selected_indices = request.json.get('selected_indices', list(range(len(images))))
             
             print(f"📋 Calibration type: {calibration_type}")
-            print(f"🖼️ Selected {len(selected_indices)} images for processing")
+            print(f"🖼�?Selected {len(selected_indices)} images for processing")
             
             # Extract basic parameters
             distortion_model = parameters.get('distortion_model', 'standard')
@@ -424,7 +424,7 @@ def calibrate():
             image_paths = [images[i]['path'] for i in selected_indices if i < len(images)]
             
             if len(image_paths) < 3:
-                print("❌ ERROR: Need at least 3 selected images for calibration")
+                print("�?ERROR: Need at least 3 selected images for calibration")
                 return jsonify({'error': 'Need at least 3 selected images for calibration'}), 400
             
             print(f"📂 Processing image files:")
@@ -448,7 +448,7 @@ def calibrate():
                     # Use the JSON pattern directly (always available since set_parameters requires it)
                     pattern_json = parameters['pattern_json']
                     pattern = create_pattern_from_json(pattern_json)
-                    print(f"✅ Created pattern from JSON: {pattern_json['pattern_id']}")
+                    print(f"�?Created pattern from JSON: {pattern_json['pattern_id']}")
                     
                     # Log pattern information
                     pattern_info = pattern.get_info()
@@ -456,7 +456,7 @@ def calibrate():
                     print(f"   Info: {pattern_info}")
                     
                 except Exception as e:
-                    print(f"❌ Error creating calibration pattern: {str(e)}")
+                    print(f"�?Error creating calibration pattern: {str(e)}")
                     return jsonify({'error': f'Error creating calibration pattern: {str(e)}'}), 400
                 
                 print()
@@ -521,9 +521,9 @@ def calibrate():
                         include_extrinsics=True
                     )
                     
-                    print("✅ Saved calibration results to calibration_results.json")
+                    print("�?Saved calibration results to calibration_results.json")
                     print()
-                    print("🖼️ GENERATING VISUALIZATION IMAGES")
+                    print("🖼�?GENERATING VISUALIZATION IMAGES")
                     print("-" * 30)
                     
                     # Use the calibrator's built-in visualization methods
@@ -642,9 +642,9 @@ def calibrate():
                         # Use the JSON pattern directly (always available since set_parameters requires it)
                         pattern_json = parameters['pattern_json']
                         pattern = create_pattern_from_json(pattern_json)
-                        print(f"✅ Created pattern from JSON: {pattern_json['pattern_id']}")
+                        print(f"�?Created pattern from JSON: {pattern_json['pattern_id']}")
                     except Exception as e:
-                        print(f"❌ Error creating calibration pattern: {str(e)}")
+                        print(f"�?Error creating calibration pattern: {str(e)}")
                         return jsonify({'error': f'Error creating calibration pattern: {str(e)}'}), 400
                     
                     intrinsic_cal = IntrinsicCalibrator(
@@ -674,7 +674,7 @@ def calibrate():
                     pattern_type=parameters.get('pattern_type', 'standard')
                 )
                 
-                print(f"✅ Eye-in-hand calibrator initialized with modern API")
+                print(f"�?Eye-in-hand calibrator initialized with modern API")
                 
                 # Load pose data - manually handle separate images and poses folders
                 session_folder = get_session_folder(session_id)
@@ -716,10 +716,10 @@ def calibrate():
                     # Detect pattern points using member-based API
                     print("🎯 Detecting calibration patterns...")
                     if not eye_in_hand_calibrator.detect_pattern_points():
-                        print("❌ Failed to detect calibration patterns")
+                        print("�?Failed to detect calibration patterns")
                         return jsonify({'error': 'Failed to detect calibration patterns in images'}), 500
                     
-                    print(f"✅ Pattern detection completed: {len(eye_in_hand_calibrator.image_points)} images")
+                    print(f"�?Pattern detection completed: {len(eye_in_hand_calibrator.image_points)} images")
                     
                     # Run eye-in-hand calibration using modern API with method comparison
                     print("🔧 Performing hand-eye calibration with method comparison...")
@@ -748,18 +748,18 @@ def calibrate():
                             if rms_error > 0 and rms_error < best_error:
                                 best_error = rms_error
                                 best_method = method_name
-                                print(f"✅ {method_name}: {rms_error:.4f} pixels")
+                                print(f"�?{method_name}: {rms_error:.4f} pixels")
                             else:
-                                print(f"❌ {method_name}: Failed or poor result")
+                                print(f"�?{method_name}: Failed or poor result")
                                 
                         except Exception as e:
-                            print(f"❌ {method_name}: Exception - {str(e)}")
+                            print(f"�?{method_name}: Exception - {str(e)}")
                     
                     if best_method:
                         print(f"🏆 Best method: {best_method} with {best_error:.4f} pixels RMS error")
                         initial_mean_error = float(best_error)
                     else:
-                        print("❌ All hand-eye calibration methods failed")
+                        print("�?All hand-eye calibration methods failed")
                         return jsonify({'error': 'All hand-eye calibration methods failed'}), 500
                     
                     # Add optimization step using modern API
@@ -825,11 +825,11 @@ def calibrate():
                             cv2.imwrite(output_path, debug_img)
                             reprojection_paths.append(f"visualizations/reprojection/{filename}.jpg")
                         
-                        print(f"✅ Saved {len(corner_detection_paths)} corner detection images to {corners_folder}")
-                        print(f"✅ Saved {len(undistorted_paths)} undistorted axes images to {axes_folder}") 
-                        print(f"✅ Saved {len(reprojection_paths)} reprojection images to {reprojection_folder}")
-                        print(f"✅ Saved {len(undistorted_paths)} undistorted axes images") 
-                        print(f"✅ Saved {len(reprojection_paths)} reprojection images")
+                        print(f"�?Saved {len(corner_detection_paths)} corner detection images to {corners_folder}")
+                        print(f"�?Saved {len(undistorted_paths)} undistorted axes images to {axes_folder}") 
+                        print(f"�?Saved {len(reprojection_paths)} reprojection images to {reprojection_folder}")
+                        print(f"�?Saved {len(undistorted_paths)} undistorted axes images") 
+                        print(f"�?Saved {len(reprojection_paths)} reprojection images")
                         
                     except Exception as viz_error:
                         print(f"⚠️ Warning: Visualization generation failed: {viz_error}")
@@ -936,7 +936,7 @@ def get_results(session_id):
                     })
         
         results['visualization_images'] = visualization_images
-        print(f"✅ Added {len(visualization_images)} visualization images to results")
+        print(f"�?Added {len(visualization_images)} visualization images to results")
         
         # Debug: Print details about the images we're returning
         if len(visualization_images) > 0:
@@ -1107,7 +1107,7 @@ def get_pattern_image():
         # Create pattern instance using unified JSON system
         try:
             pattern = create_pattern_from_json(pattern_json)
-            print(f"✅ Created pattern: {pattern.name}")
+            print(f"�?Created pattern: {pattern.name}")
         except Exception as e:
             return jsonify({'error': f'Failed to create pattern: {str(e)}'}), 400
         
@@ -1135,74 +1135,6 @@ def get_pattern_image():
         response = send_file(temp_file.name, mimetype='image/png')
         response.call_on_close(remove_file)
         return response
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/pattern_description')
-def get_pattern_description():
-    """Get pattern description text."""
-    try:
-        # Get pattern JSON from query string or form data
-        pattern_json_str = request.args.get('pattern_json') or request.form.get('pattern_json')
-        
-        if not pattern_json_str:
-            return jsonify({'error': 'pattern_json parameter is required'}), 400
-        
-        try:
-            pattern_json = json.loads(pattern_json_str)
-        except json.JSONDecodeError:
-            return jsonify({'error': 'Invalid JSON format for pattern_json parameter'}), 400
-        
-        print(f"API: Creating pattern description from JSON: {pattern_json}")
-        
-        # Create pattern instance using unified JSON system
-        try:
-            pattern = create_pattern_from_json(pattern_json)
-            print(f"✅ Created pattern for description: {pattern.name}")
-        except Exception as e:
-            return jsonify({'error': f'Failed to create pattern: {str(e)}'}), 400
-        
-        # Get pattern information
-        info = pattern.get_info()
-        description = pattern.get_pattern_description()
-        
-        return jsonify({
-            'description': description,
-            'pattern_name': info['name'],
-            'pattern_info': info
-        })
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/clear_images', methods=['POST'])
-def clear_images():
-    """Clear uploaded images for a session."""
-    try:
-        data = request.get_json()
-        session_id = data.get('session_id')
-        
-        if not session_id:
-            return jsonify({'error': 'Session ID required'}), 400
-        
-        # Remove session data
-        if session_id in session_data:
-            del session_data[session_id]
-        
-        # Remove session files
-        session_folder = get_session_folder(session_id)
-        if os.path.exists(session_folder):
-            shutil.rmtree(session_folder)
-        
-        # Remove results
-        results_folder = os.path.join(RESULTS_FOLDER, session_id)
-        if os.path.exists(results_folder):
-            shutil.rmtree(results_folder)
-        
-        return jsonify({'message': 'Images cleared successfully'})
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500

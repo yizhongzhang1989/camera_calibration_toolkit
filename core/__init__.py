@@ -16,7 +16,6 @@ from .intrinsic_calibration import IntrinsicCalibrator
 from .eye_in_hand_calibration import EyeInHandCalibrator
 from .utils import (
     get_objpoints,
-    calculate_reproject_error_fast,
     rpy_to_matrix,
     xyz_rpy_to_matrix,
     matrix_to_xyz_rpy,
@@ -27,7 +26,6 @@ __all__ = [
     'IntrinsicCalibrator',
     'EyeInHandCalibrator',
     'get_objpoints',
-    'calculate_reproject_error_fast',
     'rpy_to_matrix',
     'xyz_rpy_to_matrix',
     'matrix_to_xyz_rpy',
