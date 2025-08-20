@@ -639,7 +639,7 @@ class PatternSelectionModal {
      * Download pattern with current settings
      */
     downloadPattern = async () => {
-        console.log('🎯 Download button clicked - collecting current form values...');
+        console.log('🎯 PatternModal: Download button clicked - collecting current form values...');
         
         const configuration = this.getCurrentConfiguration();
         if (!configuration) {
@@ -652,6 +652,14 @@ class PatternSelectionModal {
         // Add download quality and border settings
         const quality = document.getElementById('download-quality')?.value || 'high';
         const border = document.getElementById('download-border')?.value || 'medium';
+
+        console.log('🔍 Raw dropdown values:');
+        console.log('  - Quality element found:', document.getElementById('download-quality') ? 'YES' : 'NO');
+        console.log('  - Border element found:', document.getElementById('download-border') ? 'YES' : 'NO');
+        console.log('  - Raw quality value:', document.getElementById('download-quality')?.value);
+        console.log('  - Raw border value:', document.getElementById('download-border')?.value);
+        console.log('  - Final quality:', quality);
+        console.log('  - Final border:', border);
 
         // Map quality to pixel_per_square
         const qualityMap = {
@@ -668,7 +676,15 @@ class PatternSelectionModal {
             'medium': 50,
             'large': 100
         };
-        const border_pixels = borderMap[border] || 50;
+        const border_pixels = borderMap.hasOwnProperty(border) ? borderMap[border] : 50;
+
+        console.log('🎯 Border mapping debug:');
+        console.log('  - Border value to map:', `"${border}"`);
+        console.log('  - Available keys:', Object.keys(borderMap));
+        console.log('  - Direct lookup result:', borderMap[border]);
+        console.log('  - Final border_pixels:', border_pixels);
+        console.log('  - Type of border:', typeof border);
+        console.log('  - Border === "none":', border === 'none');
 
         const downloadConfig = {
             ...configuration

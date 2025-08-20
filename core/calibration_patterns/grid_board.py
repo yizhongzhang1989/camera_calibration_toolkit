@@ -415,14 +415,23 @@ class GridBoard(CalibrationPattern):
         """
         # Handle web app compatibility - convert pixel_per_square to pixels_per_meter
         if pixel_per_square is not None:
-            # For grid board, we need to convert from "pixels per square" to "pixels per meter"
-            # Assuming the web app treats each "square" as the marker size
+            # For grid board, pixel_per_square means "pixels per marker"
+            # We need to calculate pixels_per_meter based on desired marker size in pixels
+            # Formula: pixels_per_meter = desired_marker_pixels / physical_marker_size
             pixels_per_meter = int(pixel_per_square / self.marker_size) if self.marker_size > 0 else 2000
         elif pixels_per_meter is None:
             pixels_per_meter = 2000  # Default value
+            
         # Calculate marker size and separation in pixels
-        marker_size_px = int(self.marker_size * pixels_per_meter)
-        marker_separation_px = int(self.marker_separation * pixels_per_meter)
+        if pixel_per_square is not None:
+            # Direct approach: use pixel_per_square directly as marker size in pixels
+            marker_size_px = pixel_per_square
+            # Scale separation proportionally
+            marker_separation_px = int(self.marker_separation * pixels_per_meter)
+        else:
+            # Traditional approach using pixels_per_meter
+            marker_size_px = int(self.marker_size * pixels_per_meter)
+            marker_separation_px = int(self.marker_separation * pixels_per_meter)
         
         # Ensure minimum marker size for OpenCV ArUco generation (at least 20 pixels)
         min_marker_size = 20
@@ -448,8 +457,9 @@ class GridBoard(CalibrationPattern):
         try:
             # Method 1: Try new generateImage() method (OpenCV 4.7+)
             if hasattr(self.grid_board, 'generateImage'):
+                # Pass the full image dimensions (including border) to OpenCV
                 board_image = self.grid_board.generateImage(
-                    (pattern_width_px, pattern_height_px), 
+                    (img_width, img_height), 
                     marginSize=border_pixels, 
                     borderBits=1
                 )

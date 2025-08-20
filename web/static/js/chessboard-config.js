@@ -310,14 +310,10 @@ class ChessboardConfig {
                 this.applyConfiguration();
             }
             
-            // Download button - only handle if PatternModal is not active
+            // Download button - PatternModal now handles all downloads
             if (e.target.matches('#download-pattern-btn')) {
-                // Check if PatternModal is handling downloads
-                if (window.patternSelectionModal) {
-                    console.log('🛑 ChessboardConfig: Skipping download - PatternModal is handling it');
-                    return; // Let PatternModal handle the download
-                }
-                this.downloadPattern();
+                console.log('🛑 ChessboardConfig: Download handled by PatternModal system');
+                return; // PatternModal handles all downloads now
             }
         });
 
@@ -931,46 +927,6 @@ class ChessboardConfig {
         
         console.log('⚠️ No patternConfigJSON available, returning null');
         return null;
-    }
-    
-    async downloadPattern() {
-        const patternJSON = this.getPatternJSON();
-        if (!patternJSON) {
-            alert('Please select and configure a pattern type first.');
-            return;
-        }
-        
-        console.log('Downloading pattern with JSON config:', patternJSON);
-        
-        const params = {
-            pattern_json: JSON.stringify(patternJSON),
-            pixel_per_square: 100,  // Higher resolution for printing
-            border_pixels: 50       // Border for printing
-        };
-        
-        const url = `/api/pattern_image?${new URLSearchParams(params)}`;
-        
-        try {
-            const response = await fetch(url);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const blob = await response.blob();
-            const downloadUrl = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = downloadUrl;
-            a.download = `calibration_pattern_${patternJSON.pattern_id || 'unknown'}.png`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(downloadUrl);
-            document.body.removeChild(a);
-            
-            console.log('Pattern download successful');
-        } catch (error) {
-            console.error('Error downloading pattern:', error);
-            alert('Error downloading pattern. Please try again.');
-        }
     }
 }
 

@@ -1102,6 +1102,9 @@ def get_pattern_image():
         pixel_per_square = int(request.args.get('pixel_per_square', 100))
         border_pixels = int(request.args.get('border_pixels', 0))
         
+        print(f"API: Pattern generation parameters:")
+        print(f"  - pixel_per_square: {pixel_per_square}")
+        print(f"  - border_pixels: {border_pixels}")
         print(f"API: Creating pattern from JSON: {pattern_json}")
         
         # Create pattern instance using unified JSON system
