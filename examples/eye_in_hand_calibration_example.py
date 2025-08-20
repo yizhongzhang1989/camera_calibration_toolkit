@@ -106,16 +106,16 @@ def calculate_camera_intrinsics(sample_dir):
         return None, None
 
 
-def test_hand_in_eye_calibration():
-    """Test hand-in-eye calibration workflow using sample data."""
-    print("🤖 Hand-in-Eye Camera Calibration")
+def test_eye_in_hand_calibration():
+    """Test eye-in-hand calibration workflow using sample data."""
+    print("🤖 Eye-in-Hand Camera Calibration")
     print("=" * 50)
     
     # Check sample data directory
-    sample_dir = os.path.join("sample_data", "hand_in_eye_test_data")
+    sample_dir = os.path.join("sample_data", "eye_in_hand_test_data")
     if not os.path.exists(sample_dir):
         print(f"❌ Sample data directory not found: {sample_dir}")
-        print("Please ensure the hand_in_eye_test_data directory exists with:")
+        print("Please ensure the eye_in_hand_test_data directory exists with:")
         print("  - Calibration images (0.jpg, 1.jpg, ...)")
         print("  - Robot pose files (0.json, 1.json, ...)")
         return
@@ -271,7 +271,7 @@ def test_hand_in_eye_calibration():
         print(f"\n📊 Additional calibration analysis completed using built-in error calculation")
         
         # Set up output directory for results and debug images
-        output_dir = "data/results/hand_in_eye_calibration"
+        output_dir = "data/results/eye_in_hand_calibration"
         os.makedirs(output_dir, exist_ok=True)
         
         # Generate debug images
@@ -404,7 +404,7 @@ def inspect_sample_data():
     print("\n🔍 Inspecting Sample Data")
     print("=" * 30)
     
-    sample_dir = os.path.join("sample_data", "hand_in_eye_test_data")
+    sample_dir = os.path.join("sample_data", "eye_in_hand_test_data")
     if not os.path.exists(sample_dir):
         print(f"❌ Sample data directory not found: {sample_dir}")
         return
@@ -452,10 +452,10 @@ if __name__ == "__main__":
     inspect_sample_data()
     
     # Run calibration with integrated optimization
-    success = test_hand_in_eye_calibration()
+    success = test_eye_in_hand_calibration()
     
-    print(f"\n✨ Hand-in-Eye calibration example completed!")
-    print(f"   Results saved to: data/results/hand_in_eye_calibration/")
+    print(f"\n✨ Eye-in-Hand calibration example completed!")
+    print(f"   Results saved to: data/results/eye_in_hand_calibration/")
     if success:
         print(f"   ✅ Calibration and optimization successful")
         print(f"   📸 Before/after optimization images available for comparison")

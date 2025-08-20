@@ -207,7 +207,7 @@ camera-calibration-toolkit/
 │   └── calibration_patterns/      # Pattern detection system
 ├── examples/                      # Working examples
 │   ├── intrinsic_calibration_example.py
-│   ├── hand_in_eye_calibration_example.py  
+│   ├── eye_in_hand_calibration_example.py  
 │   └── chessboard_pattern_example.py
 ├── web/                          # Web interface
 └── main.py                       # Entry point
