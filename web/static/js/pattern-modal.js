@@ -639,28 +639,57 @@ class PatternSelectionModal {
      * Download pattern with current settings
      */
     downloadPattern = async () => {
+        console.log('🎯 Download button clicked - collecting current form values...');
+        
         const configuration = this.getCurrentConfiguration();
         if (!configuration) {
             this.showError('No pattern configuration available');
             return;
         }
 
+        console.log('📊 Current form configuration for download:', configuration);
+
         // Add download quality and border settings
         const quality = document.getElementById('download-quality')?.value || 'high';
         const border = document.getElementById('download-border')?.value || 'medium';
 
+        // Map quality to pixel_per_square
+        const qualityMap = {
+            'standard': 100,
+            'high': 150,
+            'ultra': 200
+        };
+        const pixel_per_square = qualityMap[quality] || 150;
+
+        // Map border to border_pixels
+        const borderMap = {
+            'none': 0,
+            'small': 25,
+            'medium': 50,
+            'large': 100
+        };
+        const border_pixels = borderMap[border] || 50;
+
         const downloadConfig = {
-            ...configuration,
-            download_settings: {
-                quality: quality,
-                border: border
-            }
+            ...configuration
         };
 
+        // Build URL with print parameters as query params (API expects them in request.args)
+        const apiUrl = new URL('/api/pattern_image', window.location.origin);
+        apiUrl.searchParams.set('pixel_per_square', pixel_per_square);
+        apiUrl.searchParams.set('border_pixels', border_pixels);
+
         try {
-            console.log('💾 Downloading pattern...', downloadConfig);
+            console.log('💾 Download Settings Debug:');
+            console.log('  - Quality dropdown value:', quality);
+            console.log('  - Border dropdown value:', border);
+            console.log('  - Mapped pixel_per_square:', pixel_per_square);
+            console.log('  - Mapped border_pixels:', border_pixels);
+            console.log('  - API URL with query params:', apiUrl.toString());
             
-            const response = await fetch('/api/download_pattern', {
+            console.log('💾 Pattern config being sent to API (JSON body):', downloadConfig);
+            
+            const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

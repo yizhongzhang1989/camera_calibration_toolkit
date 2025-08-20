@@ -310,8 +310,13 @@ class ChessboardConfig {
                 this.applyConfiguration();
             }
             
-            // Download button
+            // Download button - only handle if PatternModal is not active
             if (e.target.matches('#download-pattern-btn')) {
+                // Check if PatternModal is handling downloads
+                if (window.patternSelectionModal) {
+                    console.log('🛑 ChessboardConfig: Skipping download - PatternModal is handling it');
+                    return; // Let PatternModal handle the download
+                }
                 this.downloadPattern();
             }
         });
