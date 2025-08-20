@@ -190,6 +190,8 @@ class EyeInHandCalibrator(BaseCalibrator):
             
             # Load poses
             pose_json_paths = glob(os.path.join(data_directory, "*.json"))
+            # Filter out configuration files that are not pose data
+            pose_json_paths = [p for p in pose_json_paths if not os.path.basename(p).startswith('chessboard_config')]
             pose_json_paths = sorted(pose_json_paths, key=lambda x: int(os.path.split(x)[-1].split('.')[0])
                                    if os.path.split(x)[-1].split('.')[0].isdigit() else 0)
             
