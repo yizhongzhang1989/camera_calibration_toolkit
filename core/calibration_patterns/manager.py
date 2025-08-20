@@ -137,6 +137,30 @@ class CalibrationPatternManager:
                 print(f"⚠️  Error getting configuration for {pattern_id}: {e}")
         
         return configurations
+    
+    def from_json(self, json_data: Dict[str, Any]):
+        """
+        Create pattern instance from JSON data.
+        
+        Args:
+            json_data: JSON data containing pattern configuration
+            
+        Returns:
+            CalibrationPattern: The created pattern instance
+            
+        Raises:
+            KeyError: If pattern_id is missing or pattern type not found
+            ValueError: If pattern parameters are invalid
+        """
+        pattern_id = json_data.get('pattern_id')
+        if not pattern_id:
+            raise KeyError("JSON data must contain 'pattern_id' field")
+            
+        if pattern_id not in self.patterns:
+            raise KeyError(f"Unknown pattern type: {pattern_id}")
+            
+        pattern_class = self.patterns[pattern_id]
+        return pattern_class.from_json(json_data)
 
 
 # Global pattern manager instance

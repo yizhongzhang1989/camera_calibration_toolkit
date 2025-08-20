@@ -19,6 +19,8 @@ Usage:
     pattern = manager.create_pattern('standard_chessboard', width=11, height=8, square_size=0.025)
 """
 
+from typing import Dict, Any
+
 # Import base classes
 from .base import CalibrationPattern
 from .manager import CalibrationPatternManager, get_pattern_manager
@@ -41,20 +43,16 @@ def get_pattern_type_configurations():
 def create_pattern_from_json(json_data):
     """Create pattern from JSON data (backward compatibility)."""
     manager = get_pattern_manager()
-    pattern_id = json_data.get('pattern_id', '')
-    
-    # Handle legacy pattern IDs
-    if pattern_id == 'standard':
-        pattern_id = 'standard_chessboard'
-    elif pattern_id == 'charuco':
-        pattern_id = 'charuco_board'
-    elif pattern_id == 'grid':
-        pattern_id = 'grid_board'
-    
-    # Extract parameters from JSON
-    parameters = json_data.get('parameters', {})
-    
-    return manager.create_pattern(pattern_id, **parameters)
+    return manager.from_json(json_data)
+
+def save_pattern_to_json(pattern) -> Dict[str, Any]:
+    """Save pattern to JSON format (convenience function)."""
+    return pattern.to_json()
+
+def load_pattern_from_json(json_data: Dict[str, Any]):
+    """Load pattern from JSON format (convenience function).""" 
+    manager = get_pattern_manager()
+    return manager.from_json(json_data)
 
 # Legacy function names for backward compatibility
 def create_chessboard_pattern(pattern_type, **kwargs):
@@ -85,5 +83,7 @@ __all__ = [
     'get_pattern_manager',
     'get_pattern_type_configurations',
     'create_pattern_from_json',
+    'save_pattern_to_json',
+    'load_pattern_from_json',
     'create_chessboard_pattern'
 ]

@@ -163,6 +163,39 @@ calibrator = CalibrationFactory.create_calibrator('intrinsic',
 )
 ```
 
+### Pattern Serialization and Recovery
+
+Save and load calibration patterns using JSON for reproducible results:
+
+```python
+from core.calibration_patterns import (
+    get_pattern_manager, 
+    save_pattern_to_json, 
+    load_pattern_from_json
+)
+
+# Create and save pattern
+manager = get_pattern_manager()
+pattern = manager.create_pattern('standard_chessboard', 
+    width=11, height=8, square_size=0.025)
+
+# Save pattern to JSON
+pattern_json = save_pattern_to_json(pattern)
+
+# Later, restore exact same pattern
+restored_pattern = load_pattern_from_json(pattern_json)
+
+# Embed pattern info in calibration results
+calibration_results = {
+    'timestamp': '2025-08-20T10:30:00Z',
+    'calibration_pattern': pattern_json,  # Embed pattern
+    'camera_matrix': camera_matrix,
+    'distortion_coefficients': dist_coeffs
+}
+
+# Perfect for reproducible calibration analysis
+```
+
 ## 📋 Data Formats
 
 ### Robot Pose JSON Format
