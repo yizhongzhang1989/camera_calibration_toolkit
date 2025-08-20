@@ -375,16 +375,20 @@ class IntrinsicCalibration extends BaseCalibration {
         const cornerImages = this.calibrationResults.corner_images || [];
         const undistortedImages = this.calibrationResults.undistorted_images || [];
         
-        // Create lookup maps by index
+        // Create lookup maps by index (skip null entries)
         const cornerImageMap = {};
         const undistortedImageMap = {};
         
-        cornerImages.forEach(img => {
-            cornerImageMap[img.index] = img;
+        cornerImages.forEach((img, idx) => {
+            if (img !== null && img !== undefined) {
+                cornerImageMap[img.index] = img;
+            }
         });
         
-        undistortedImages.forEach(img => {
-            undistortedImageMap[img.index] = img;
+        undistortedImages.forEach((img, idx) => {
+            if (img !== null && img !== undefined) {
+                undistortedImageMap[img.index] = img;
+            }
         });
         
         this.uploadedImages.forEach((file, index) => {
