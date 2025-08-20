@@ -70,6 +70,18 @@ class PatternSelectionModal {
         if (downloadJsonBtn) {
             downloadJsonBtn.addEventListener('click', this.downloadPatternJson);
         }
+
+        // Load JSON button
+        const loadJsonBtn = document.getElementById('load-json-btn');
+        if (loadJsonBtn) {
+            loadJsonBtn.addEventListener('click', this.loadPatternJson.bind(this));
+        }
+
+        // File input for JSON loading
+        const jsonFileInput = document.getElementById('json-file-input');
+        if (jsonFileInput) {
+            jsonFileInput.addEventListener('change', this.handleJsonFileLoad.bind(this));
+        }
     }
 
     /**
@@ -772,6 +784,121 @@ class PatternSelectionModal {
             this.showError('Failed to download pattern JSON: ' + error.message);
         }
     };
+
+    /**
+     * Load pattern JSON from file
+     */
+    loadPatternJson = () => {
+        console.log('📤 Load JSON button clicked - opening file picker...');
+        const fileInput = document.getElementById('json-file-input');
+        if (fileInput) {
+            fileInput.click();
+        }
+    };
+
+    /**
+     * Handle JSON file load
+     */
+    handleJsonFileLoad = async (event) => {
+        const file = event.target.files[0];
+        if (!file) {
+            return;
+        }
+
+        console.log('📤 Loading JSON file:', file.name);
+
+        try {
+            const jsonText = await this.readFileAsText(file);
+            const patternConfig = JSON.parse(jsonText);
+            
+            console.log('📊 Loaded pattern configuration:', patternConfig);
+
+            // Validate the JSON structure
+            if (!patternConfig.pattern_id) {
+                throw new Error('Invalid JSON: missing pattern_id');
+            }
+
+            // Load this configuration into the modal
+            await this.loadConfigurationFromJson(patternConfig);
+
+            console.log('✅ Pattern configuration loaded successfully');
+            
+        } catch (error) {
+            console.error('❌ Failed to load JSON:', error);
+            this.showError('Failed to load pattern JSON: ' + error.message);
+        } finally {
+            // Clear the file input so the same file can be selected again
+            event.target.value = '';
+        }
+    };
+
+    /**
+     * Read file as text
+     */
+    readFileAsText(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target.result);
+            reader.onerror = () => reject(new Error('Failed to read file'));
+            reader.readAsText(file);
+        });
+    }
+
+    /**
+     * Load configuration from JSON object
+     */
+    async loadConfigurationFromJson(patternConfig) {
+        console.log('🔧 Loading configuration from JSON into modal...');
+
+        // First, ensure patterns are loaded
+        await this.loadPatterns();
+
+        // Select the pattern type
+        const patternSelect = document.getElementById('pattern-type-select');
+        if (patternSelect && patternConfig.pattern_id) {
+            patternSelect.value = patternConfig.pattern_id;
+            
+            // Trigger pattern selection to load the form
+            await this.onPatternSelected({
+                target: { value: patternConfig.pattern_id }
+            });
+
+            // Wait a moment for the form to be generated
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            // Now populate the form with the parameters
+            if (patternConfig.parameters) {
+                this.populateParameterForm(patternConfig.parameters);
+            }
+
+            console.log('✅ Configuration loaded into modal successfully');
+        } else {
+            throw new Error(`Pattern type '${patternConfig.pattern_id}' not found`);
+        }
+    }
+
+    /**
+     * Populate parameter form with values
+     */
+    populateParameterForm(parameters) {
+        console.log('📝 Populating form with parameters:', parameters);
+
+        for (const [key, value] of Object.entries(parameters)) {
+            const input = document.querySelector(`#pattern-config-container input[name="${key}"], #pattern-config-container select[name="${key}"]`);
+            if (input) {
+                input.value = value;
+                console.log(`✓ Set ${key} = ${value}`);
+                
+                // Trigger change event to update any dependent fields
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            } else {
+                console.log(`⚠️ Field '${key}' not found in form`);
+            }
+        }
+
+        // Update preview after loading parameters
+        this.updatePreview();
+    }
 
     /**
      * Clear configuration
