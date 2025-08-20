@@ -64,6 +64,12 @@ class PatternSelectionModal {
         if (downloadBtn) {
             downloadBtn.addEventListener('click', this.downloadPattern);
         }
+
+        // Download JSON button
+        const downloadJsonBtn = document.getElementById('download-json-btn');
+        if (downloadJsonBtn) {
+            downloadJsonBtn.addEventListener('click', this.downloadPatternJson);
+        }
     }
 
     /**
@@ -492,10 +498,15 @@ class PatternSelectionModal {
                     `;
                 }
 
-                // Enable download button
+                // Enable download buttons
                 const downloadBtn = document.getElementById('download-pattern-btn');
                 if (downloadBtn) {
                     downloadBtn.disabled = false;
+                }
+                
+                const downloadJsonBtn = document.getElementById('download-json-btn');
+                if (downloadJsonBtn) {
+                    downloadJsonBtn.disabled = false;
                 }
 
                 console.log('✅ Preview updated successfully');
@@ -719,6 +730,50 @@ class PatternSelectionModal {
     };
 
     /**
+     * Download pattern configuration as JSON
+     */
+    downloadPatternJson = async () => {
+        console.log('📊 PatternModal: JSON download button clicked - collecting current form values...');
+        
+        const configuration = this.getCurrentConfiguration();
+        if (!configuration) {
+            this.showError('No pattern configuration available');
+            return;
+        }
+
+        try {
+            // Create complete JSON structure for saving/loading pattern
+            const patternJson = {
+                pattern_id: this.selectedPattern,
+                name: this.availablePatterns[this.selectedPattern]?.name || this.selectedPattern,
+                description: this.availablePatterns[this.selectedPattern]?.description || '',
+                is_planar: true, // All current patterns are planar
+                parameters: configuration.parameters || {}
+            };
+
+            console.log('📊 Generated pattern JSON:', patternJson);
+
+            // Create and download JSON file
+            const jsonString = JSON.stringify(patternJson, null, 2);
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${this.selectedPattern}_config.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            console.log('✅ Pattern JSON downloaded successfully');
+        } catch (error) {
+            console.error('❌ JSON download failed:', error);
+            this.showError('Failed to download pattern JSON: ' + error.message);
+        }
+    };
+
+    /**
      * Clear configuration
      */
     clearConfiguration() {
@@ -752,6 +807,9 @@ class PatternSelectionModal {
         
         const downloadBtn = document.getElementById('download-pattern-btn');
         if (downloadBtn) downloadBtn.disabled = true;
+        
+        const downloadJsonBtn = document.getElementById('download-json-btn');
+        if (downloadJsonBtn) downloadJsonBtn.disabled = true;
     }
 
     /**
