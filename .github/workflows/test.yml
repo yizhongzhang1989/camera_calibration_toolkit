@@ -48,9 +48,9 @@ jobs:
         try:
             import subprocess
             subprocess.run(['pip', 'install', 'Flask', 'Werkzeug'], check=True)
-            print('✅ Web packages installed successfully')
+            print('Web packages installed successfully')
         except subprocess.CalledProcessError:
-            print('⚠️ Web packages failed to install, continuing without them')
+            print('Web packages failed to install, continuing without them')
         "
     
     - name: Verify installation
@@ -77,11 +77,11 @@ jobs:
       if: runner.os != 'Windows'
       run: |
         ls -la coverage.xml || echo "No coverage file generated"
-        echo "✅ Tests completed for Python ${{ matrix.python-version }} on ${{ matrix.os }}"
+        echo "Tests completed for Python ${{ matrix.python-version }} on ${{ matrix.os }}"
     
     - name: Check results (Windows)
       if: runner.os == 'Windows'
       run: |
         if (Test-Path coverage.xml) { Get-ChildItem coverage.xml } else { Write-Host "No coverage file generated" }
-        Write-Host "✅ Tests completed for Python ${{ matrix.python-version }} on ${{ matrix.os }}"
+        Write-Host "Tests completed for Python ${{ matrix.python-version }} on ${{ matrix.os }}"
       shell: powershell
