@@ -99,11 +99,18 @@ class IntrinsicCalibrator(BaseCalibrator):
         if self.image_points is None or self.object_points is None:
             raise ValueError("Point correspondences not available. Call detect_pattern_points() first.")
         
-        if len(self.image_points) < 3:
-            raise ValueError(f"Insufficient point correspondences: need at least 3, got {len(self.image_points)}")
+        # Count successful detections (non-None entries)
+        successful_count = sum(1 for pts in self.image_points if pts is not None)
+        
+        if successful_count < 3:
+            raise ValueError(f"Insufficient point correspondences: need at least 3, got {successful_count}")
         
         if self.image_size is None:
             raise ValueError("Image size not set")
+        
+        # Create temporary arrays for OpenCV (only successful detections)
+        temp_object_points = [pts for pts in self.object_points if pts is not None]
+        temp_image_points = [pts for pts in self.image_points if pts is not None]
         
         # Handle initial camera matrix
         initial_camera_matrix = cameraMatrix
@@ -126,18 +133,18 @@ class IntrinsicCalibrator(BaseCalibrator):
             calibration_flags |= cv2.CALIB_USE_INTRINSIC_GUESS
         
         if verbose:
-            print(f"Running calibration with {len(self.image_points)} point correspondences")
+            print(f"Running calibration with {successful_count} point correspondences")
             print(f"Image size: {self.image_size}")
             print(f"Calibration flags: {calibration_flags}")
             if initial_camera_matrix is not None:
                 print(f"Using initial camera matrix:")
                 print(initial_camera_matrix)
         
-        # Perform calibration
+        # Perform calibration using temporary arrays
         try:
             ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(
-                self.object_points, 
-                self.image_points, 
+                temp_object_points, 
+                temp_image_points, 
                 self.image_size, 
                 initial_camera_matrix, 
                 distCoeffs,
@@ -146,6 +153,18 @@ class IntrinsicCalibrator(BaseCalibrator):
             )
             
             if ret and mtx is not None:
+                # Restore alignment: expand rvecs/tvecs back to match original image count
+                self.rvecs = [None] * len(self.images)
+                self.tvecs = [None] * len(self.images)
+                
+                # Map successful results back to original image indices
+                success_idx = 0
+                for i in range(len(self.images)):
+                    if self.image_points[i] is not None:
+                        self.rvecs[i] = rvecs[success_idx]
+                        self.tvecs[i] = tvecs[success_idx]
+                        success_idx += 1
+                    # else: rvecs[i] and tvecs[i] remain None for failed detections
                 # Determine distortion model from flags
                 distortion_model = 'standard'  # default
                 if calibration_flags & cv2.CALIB_TILTED_MODEL:
@@ -159,17 +178,24 @@ class IntrinsicCalibrator(BaseCalibrator):
                 self.camera_matrix = mtx
                 self.distortion_coefficients = dist
                 self.distortion_model = distortion_model
-                self.rvecs = rvecs
-                self.tvecs = tvecs
                 self.rms_error = ret
                 self.calibration_completed = True
                 
-                # Calculate per-image reprojection errors
-                self.per_image_errors = []
-                for obj_pts, img_pts, rvec, tvec in zip(self.object_points, self.image_points, rvecs, tvecs):
-                    projected_pts, _ = cv2.projectPoints(obj_pts, rvec, tvec, mtx, dist)
-                    error = cv2.norm(img_pts, projected_pts, cv2.NORM_L2) / np.sqrt(len(projected_pts))
-                    self.per_image_errors.append(error)
+                # Calculate per-image reprojection errors (only for successful detections)
+                self.per_image_errors = [None] * len(self.images)  # Aligned with images
+                temp_errors = []
+                for temp_obj_pts, temp_img_pts, rvec, tvec in zip(temp_object_points, temp_image_points, rvecs, tvecs):
+                    projected_pts, _ = cv2.projectPoints(temp_obj_pts, rvec, tvec, mtx, dist)
+                    error = cv2.norm(temp_img_pts, projected_pts, cv2.NORM_L2) / np.sqrt(len(projected_pts))
+                    temp_errors.append(error)
+                
+                # Map errors back to original image indices
+                success_idx = 0
+                for i in range(len(self.images)):
+                    if self.image_points[i] is not None:
+                        self.per_image_errors[i] = temp_errors[success_idx]
+                        success_idx += 1
+                    # else: per_image_errors[i] remains None for failed detections
                 
                 if verbose:
                     print(f"✅ Calibration successful!")
@@ -178,7 +204,9 @@ class IntrinsicCalibrator(BaseCalibrator):
                     print(f"  fx: {mtx[0,0]:.2f}, fy: {mtx[1,1]:.2f}")
                     print(f"  cx: {mtx[0,2]:.2f}, cy: {mtx[1,2]:.2f}")
                     print(f"Distortion coefficients: {dist.flatten()}")
-                    print(f"Per-image errors: {[f'{err:.4f}' for err in self.per_image_errors]}")
+                    # Only show errors for successful detections
+                    successful_errors = [f'{err:.4f}' for err in self.per_image_errors if err is not None]
+                    print(f"Per-image errors: {successful_errors}")
                 
                 return ret
             else:
@@ -224,7 +252,7 @@ class IntrinsicCalibrator(BaseCalibrator):
         calibration_data = {
             "calibration_info": {
                 "timestamp": __import__('datetime').datetime.now().isoformat(),
-                "image_count": len(self.image_points) if self.image_points else 0,
+                "image_count": len([pts for pts in self.image_points if pts is not None]) if self.image_points else 0,
                 "pattern_type": self.pattern_type,
                 "distortion_model": self.distortion_model,
                 "rms_error": float(self.rms_error)
@@ -232,7 +260,7 @@ class IntrinsicCalibrator(BaseCalibrator):
             "camera_matrix": self.camera_matrix.tolist(),
             "distortion_coefficients": self.distortion_coefficients.tolist(),
             "image_size": list(self.image_size) if self.image_size else None,
-            "per_image_errors": [float(err) for err in self.per_image_errors] if self.per_image_errors else None
+            "per_image_errors": [float(err) if err is not None else None for err in self.per_image_errors] if self.per_image_errors else None
         }
         
         # Add pattern information if available
@@ -245,9 +273,13 @@ class IntrinsicCalibrator(BaseCalibrator):
         
         # Add extrinsics if requested and available
         if include_extrinsics and self.rvecs is not None and self.tvecs is not None:
+            # Only include extrinsics for successful detections (non-None entries)
+            valid_rvecs = [rvec.tolist() for rvec in self.rvecs if rvec is not None]
+            valid_tvecs = [tvec.tolist() for tvec in self.tvecs if tvec is not None]
+            
             calibration_data["extrinsics"] = {
-                "rotation_vectors": [rvec.tolist() for rvec in self.rvecs],
-                "translation_vectors": [tvec.tolist() for tvec in self.tvecs]
+                "rotation_vectors": valid_rvecs,
+                "translation_vectors": valid_tvecs
             }
             
             # Add image paths if available

@@ -1,10 +1,13 @@
 /**
- * Dynamic Pattern Selection Modal System
+ * Dynamic Pattern Selection Modal System - v2.0.1 (2025-08-20)
  * ====================================== 
  * 
  * Integrates with existing calibration UI to provide dynamic pattern selection
  * based on the auto-discovery system from the modular pattern architecture.
+ * UPDATED: Added horizontal form layout (label + input on same row)
  */
+
+console.log('🎨 PatternModal v2.0.1 loaded with horizontal layout support');
 
 class PatternSelectionModal {
     constructor() {
@@ -60,6 +63,24 @@ class PatternSelectionModal {
         const downloadBtn = document.getElementById('download-pattern-btn');
         if (downloadBtn) {
             downloadBtn.addEventListener('click', this.downloadPattern);
+        }
+
+        // Download JSON button
+        const downloadJsonBtn = document.getElementById('download-json-btn');
+        if (downloadJsonBtn) {
+            downloadJsonBtn.addEventListener('click', this.downloadPatternJson);
+        }
+
+        // Load JSON button
+        const loadJsonBtn = document.getElementById('load-json-btn');
+        if (loadJsonBtn) {
+            loadJsonBtn.addEventListener('click', this.loadPatternJson.bind(this));
+        }
+
+        // File input for JSON loading
+        const jsonFileInput = document.getElementById('json-file-input');
+        if (jsonFileInput) {
+            jsonFileInput.addEventListener('change', this.handleJsonFileLoad.bind(this));
         }
     }
 
@@ -252,14 +273,14 @@ class PatternSelectionModal {
                         `<option value="${opt.value}" ${opt.value === param.default ? 'selected' : ''}>${opt.label}</option>`
                     ).join('');
                     inputElement = `
-                        <select class="form-select" id="${inputId}" name="${param.name}" required>
+                        <select class="form-select form-select-sm" id="${inputId}" name="${param.name}" required>
                             ${options}
                         </select>
                     `;
                 } else {
                     inputElement = `
                         <input type="number" 
-                               class="form-control" 
+                               class="form-control form-control-sm" 
                                id="${inputId}" 
                                name="${param.name}"
                                value="${param.default || ''}"
@@ -274,7 +295,7 @@ class PatternSelectionModal {
             case 'float':
                 inputElement = `
                     <input type="number" 
-                           class="form-control" 
+                           class="form-control form-control-sm" 
                            id="${inputId}" 
                            name="${param.name}"
                            value="${param.default || ''}"
@@ -290,7 +311,7 @@ class PatternSelectionModal {
                     `<option value="${opt.value}" ${opt.value === param.default ? 'selected' : ''}>${opt.label}</option>`
                 ).join('');
                 inputElement = `
-                    <select class="form-select" id="${inputId}" name="${param.name}" required>
+                    <select class="form-select form-select-sm" id="${inputId}" name="${param.name}" required>
                         ${options}
                     </select>
                 `;
@@ -299,7 +320,7 @@ class PatternSelectionModal {
             default:
                 inputElement = `
                     <input type="text" 
-                           class="form-control" 
+                           class="form-control form-control-sm" 
                            id="${inputId}" 
                            name="${param.name}"
                            value="${param.default || ''}"
@@ -308,12 +329,18 @@ class PatternSelectionModal {
         }
 
         fieldDiv.innerHTML = `
-            <label for="${inputId}" class="form-label">
-                ${param.label}
-                ${param.required !== false ? '<span class="text-danger">*</span>' : ''}
-            </label>
-            ${inputElement}
-            <div class="form-text">${param.description}</div>
+            <div class="row align-items-center">
+                <div class="col-sm-5">
+                    <label for="${inputId}" class="form-label mb-0">
+                        ${param.label}
+                        ${param.required !== false ? '<span class="text-danger">*</span>' : ''}
+                    </label>
+                </div>
+                <div class="col-sm-7">
+                    ${inputElement}
+                </div>
+            </div>
+            <div class="form-text mt-1 small text-muted">${param.description}</div>
             <div class="invalid-feedback"></div>
         `;
 
@@ -483,10 +510,15 @@ class PatternSelectionModal {
                     `;
                 }
 
-                // Enable download button
+                // Enable download buttons
                 const downloadBtn = document.getElementById('download-pattern-btn');
                 if (downloadBtn) {
                     downloadBtn.disabled = false;
+                }
+                
+                const downloadJsonBtn = document.getElementById('download-json-btn');
+                if (downloadJsonBtn) {
+                    downloadJsonBtn.disabled = false;
                 }
 
                 console.log('✅ Preview updated successfully');
@@ -630,28 +662,57 @@ class PatternSelectionModal {
      * Download pattern with current settings
      */
     downloadPattern = async () => {
+        console.log('🎯 PatternModal: Download button clicked - collecting current form values...');
+        
         const configuration = this.getCurrentConfiguration();
         if (!configuration) {
             this.showError('No pattern configuration available');
             return;
         }
 
+        console.log('📊 Current form configuration for download:', configuration);
+
         // Add download quality and border settings
         const quality = document.getElementById('download-quality')?.value || 'high';
         const border = document.getElementById('download-border')?.value || 'medium';
 
+        // Map quality to pixel_per_square
+        const qualityMap = {
+            'standard': 100,
+            'high': 150,
+            'ultra': 200
+        };
+        const pixel_per_square = qualityMap[quality] || 150;
+
+        // Map border to border_pixels
+        const borderMap = {
+            'none': 0,
+            'small': 25,
+            'medium': 50,
+            'large': 100
+        };
+        const border_pixels = borderMap.hasOwnProperty(border) ? borderMap[border] : 50;
+
         const downloadConfig = {
-            ...configuration,
-            download_settings: {
-                quality: quality,
-                border: border
-            }
+            ...configuration
         };
 
+        // Build URL with print parameters as query params (API expects them in request.args)
+        const apiUrl = new URL('/api/pattern_image', window.location.origin);
+        apiUrl.searchParams.set('pixel_per_square', pixel_per_square);
+        apiUrl.searchParams.set('border_pixels', border_pixels);
+
         try {
-            console.log('💾 Downloading pattern...', downloadConfig);
+            console.log('💾 Download Settings Debug:');
+            console.log('  - Quality dropdown value:', quality);
+            console.log('  - Border dropdown value:', border);
+            console.log('  - Mapped pixel_per_square:', pixel_per_square);
+            console.log('  - Mapped border_pixels:', border_pixels);
+            console.log('  - API URL with query params:', apiUrl.toString());
             
-            const response = await fetch('/api/download_pattern', {
+            console.log('💾 Pattern config being sent to API (JSON body):', downloadConfig);
+            
+            const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -679,6 +740,165 @@ class PatternSelectionModal {
             this.showError('Failed to download pattern: ' + error.message);
         }
     };
+
+    /**
+     * Download pattern configuration as JSON
+     */
+    downloadPatternJson = async () => {
+        console.log('📊 PatternModal: JSON download button clicked - collecting current form values...');
+        
+        const configuration = this.getCurrentConfiguration();
+        if (!configuration) {
+            this.showError('No pattern configuration available');
+            return;
+        }
+
+        try {
+            // Create complete JSON structure for saving/loading pattern
+            const patternJson = {
+                pattern_id: this.selectedPattern,
+                name: this.availablePatterns[this.selectedPattern]?.name || this.selectedPattern,
+                description: this.availablePatterns[this.selectedPattern]?.description || '',
+                is_planar: true, // All current patterns are planar
+                parameters: configuration.parameters || {}
+            };
+
+            console.log('📊 Generated pattern JSON:', patternJson);
+
+            // Create and download JSON file
+            const jsonString = JSON.stringify(patternJson, null, 2);
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${this.selectedPattern}_config.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            console.log('✅ Pattern JSON downloaded successfully');
+        } catch (error) {
+            console.error('❌ JSON download failed:', error);
+            this.showError('Failed to download pattern JSON: ' + error.message);
+        }
+    };
+
+    /**
+     * Load pattern JSON from file
+     */
+    loadPatternJson = () => {
+        console.log('📤 Load JSON button clicked - opening file picker...');
+        const fileInput = document.getElementById('json-file-input');
+        if (fileInput) {
+            fileInput.click();
+        }
+    };
+
+    /**
+     * Handle JSON file load
+     */
+    handleJsonFileLoad = async (event) => {
+        const file = event.target.files[0];
+        if (!file) {
+            return;
+        }
+
+        console.log('📤 Loading JSON file:', file.name);
+
+        try {
+            const jsonText = await this.readFileAsText(file);
+            const patternConfig = JSON.parse(jsonText);
+            
+            console.log('📊 Loaded pattern configuration:', patternConfig);
+
+            // Validate the JSON structure
+            if (!patternConfig.pattern_id) {
+                throw new Error('Invalid JSON: missing pattern_id');
+            }
+
+            // Load this configuration into the modal
+            await this.loadConfigurationFromJson(patternConfig);
+
+            console.log('✅ Pattern configuration loaded successfully');
+            
+        } catch (error) {
+            console.error('❌ Failed to load JSON:', error);
+            this.showError('Failed to load pattern JSON: ' + error.message);
+        } finally {
+            // Clear the file input so the same file can be selected again
+            event.target.value = '';
+        }
+    };
+
+    /**
+     * Read file as text
+     */
+    readFileAsText(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target.result);
+            reader.onerror = () => reject(new Error('Failed to read file'));
+            reader.readAsText(file);
+        });
+    }
+
+    /**
+     * Load configuration from JSON object
+     */
+    async loadConfigurationFromJson(patternConfig) {
+        console.log('🔧 Loading configuration from JSON into modal...');
+
+        // First, ensure patterns are loaded
+        await this.loadPatterns();
+
+        // Select the pattern type
+        const patternSelect = document.getElementById('pattern-type-select');
+        if (patternSelect && patternConfig.pattern_id) {
+            patternSelect.value = patternConfig.pattern_id;
+            
+            // Trigger pattern selection to load the form
+            await this.onPatternSelected({
+                target: { value: patternConfig.pattern_id }
+            });
+
+            // Wait a moment for the form to be generated
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            // Now populate the form with the parameters
+            if (patternConfig.parameters) {
+                this.populateParameterForm(patternConfig.parameters);
+            }
+
+            console.log('✅ Configuration loaded into modal successfully');
+        } else {
+            throw new Error(`Pattern type '${patternConfig.pattern_id}' not found`);
+        }
+    }
+
+    /**
+     * Populate parameter form with values
+     */
+    populateParameterForm(parameters) {
+        console.log('📝 Populating form with parameters:', parameters);
+
+        for (const [key, value] of Object.entries(parameters)) {
+            const input = document.querySelector(`#pattern-config-container input[name="${key}"], #pattern-config-container select[name="${key}"]`);
+            if (input) {
+                input.value = value;
+                console.log(`✓ Set ${key} = ${value}`);
+                
+                // Trigger change event to update any dependent fields
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            } else {
+                console.log(`⚠️ Field '${key}' not found in form`);
+            }
+        }
+
+        // Update preview after loading parameters
+        this.updatePreview();
+    }
 
     /**
      * Clear configuration
@@ -714,6 +934,9 @@ class PatternSelectionModal {
         
         const downloadBtn = document.getElementById('download-pattern-btn');
         if (downloadBtn) downloadBtn.disabled = true;
+        
+        const downloadJsonBtn = document.getElementById('download-json-btn');
+        if (downloadJsonBtn) downloadJsonBtn.disabled = true;
     }
 
     /**

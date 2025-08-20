@@ -30,8 +30,37 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.eye_in_hand_calibration import EyeInHandCalibrator
 from core.intrinsic_calibration import IntrinsicCalibrator
-from core.calibration_patterns import create_chessboard_pattern
+from core.calibration_patterns import load_pattern_from_json
 from core.utils import load_images_from_directory
+
+
+def load_pattern_config(config_path):
+    """Load pattern configuration from JSON file.
+    
+    Args:
+        config_path: Path to the JSON configuration file
+        
+    Returns:
+        tuple: (pattern, pattern_type) where pattern is the calibration pattern
+               and pattern_type is the pattern type string
+    """
+    try:
+        with open(config_path, 'r') as f:
+            config_data = json.load(f)
+        
+        print(f"📋 Loading pattern configuration from: {config_path}")
+        print(f"   Pattern: {config_data.get('name', 'Unknown')}")
+        print(f"   Type: {config_data.get('pattern_id', 'Unknown')}")
+        
+        # Create pattern using the JSON data
+        pattern = load_pattern_from_json(config_data)
+        pattern_type = config_data['pattern_id']
+        
+        return pattern, pattern_type
+        
+    except Exception as e:
+        print(f"❌ Failed to load pattern configuration: {e}")
+        raise
 
 
 def calculate_camera_intrinsics(sample_dir):
@@ -57,14 +86,19 @@ def calculate_camera_intrinsics(sample_dir):
         
         print(f"   Using {len(image_paths)} images for intrinsic calibration")
         
-        # Create calibration pattern (same as used for hand-eye calibration)
-        pattern = create_chessboard_pattern('standard', width=11, height=8, square_size=0.02)
+        # Load pattern configuration from JSON file
+        config_path = os.path.join(sample_dir, "chessboard_config.json")
+        if not os.path.exists(config_path):
+            print(f"❌ Pattern configuration not found: {config_path}")
+            return None, None
+        
+        pattern, pattern_type = load_pattern_config(config_path)
         
         # Create IntrinsicCalibrator with smart constructor
         intrinsic_calibrator = IntrinsicCalibrator(
             image_paths=image_paths,
             calibration_pattern=pattern,
-            pattern_type='standard'
+            pattern_type=pattern_type
         )
         
         # Detect pattern points
@@ -106,16 +140,16 @@ def calculate_camera_intrinsics(sample_dir):
         return None, None
 
 
-def test_hand_in_eye_calibration():
-    """Test hand-in-eye calibration workflow using sample data."""
-    print("🤖 Hand-in-Eye Camera Calibration")
+def test_eye_in_hand_calibration():
+    """Test eye-in-hand calibration workflow using sample data."""
+    print("🤖 Eye-in-Hand Camera Calibration")
     print("=" * 50)
     
     # Check sample data directory
-    sample_dir = os.path.join("sample_data", "hand_in_eye_test_data")
+    sample_dir = os.path.join("sample_data", "eye_in_hand_test_data")
     if not os.path.exists(sample_dir):
         print(f"❌ Sample data directory not found: {sample_dir}")
-        print("Please ensure the hand_in_eye_test_data directory exists with:")
+        print("Please ensure the eye_in_hand_test_data directory exists with:")
         print("  - Calibration images (0.jpg, 1.jpg, ...)")
         print("  - Robot pose files (0.json, 1.json, ...)")
         return
@@ -134,17 +168,20 @@ def test_hand_in_eye_calibration():
     print(f"   cx={camera_matrix[0,2]:.1f}, cy={camera_matrix[1,2]:.1f}")
     print(f"   Distortion: {distortion_coefficients.flatten()}")
     
-    # Create calibration pattern
-    # Based on the sample images, they use an 11x8 chessboard pattern
-    pattern = create_chessboard_pattern('standard', width=11, height=8, square_size=0.02)
-    print(f"🎯 Calibration pattern: 11x8 chessboard, 20mm squares")
+    # Load pattern configuration from JSON file (same as used for intrinsics)
+    config_path = os.path.join(sample_dir, "chessboard_config.json")
+    if not os.path.exists(config_path):
+        print(f"❌ Pattern configuration not found: {config_path}")
+        return False
+        
+    pattern, pattern_type = load_pattern_config(config_path)
     
     # Smart constructor approach - initialize with all data at once
     calibrator = EyeInHandCalibrator(
         camera_matrix=camera_matrix,          # Camera intrinsics
         distortion_coefficients=distortion_coefficients,
-        calibration_pattern=pattern,         # Calibration pattern
-        pattern_type='standard'              # Pattern type string
+        calibration_pattern=pattern,         # Calibration pattern (loaded from JSON)
+        pattern_type=pattern_type            # Pattern type string (loaded from JSON)
     )
     
     print("✅ Calibrator initialized with smart constructor")
@@ -271,7 +308,7 @@ def test_hand_in_eye_calibration():
         print(f"\n📊 Additional calibration analysis completed using built-in error calculation")
         
         # Set up output directory for results and debug images
-        output_dir = "data/results/hand_in_eye_calibration"
+        output_dir = "data/results/eye_in_hand_calibration"
         os.makedirs(output_dir, exist_ok=True)
         
         # Generate debug images
@@ -404,7 +441,7 @@ def inspect_sample_data():
     print("\n🔍 Inspecting Sample Data")
     print("=" * 30)
     
-    sample_dir = os.path.join("sample_data", "hand_in_eye_test_data")
+    sample_dir = os.path.join("sample_data", "eye_in_hand_test_data")
     if not os.path.exists(sample_dir):
         print(f"❌ Sample data directory not found: {sample_dir}")
         return
@@ -452,10 +489,10 @@ if __name__ == "__main__":
     inspect_sample_data()
     
     # Run calibration with integrated optimization
-    success = test_hand_in_eye_calibration()
+    success = test_eye_in_hand_calibration()
     
-    print(f"\n✨ Hand-in-Eye calibration example completed!")
-    print(f"   Results saved to: data/results/hand_in_eye_calibration/")
+    print(f"\n✨ Eye-in-Hand calibration example completed!")
+    print(f"   Results saved to: data/results/eye_in_hand_calibration/")
     if success:
         print(f"   ✅ Calibration and optimization successful")
         print(f"   📸 Before/after optimization images available for comparison")

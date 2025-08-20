@@ -17,22 +17,52 @@ import cv2
 import sys
 import cv2
 import numpy as np
+import json
 
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.intrinsic_calibration import IntrinsicCalibrator
-from core.calibration_patterns import create_chessboard_pattern
+from core.calibration_patterns import load_pattern_from_json
 from core.utils import load_images_from_directory
 
 
+def load_pattern_config(config_path):
+    """Load pattern configuration from JSON file.
+    
+    Args:
+        config_path: Path to the JSON configuration file
+        
+    Returns:
+        tuple: (pattern, pattern_type) where pattern is the calibration pattern
+               and pattern_type is the pattern type string
+    """
+    try:
+        with open(config_path, 'r') as f:
+            config_data = json.load(f)
+        
+        print(f"📋 Loading pattern configuration from: {config_path}")
+        print(f"   Pattern: {config_data.get('name', 'Unknown')}")
+        print(f"   Type: {config_data.get('pattern_id', 'Unknown')}")
+        
+        # Create pattern using the JSON data
+        pattern = load_pattern_from_json(config_data)
+        pattern_type = config_data['pattern_id']
+        
+        return pattern, pattern_type
+        
+    except Exception as e:
+        print(f"❌ Failed to load pattern configuration: {e}")
+        raise
+
+
 def test_chessboard_calibration():
-    """Test calibration workflow with chessboard pattern using image paths."""
-    print("🔧 Chessboard Calibration from Image Paths")
+    """Test calibration workflow with pattern configuration loaded from JSON."""
+    print("🔧 Pattern-Based Calibration from JSON Config")
     print("=" * 50)
     
     # Load sample images
-    sample_dir = os.path.join("sample_data", "hand_in_eye_test_data")
+    sample_dir = os.path.join("sample_data", "eye_in_hand_test_data")
     if not os.path.exists(sample_dir):
         print(f"❌ Sample data directory not found: {sample_dir}")
         return
@@ -40,14 +70,19 @@ def test_chessboard_calibration():
     image_paths = load_images_from_directory(sample_dir)
     print(f"Using {len(image_paths)} sample images")
     
-    # Create calibration pattern
-    pattern = create_chessboard_pattern('standard', width=11, height=8, square_size=0.02)
+    # Load pattern configuration from JSON file
+    config_path = os.path.join(sample_dir, "chessboard_config.json")
+    if not os.path.exists(config_path):
+        print(f"❌ Pattern configuration not found: {config_path}")
+        return
+    
+    pattern, pattern_type = load_pattern_config(config_path)
     
     # Smart constructor - sets member parameters directly
     calibrator = IntrinsicCalibrator(
         image_paths=image_paths,           # Member parameter set in constructor
         calibration_pattern=pattern,      # Member parameter set in constructor
-        pattern_type='standard'           # Member parameter set in constructor
+        pattern_type=pattern_type          # Member parameter set in constructor (loaded from JSON)
     )
     
     print("✅ Calibrator initialized with smart constructor")
@@ -76,8 +111,8 @@ def test_chessboard_calibration():
             print(f"   Camera Matrix: fx={camera_matrix[0,0]:.1f}, fy={camera_matrix[1,1]:.1f}")
             print(f"   Principal Point: cx={camera_matrix[0,2]:.1f}, cy={camera_matrix[1,2]:.1f}")
             
-            # Save calibration data to JSON
-            output_dir = "data/results/chessboard_calibration"
+            # Save calibration data to JSON  
+            output_dir = f"data/results/{pattern_type}_calibration"
             os.makedirs(output_dir, exist_ok=True)
             calibrator.save_calibration(
                 os.path.join(output_dir, "calibration_results.json"),
@@ -112,8 +147,8 @@ def test_chessboard_calibration():
 
 
 def test_charuco_calibration():
-    """Test calibration workflow with ChArUco board pattern using image paths."""
-    print("\n\n🔧 ChArUco Board Calibration from Image Paths")
+    """Test calibration workflow with ChArUco pattern configuration loaded from JSON."""
+    print("\n\n🔧 ChArUco Board Calibration from JSON Config")
     print("=" * 50)
     
     # Load sample images with ChArUco boards
@@ -125,23 +160,19 @@ def test_charuco_calibration():
     image_paths = load_images_from_directory(sample_dir)
     print(f"Using {len(image_paths)} ChArUco sample images")
     
-    # Create ChArUco calibration pattern with specified parameters
-    # Based on: {"dict": 1, "chessboard_w": 9, "chessboard_h": 7, 
-    #           "square_length": 1.81e-02, "marker_length": 9.05e-03}
-    pattern = create_chessboard_pattern(
-        pattern_type='charuco',
-        width=9,                          # chessboard_w
-        height=7,                          # chessboard_h  
-        square_size=0.0181,               # square_length (1.8100000917911530e-02)
-        marker_size=0.00905,              # marker_length (9.0500004589557648e-03)
-        dictionary_id=cv2.aruco.DICT_4X4_100  # dict=1 corresponds to DICT_4X4_100
-    )
+    # Load pattern configuration from JSON file
+    config_path = os.path.join(sample_dir, "chessboard_config.json")
+    if not os.path.exists(config_path):
+        print(f"❌ Pattern configuration not found: {config_path}")
+        return
+    
+    pattern, pattern_type = load_pattern_config(config_path)
     
     # Smart constructor - sets member parameters directly
     calibrator = IntrinsicCalibrator(
         image_paths=image_paths,           # Member parameter set in constructor
         calibration_pattern=pattern,      # Member parameter set in constructor
-        pattern_type='charuco'            # Member parameter set in constructor
+        pattern_type=pattern_type          # Member parameter set in constructor (loaded from JSON)
     )
     
     print("✅ Calibrator initialized with ChArUco pattern")
@@ -171,7 +202,7 @@ def test_charuco_calibration():
             print(f"   Principal Point: cx={camera_matrix[0,2]:.1f}, cy={camera_matrix[1,2]:.1f}")
             
             # Save calibration data to JSON
-            output_dir = "data/results/charuco_calibration"
+            output_dir = f"data/results/{pattern_type}_calibration"
             os.makedirs(output_dir, exist_ok=True)
             calibrator.save_calibration(
                 os.path.join(output_dir, "calibration_results.json"),
@@ -208,12 +239,12 @@ def test_charuco_calibration():
 if __name__ == "__main__":
     print("🚀 Intrinsic Camera Calibration Example")
     print("=" * 60)
-    print("Camera calibration using different pattern types")
+    print("Camera calibration using JSON pattern configurations")
     print()
     
     test_chessboard_calibration()
     test_charuco_calibration()
     
     print(f"\n✨ All calibrations completed!")
-    print(f"   Chessboard results: data/results/chessboard_calibration/")
-    print(f"   ChArUco results: data/results/charuco_calibration/")
+    print(f"   Results saved in: data/results/[pattern_type]_calibration/")
+    print(f"   Pattern configurations loaded from JSON files in sample_data/")

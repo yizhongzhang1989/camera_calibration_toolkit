@@ -172,5 +172,7 @@ class CalibrationPattern(ABC):
             return f"{info['width']}×{info['height']} corners, {info['square_size']*1000:.1f}mm squares"
         elif self.pattern_id == "charuco_board":
             return f"{info['width']}×{info['height']} squares, {info['square_size']*1000:.1f}mm sq, {info['marker_size']*1000:.1f}mm markers"
+        elif self.pattern_id == "grid_board":
+            return f"{info['markers_x']}×{info['markers_y']} ArUco markers, {info['marker_size']*1000:.1f}mm size, {info['marker_separation']*1000:.1f}mm sep"
         else:
             return f"{info['name']} - {info.get('total_features', 'N/A')} features"

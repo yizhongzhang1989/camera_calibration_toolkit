@@ -527,58 +527,103 @@ def calibrate():
                     print("-" * 30)
                     
                     # Use the calibrator's built-in visualization methods
-                    # Generate corner detection images
+                    # Generate corner detection images with aligned index tracking
                     corner_viz_dir = os.path.join(results_folder, 'corner_visualizations')
                     os.makedirs(corner_viz_dir, exist_ok=True)
                     
-                    pattern_images = calibrator.draw_pattern_on_images()
-                    corner_images = []
+                    # Create separate original images directory
+                    original_dir = os.path.join(results_folder, 'original')
+                    os.makedirs(original_dir, exist_ok=True)
                     
+                    pattern_images = calibrator.draw_pattern_on_images()
+                    
+                    # Use the calibrator's filename manager for systematic duplicate handling
+                    filename_to_index = calibrator.filename_manager.get_mapping_dict() if calibrator.filename_manager else {}
+                    
+                    # Initialize corner_images with None placeholders for proper alignment
+                    corner_images = [None] * len(calibrator.image_paths)
+                    
+                    # Save corner detection images 
                     for filename, debug_img in pattern_images:
-                        corner_filename = f"{filename}_corners.jpg"
+                        # Use original filename without extra suffixes, with .jpg extension
+                        corner_filename = f"{filename}.jpg"
                         corner_path = os.path.join(corner_viz_dir, corner_filename)
                         cv2.imwrite(corner_path, debug_img)
                         
-                        corner_images.append({
-                            'name': corner_filename,
-                            'path': corner_path,
-                            'url': url_for('get_corner_image', session_id=session_id, filename=corner_filename),
-                            'index': len(corner_images),  # Use sequential index
-                            'original_name': filename
-                        })
+                        # Find the original index for data alignment
+                        original_index = filename_to_index.get(filename, -1)
+                        if original_index >= 0 and original_index < len(calibrator.image_paths):
+                            corner_images[original_index] = {
+                                'name': corner_filename,
+                                'path': corner_path,
+                                'url': url_for('get_corner_image', session_id=session_id, filename=corner_filename),
+                                'index': original_index,
+                                'original_name': filename
+                            }
                     
-                    # Generate undistorted images with 3D axes
+                    # Save original images separately with original filenames (using FilenameManager for duplicates)
+                    for i, image_path in enumerate(calibrator.image_paths):
+                        if i < len(calibrator.images) and calibrator.images[i] is not None:
+                            # Get original filename from path
+                            original_basename = os.path.splitext(os.path.basename(image_path))[0]
+                            
+                            # Use FilenameManager to get the proper filename (handles duplicates)
+                            if calibrator.filename_manager:
+                                managed_filename = calibrator.filename_manager.get_unique_filename(i)
+                                # If it's different from original, use managed name, otherwise use original
+                                if managed_filename != original_basename:
+                                    original_filename = f"{managed_filename}.jpg"
+                                else:
+                                    original_filename = f"{original_basename}.jpg"
+                            else:
+                                original_filename = f"{original_basename}.jpg"
+                            
+                            original_path = os.path.join(original_dir, original_filename)
+                            cv2.imwrite(original_path, calibrator.images[i])
+                    
+                    # Generate undistorted images with 3D axes with aligned index tracking
                     undistorted_dir = os.path.join(results_folder, 'undistorted')
                     os.makedirs(undistorted_dir, exist_ok=True)
                     
                     axes_images = calibrator.draw_axes_on_undistorted_images()
-                    undistorted_images = []
                     
+                    # Initialize undistorted_images with None placeholders for proper alignment
+                    undistorted_images = [None] * len(calibrator.image_paths)
+                    
+                    # Save undistorted images (original images already saved in separate 'original' directory)
                     for filename, debug_img in axes_images:
-                        undistorted_filename = f"{filename}_undistorted.jpg"
+                        # Use original filename without extra suffixes, with .jpg extension
+                        undistorted_filename = f"{filename}.jpg"
                         undistorted_path = os.path.join(undistorted_dir, undistorted_filename)
                         cv2.imwrite(undistorted_path, debug_img)
                         
-                        undistorted_images.append({
-                            'name': undistorted_filename,
-                            'path': undistorted_path,
-                            'url': url_for('get_undistorted_image', session_id=session_id, filename=undistorted_filename),
-                            'index': len(undistorted_images),  # Use sequential index
-                            'original_name': filename
-                        })
+                        # Find the original index for data alignment
+                        original_index = filename_to_index.get(filename, -1)
+                        if original_index >= 0 and original_index < len(calibrator.image_paths):
+                            undistorted_images[original_index] = {
+                                'name': undistorted_filename,
+                                'path': undistorted_path,
+                                'url': url_for('get_undistorted_image', session_id=session_id, filename=undistorted_filename),
+                                'index': original_index,
+                                'original_name': filename
+                            }
                     
-                    # Create results dictionary directly
+                    # Create results dictionary with aligned data
+                    successful_detections = sum(1 for pts in calibrator.image_points if pts is not None)
+                    
                     results = {
                         'success': True,
                         'calibration_type': 'intrinsic',
-                        'images_used': len(image_paths),
+                        'total_images': len(image_paths),
+                        'images_used': successful_detections,
                         'corner_images': corner_images,
                         'undistorted_images': undistorted_images,
+                        'per_image_errors': calibrator.per_image_errors,  # Aligned array with None for failed detections
                         'camera_matrix': camera_matrix.tolist(),
                         'distortion_coefficients': dist_coeffs.tolist(),
                         'distortion_model': distortion_model,
                         'rms_error': float(rms_error),
-                        'message': f'Intrinsic calibration completed successfully using {len(image_paths)} images'
+                        'message': f'Intrinsic calibration completed successfully using {successful_detections} out of {len(image_paths)} images'
                     }
                         
                     print("�?Generated corner detection and undistorted images")
@@ -1051,6 +1096,22 @@ def get_undistorted_image(session_id, filename):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/original_image/<session_id>/<filename>')
+def get_original_image(session_id, filename):
+    """Serve original images from the original directory."""
+    try:
+        results_folder = os.path.join(RESULTS_FOLDER, session_id)
+        image_path = os.path.join(results_folder, 'original', filename)
+        
+        if not os.path.exists(image_path):
+            return jsonify({'error': 'Original image not found'}), 404
+        
+        return send_file(image_path)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/visualization_image/<session_id>/<filename>')
 def get_visualization_image(session_id, filename):
     """Serve visualization/reprojection images."""
@@ -1102,6 +1163,9 @@ def get_pattern_image():
         pixel_per_square = int(request.args.get('pixel_per_square', 100))
         border_pixels = int(request.args.get('border_pixels', 0))
         
+        print(f"API: Pattern generation parameters:")
+        print(f"  - pixel_per_square: {pixel_per_square}")
+        print(f"  - border_pixels: {border_pixels}")
         print(f"API: Creating pattern from JSON: {pattern_json}")
         
         # Create pattern instance using unified JSON system

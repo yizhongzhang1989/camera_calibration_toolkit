@@ -21,6 +21,7 @@ import cv2
 from abc import ABC, abstractmethod
 from typing import Tuple, List, Optional, Union
 from .calibration_patterns import CalibrationPattern
+from .utils import FilenameManager
 
 
 class BaseCalibrator(ABC):
@@ -65,6 +66,9 @@ class BaseCalibrator(ABC):
         self.per_image_errors = None         # RMS error for each image
         self.calibration_completed = False   # Whether calibration has been completed successfully
         
+        # Filename management for systematic duplicate handling
+        self.filename_manager = None         # FilenameManager instance for unique filename generation
+        
         # Initialize with provided data using smart constructor
         if image_paths is not None:
             self.set_images_from_paths(image_paths)
@@ -98,6 +102,9 @@ class BaseCalibrator(ABC):
             if self.images:
                 h, w = self.images[0].shape[:2]
                 self.image_size = (w, h)
+            
+            # Initialize filename manager for systematic duplicate handling
+            self.filename_manager = FilenameManager(image_paths)
                 
             print(f"Successfully loaded {len(self.images)} images")
             return True
@@ -153,9 +160,11 @@ class BaseCalibrator(ABC):
         if self.calibration_pattern is None:
             raise ValueError("Calibration pattern must be set first")
         
-        self.image_points = []
-        self.point_ids = []
-        self.object_points = []
+        # Initialize arrays aligned with image count - maintain 1:1 correspondence
+        num_images = len(self.images)
+        self.image_points = [None] * num_images      # Image points for each image (None if failed)
+        self.point_ids = [None] * num_images         # Point IDs for each image (None if failed)
+        self.object_points = [None] * num_images     # Object points for each image (None if failed)
         successful_detections = 0
         
         if verbose:
@@ -165,8 +174,18 @@ class BaseCalibrator(ABC):
             success, img_pts, point_ids = self.calibration_pattern.detect_corners(img)
             
             if success:
-                self.image_points.append(img_pts)
-                self.point_ids.append(point_ids)  # Store point IDs for visualization
+                # Ensure proper data types and formats for OpenCV calibration
+                img_pts = np.array(img_pts, dtype=np.float32)
+                
+                # For ArUco patterns, ensure proper array shape for calibration
+                if hasattr(self.calibration_pattern, 'pattern_id') and self.calibration_pattern.pattern_id == 'grid_board':
+                    # Grid board returns [N, 2] corners, need [N, 1, 2] for calibration
+                    if len(img_pts.shape) == 2 and img_pts.shape[1] == 2:
+                        img_pts = img_pts.reshape(-1, 1, 2)
+                
+                # Store data at the same index as the image (maintaining alignment)
+                self.image_points[i] = img_pts
+                self.point_ids[i] = point_ids
                 
                 # Generate corresponding object points
                 if self.calibration_pattern.is_planar:
@@ -174,12 +193,19 @@ class BaseCalibrator(ABC):
                 else:
                     obj_pts = self.calibration_pattern.generate_object_points()
                 
-                self.object_points.append(obj_pts)
+                # Ensure proper data type for object points
+                obj_pts = np.array(obj_pts, dtype=np.float32)
+                self.object_points[i] = obj_pts
                 successful_detections += 1
                 
                 if verbose:
                     print(f"Image {i}: ✅ Detected {len(img_pts)} features")
             else:
+                # Keep None for failed detections (maintains array alignment)
+                self.image_points[i] = None
+                self.point_ids[i] = None
+                self.object_points[i] = None
+                
                 if verbose:
                     print(f"Image {i}: ❌ No pattern detected")
         
@@ -201,21 +227,25 @@ class BaseCalibrator(ABC):
         Draw detected calibration patterns on original images.
         
         Returns:
-            List of tuples (filename_without_extension, debug_image_array)
+            List of tuples (filename_without_extension, debug_image_array) for successfully detected images only
         """
         if not self.images or not self.image_points:
             raise ValueError("No images or detected points available. Run detect_pattern_points() first.")
         
         debug_images = []
         
-        for i, (img, corners) in enumerate(zip(self.images, self.image_points)):
+        # Iterate through all images - arrays are now aligned
+        for i, img in enumerate(self.images):
+            # Skip images with no detection (None entries)
+            if self.image_points[i] is None:
+                continue
+                
+            # Get the detection results for this image
+            corners = self.image_points[i]
+            current_point_ids = self.point_ids[i]
+            
             # Create copy of original image
             debug_img = img.copy()
-            
-            # Get point IDs for this image if available
-            current_point_ids = None
-            if hasattr(self, 'point_ids') and self.point_ids and i < len(self.point_ids):
-                current_point_ids = self.point_ids[i]
             
             # Draw pattern-specific visualization
             if hasattr(self.calibration_pattern, 'draw_corners'):
@@ -226,10 +256,11 @@ class BaseCalibrator(ABC):
                 for corner in corners_2d:
                     cv2.circle(debug_img, tuple(corner), 5, (0, 255, 0), 2)
             
-            # Get original filename without path and extension
-            if hasattr(self, 'image_paths') and self.image_paths and i < len(self.image_paths):
-                filename = os.path.splitext(os.path.basename(self.image_paths[i]))[0]
+            # Get unique filename from filename manager to avoid duplicates
+            if self.filename_manager:
+                filename = self.filename_manager.get_unique_filename(i)
             else:
+                # Fallback for cases without filename manager
                 filename = f"image_{i:03d}"
             
             debug_images.append((filename, debug_img))
@@ -297,9 +328,18 @@ class BaseCalibrator(ABC):
             [0, 0, -z_axis_length]        # Z-axis (blue) - one square size, negative to point up
         ]).reshape(-1, 3)
         
-        for i, (img, objp, imgp, rvec, tvec) in enumerate(zip(
-            self.images, self.object_points, self.image_points, self.rvecs, self.tvecs
-        )):
+        for i, img in enumerate(self.images):
+            # Skip images with no detection (None entries)
+            if (self.image_points[i] is None or self.object_points[i] is None or 
+                self.rvecs[i] is None or self.tvecs[i] is None):
+                continue
+                
+            # Get detection results for this image
+            objp = self.object_points[i]
+            imgp = self.image_points[i]
+            rvec = self.rvecs[i] 
+            tvec = self.tvecs[i]
+            
             # Undistort the image
             undistorted_img = cv2.undistort(img, camera_matrix, distortion_coefficients)
             
@@ -329,10 +369,11 @@ class BaseCalibrator(ABC):
             cv2.putText(undistorted_img, 'Z', (z_end[0] + 15, z_end[1]), 
                        cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 0, 0), 3)
             
-            # Get original filename without path and extension
-            if hasattr(self, 'image_paths') and self.image_paths and i < len(self.image_paths):
-                filename = os.path.splitext(os.path.basename(self.image_paths[i]))[0]
+            # Get unique filename from filename manager to avoid duplicates
+            if self.filename_manager:
+                filename = self.filename_manager.get_unique_filename(i)
             else:
+                # Fallback for cases without filename manager
                 filename = f"image_{i:03d}"
             
             debug_images.append((filename, undistorted_img))

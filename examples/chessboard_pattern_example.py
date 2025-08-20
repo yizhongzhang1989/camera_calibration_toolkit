@@ -20,9 +20,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.calibration_patterns import (
     CalibrationPatternManager, 
-    create_chessboard_pattern,
-    get_common_pattern,
-    COMMON_PATTERNS
+    create_chessboard_pattern
 )
 from core.intrinsic_calibration import IntrinsicCalibrator
 
@@ -66,8 +64,15 @@ def demonstrate_pattern_creation():
     
     # Example 3: Common patterns
     print("3. Common Pre-configured Patterns:")
-    for pattern_name, config in COMMON_PATTERNS.items():
-        print(f"   {pattern_name}: {config['description']}")
+    common_patterns = {
+        'standard_8x6': 'Standard 8x6 chessboard (25mm squares)',
+        'standard_9x6': 'Standard 9x6 chessboard (25mm squares)', 
+        'standard_11x8': 'Standard 11x8 chessboard (25mm squares)',
+        'charuco_8x6': 'ChArUco 8x6 board (40mm squares, 20mm markers)',
+        'charuco_9x7': 'ChArUco 9x7 board (25mm squares, 15mm markers)'
+    }
+    for pattern_name, description in common_patterns.items():
+        print(f"   {pattern_name}: {description}")
     print()
 
 
@@ -110,7 +115,7 @@ def calibrate_with_patterns(sample_data_dir: str):
     # Check if sample data exists
     if not os.path.exists(sample_data_dir):
         print(f"❌ Sample data directory not found: {sample_data_dir}")
-        print("Please ensure sample_data/hand_in_eye_test_data/ exists")
+        print("Please ensure sample_data/eye_in_hand_test_data/ exists")
         return
     
     # Get sample images
@@ -230,7 +235,7 @@ def main():
     
     # Test pattern detection (if sample image exists)
     toolkit_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sample_data_dir = os.path.join(toolkit_root, "sample_data", "hand_in_eye_test_data")
+    sample_data_dir = os.path.join(toolkit_root, "sample_data", "eye_in_hand_test_data")
     
     # Try to find a sample image for detection test
     sample_images = []

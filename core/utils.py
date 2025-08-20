@@ -225,3 +225,102 @@ def matrix_to_xyz_rpy(matrix):
         yaw = 0
     
     return x, y, z, roll, pitch, yaw
+
+
+class FilenameManager:
+    """
+    Systematic filename management to handle duplicates and maintain original order.
+    
+    This class provides a centralized way to generate unique filenames while preserving
+    the original filename order and only adding suffixes when duplicates are detected.
+    """
+    
+    def __init__(self, image_paths: List[str]):
+        """
+        Initialize the filename manager with a list of image paths.
+        
+        Args:
+            image_paths: List of original image file paths
+        """
+        self.image_paths = image_paths
+        self.base_filenames = []
+        self.unique_filenames = []
+        self._generate_unique_filenames()
+    
+    def _generate_unique_filenames(self):
+        """Generate unique filenames, adding suffixes only when needed."""
+        # Extract base filenames (without extension)
+        for path in self.image_paths:
+            base_filename = os.path.splitext(os.path.basename(path))[0]
+            self.base_filenames.append(base_filename)
+        
+        # Track filename usage to detect duplicates
+        filename_counts = {}
+        unique_filenames = []
+        
+        for base_filename in self.base_filenames:
+            if base_filename not in filename_counts:
+                # First occurrence - use original name
+                filename_counts[base_filename] = 1
+                unique_filenames.append(base_filename)
+            else:
+                # Duplicate detected - add suffix
+                count = filename_counts[base_filename]
+                suffix_filename = f"{base_filename}_{count:02d}"
+                filename_counts[base_filename] += 1
+                unique_filenames.append(suffix_filename)
+        
+        self.unique_filenames = unique_filenames
+    
+    def get_unique_filename(self, index: int) -> str:
+        """
+        Get the unique filename for a given image index.
+        
+        Args:
+            index: Image index (0-based)
+            
+        Returns:
+            Unique filename (without extension)
+        """
+        if 0 <= index < len(self.unique_filenames):
+            return self.unique_filenames[index]
+        else:
+            return f"image_{index:03d}"
+    
+    def get_original_filename(self, index: int) -> str:
+        """
+        Get the original base filename for a given image index.
+        
+        Args:
+            index: Image index (0-based)
+            
+        Returns:
+            Original filename (without extension)
+        """
+        if 0 <= index < len(self.base_filenames):
+            return self.base_filenames[index]
+        else:
+            return f"image_{index:03d}"
+    
+    def get_mapping_dict(self) -> dict:
+        """
+        Get a mapping dictionary from unique filenames to original indices.
+        
+        Returns:
+            Dictionary mapping unique filename -> original index
+        """
+        return {filename: i for i, filename in enumerate(self.unique_filenames)}
+    
+    def get_reverse_mapping_dict(self) -> dict:
+        """
+        Get a reverse mapping dictionary from original filenames to indices.
+        
+        Returns:
+            Dictionary mapping original filename -> list of indices
+        """
+        reverse_mapping = {}
+        for i, original_name in enumerate(self.base_filenames):
+            if original_name not in reverse_mapping:
+                reverse_mapping[original_name] = []
+            reverse_mapping[original_name].append(i)
+        return reverse_mapping

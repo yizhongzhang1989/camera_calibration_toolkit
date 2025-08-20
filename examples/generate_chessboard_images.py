@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Simplified Chessboard Image Generator
-=====================================
+Calibration Pattern Image Generator
+===================================
 
-This script generates specific chessboard and ChArUco pattern images
+This script generates specific calibration pattern images (chessboards, ChArUco, Grid Boards)
 for printing and calibration purposes. Images are saved to data/results/chessboard_images/
 
 Generated Patterns:
@@ -11,6 +11,8 @@ Generated Patterns:
 - Standard chessboard 9×6 (200px squares, 200px border)
 - ChArUco 8×6 (DICT_4X4_100, 20mm squares, 15mm markers)
 - ChArUco 12×9 (DICT_6X6_250, 20mm squares, 10mm markers, 50px border)
+- ArUco Grid Board 1×1 (DICT_4X4_50, 40mm markers, 10mm separation)
+- ArUco Grid Board 5×4 (DICT_4X4_50, 40mm markers, 10mm separation)
 
 Usage:
     conda activate camcalib
@@ -41,7 +43,7 @@ def ensure_output_directory():
 
 def generate_patterns():
     """Generate the specific requested patterns."""
-    print("🎨 Simplified Chessboard Image Generator")
+    print("🎨 Calibration Pattern Image Generator")
     print("=" * 45)
     
     start_time = datetime.now()
@@ -92,6 +94,28 @@ def generate_patterns():
             'dictionary_id': cv2.aruco.DICT_6X6_250,
             'description': 'ChArUco 12×9 with DICT_6X6_250, 20mm squares, 10mm markers, 50px border',
             'generate_params': {'border_pixels': 50}  # Use default 100px squares, add 50px border
+        },
+        {
+            'type': 'grid',
+            'name': 'gridboard_1x1_dict10',
+            'markers_x': 1, 
+            'markers_y': 1, 
+            'marker_size': 0.04, 
+            'marker_separation': 0.01,
+            'dictionary_id': cv2.aruco.DICT_4X4_50,
+            'description': 'ArUco Grid Board 1×1 with DICT_4X4_50, 40mm markers, 10mm separation',
+            'generate_params': {'pixel_per_square': 150, 'border_pixels': 100}
+        },
+        {
+            'type': 'grid',
+            'name': 'gridboard_5x4_dict10',
+            'markers_x': 5, 
+            'markers_y': 4, 
+            'marker_size': 0.04, 
+            'marker_separation': 0.01,
+            'dictionary_id': cv2.aruco.DICT_4X4_50,
+            'description': 'ArUco Grid Board 5×4 with DICT_4X4_50, 40mm markers, 10mm separation',
+            'generate_params': {'pixel_per_square': 80, 'border_pixels': 50}
         }
     ]
     
@@ -110,13 +134,23 @@ def generate_patterns():
                     height=config['height'],
                     square_size=config['square_size']
                 )
-            else:  # charuco
+            elif config['type'] == 'charuco':
                 pattern = create_chessboard_pattern(
                     'charuco',
                     width=config['width'],
                     height=config['height'],
                     square_size=config['square_size'],
                     marker_size=config['marker_size'],
+                    dictionary_id=config['dictionary_id']
+                )
+            elif config['type'] == 'grid':
+                # Import Grid Board pattern directly
+                from core.calibration_patterns import GridBoard
+                pattern = GridBoard(
+                    markers_x=config['markers_x'],
+                    markers_y=config['markers_y'],
+                    marker_size=config['marker_size'],
+                    marker_separation=config['marker_separation'],
                     dictionary_id=config['dictionary_id']
                 )
             
@@ -147,14 +181,23 @@ def generate_patterns():
                 f.write(f"Name: {config['name']}\n")
                 f.write(f"Description: {config['description']}\n")
                 f.write(f"Type: {config['type'].title()}\n")
-                f.write(f"Dimensions: {config['width']}×{config['height']}\n")
-                f.write(f"Square Size: {config['square_size']*1000:.1f}mm\n")
                 
-                if config['type'] == 'charuco':
+                if config['type'] == 'grid':
+                    f.write(f"Grid Size: {config['markers_x']}×{config['markers_y']} markers\n")
                     f.write(f"Marker Size: {config['marker_size']*1000:.1f}mm\n")
+                    f.write(f"Marker Separation: {config['marker_separation']*1000:.1f}mm\n")
                     dict_name = [name for name, val in vars(cv2.aruco).items() 
                                if name.startswith('DICT_') and val == config['dictionary_id']][0]
                     f.write(f"Dictionary: {dict_name}\n")
+                else:
+                    f.write(f"Dimensions: {config['width']}×{config['height']}\n")
+                    f.write(f"Square Size: {config['square_size']*1000:.1f}mm\n")
+                    
+                    if config['type'] == 'charuco':
+                        f.write(f"Marker Size: {config['marker_size']*1000:.1f}mm\n")
+                        dict_name = [name for name, val in vars(cv2.aruco).items() 
+                                   if name.startswith('DICT_') and val == config['dictionary_id']][0]
+                        f.write(f"Dictionary: {dict_name}\n")
                 
                 f.write(f"\nImage Information:\n")
                 f.write(f"Size: {image.shape[1]}×{image.shape[0]} pixels\n")
