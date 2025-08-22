@@ -2,9 +2,11 @@ name: Camera Calibration Tests
 
 on:
   push:
-    branches: [ main, develop, auto_test ]
+    # Run on all branches
+    branches: [ "*" ]
   pull_request:
-    branches: [ main ]
+    # Run on pull requests to any branch  
+    branches: [ "*" ]
   workflow_dispatch:
 
 jobs:
