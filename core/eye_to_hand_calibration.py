@@ -170,9 +170,8 @@ class EyeToHandCalibrator(EyeInHandCalibrator):
             self.base2cam_matrix = base2cam_4x4
             self.calibration_completed = True
 
-            # Use the first frame directly for target2end matrix
-            cam2base_matrix = np.linalg.inv(base2cam_4x4)
-            self.target2end_matrix = self.base2end_matrices[0] @ cam2base_matrix @ self.target2cam_matrices[0]
+            # Calculate the optimal target2end matrix that minimizes overall reprojection error
+            self.target2end_matrix = self._calculate_optimal_target2end_matrix(base2cam_4x4, verbose)
             
             # Calculate reprojection errors using the eye-to-hand transformation chain
             self.per_image_errors = []
@@ -269,6 +268,101 @@ class EyeToHandCalibrator(EyeInHandCalibrator):
             json.dump(results, f, indent=4, ensure_ascii=False)
         
         print(f"✅ Eye-to-hand calibration results saved to {save_directory}")
+
+    def _calculate_optimal_target2end_matrix(self, base2cam_4x4: np.ndarray, verbose: bool = False) -> np.ndarray:
+        """
+        Calculate the single target2end matrix that minimizes overall reprojection error.
+        
+        This method finds the target2end transformation that best explains all the
+        observed target positions across all images, rather than calculating a
+        separate target2end for each image which would result in zero error.
+        
+        Args:
+            base2cam_4x4: The base to camera transformation matrix from calibration
+            verbose: Whether to print detailed information
+            
+        Returns:
+            np.ndarray: 4x4 target to end-effector transformation matrix
+        """
+        if verbose:
+            print("Calculating optimal target2end matrix...")
+        
+        best_error = float('inf')
+        best_target2end = None
+        
+        # Try using each image's target2cam transformation to estimate target2end
+        # Then find the one that gives the smallest overall reprojection error
+        candidate_target2end_matrices = []
+        cam2base_matrix = np.linalg.inv(base2cam_4x4)
+        
+        for i in range(len(self.target2cam_matrices)):
+            # For eye-to-hand: target2end = base2end * cam2base * target2cam
+            # where base2end = (end2base)^-1 and cam2base = (base2cam)^-1
+            try:
+                base2end_matrix = np.linalg.inv(self.end2base_matrices[i])
+                candidate_target2end = base2end_matrix @ cam2base_matrix @ self.target2cam_matrices[i]
+                candidate_target2end_matrices.append(candidate_target2end)
+            except Exception as e:
+                if verbose:
+                    print(f"Warning: Could not calculate candidate target2end for image {i}: {e}")
+                continue
+        
+        if not candidate_target2end_matrices:
+            if verbose:
+                print("❌ No valid candidate target2end matrices found")
+            return np.eye(4)
+        
+        # Test each candidate to find the one with minimum overall reprojection error
+        for candidate_idx, candidate_target2end in enumerate(candidate_target2end_matrices):
+            total_error = 0.0
+            valid_images = 0
+            
+            for i in range(len(self.image_points)):
+                try:
+                    # Calculate target2cam using the candidate target2end matrix
+                    # Eye-to-hand transformation chain: target2cam = base2cam * end2base * target2end
+                    eyetohand_target2cam = base2cam_4x4 @ self.end2base_matrices[i] @ candidate_target2end
+                    
+                    # Project 3D points to image
+                    projected_points, _ = cv2.projectPoints(
+                        self.object_points[i], 
+                        eyetohand_target2cam[:3, :3], 
+                        eyetohand_target2cam[:3, 3], 
+                        self.camera_matrix, 
+                        self.distortion_coefficients)
+                    
+                    # Calculate reprojection error for this image
+                    error = cv2.norm(self.image_points[i], projected_points, cv2.NORM_L2) / len(projected_points)
+                    total_error += error * error
+                    valid_images += 1
+                    
+                except Exception as e:
+                    if verbose:
+                        print(f"Warning: Could not test candidate {candidate_idx} for image {i}: {e}")
+                    continue
+            
+            # Calculate RMS error for this candidate
+            if valid_images > 0:
+                rms_error = np.sqrt(total_error / valid_images)
+                if rms_error < best_error:
+                    best_error = rms_error
+                    best_target2end = candidate_target2end.copy()
+                    if verbose:
+                        print(f"  Candidate {candidate_idx}: RMS error = {rms_error:.4f} (best so far)")
+                elif verbose:
+                    print(f"  Candidate {candidate_idx}: RMS error = {rms_error:.4f}")
+        
+        if best_target2end is not None:
+            if verbose:
+                print(f"✅ Optimal target2end matrix found with RMS error: {best_error:.4f}")
+                print("Target2end transformation matrix:")
+                print(best_target2end)
+        else:
+            if verbose:
+                print("⚠️ Could not find optimal target2end matrix, using first candidate")
+            best_target2end = candidate_target2end_matrices[0]
+        
+        return best_target2end
 
     def draw_reprojection_on_images(self) -> List[Tuple[str, np.ndarray]]:
         """

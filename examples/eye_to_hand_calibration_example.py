@@ -511,7 +511,7 @@ def test_eye_to_hand_calibration():
         try:
             # Use the new optimize_calibration method for eye-to-hand
             optimized_error = calibrator.optimize_calibration(
-                iterations=5,        # Number of optimization iterations
+                iterations=100,        # Number of optimization iterations
                 ftol_rel=1e-6,      # Relative tolerance for convergence
                 verbose=True        # Show optimization progress
             )
