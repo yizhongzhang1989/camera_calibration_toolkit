@@ -271,7 +271,11 @@ class BaseCalibrator(ABC):
                                       camera_matrix: Optional[np.ndarray] = None,
                                       distortion_coefficients: Optional[np.ndarray] = None) -> List[Tuple[str, np.ndarray]]:
         """
-        Draw 3D axes on undistorted images to verify calibration accuracy.
+        Draw 3D axes and corner points on undistorted images to verify calibration accuracy.
+        
+        This function projects both the coordinate system axes and the 3D corner points 
+        of the calibration pattern onto the undistorted images, providing a comprehensive
+        visualization of the calibration results.
         
         Args:
             axis_length: Length of axes in world units. If None, calculates from pattern dimensions
@@ -343,6 +347,20 @@ class BaseCalibrator(ABC):
             # Undistort the image
             undistorted_img = cv2.undistort(img, camera_matrix, distortion_coefficients)
             
+            # Project 3D corner points to undistorted image plane
+            corner_2d_undistorted, _ = cv2.projectPoints(
+                objp, rvec, tvec, camera_matrix,
+                np.zeros((4, 1))  # No distortion for undistorted image
+            )
+            corner_2d_undistorted = corner_2d_undistorted.reshape(-1, 2)
+            
+            # Draw corner points with 3D coordinates
+            for j, (corner_2d, corner_3d) in enumerate(zip(corner_2d_undistorted, objp)):
+                x, y = int(corner_2d[0]), int(corner_2d[1])
+                
+                # Draw corner point as a circle
+                cv2.circle(undistorted_img, (x, y), 6, (255, 255, 0), 2)  # Cyan circles
+            
             # Project 3D axis points to image plane
             axis_2d, _ = cv2.projectPoints(
                 axis_3d, rvec, tvec, camera_matrix, 
@@ -368,6 +386,27 @@ class BaseCalibrator(ABC):
                        cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 3)
             cv2.putText(undistorted_img, 'Z', (z_end[0] + 15, z_end[1]), 
                        cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 0, 0), 3)
+            
+            # Add legend in top-left corner
+            legend_y_start = 30
+            cv2.putText(undistorted_img, 'Legend:', (10, legend_y_start), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            cv2.putText(undistorted_img, 'Red: X-axis', (10, legend_y_start + 25), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+            cv2.putText(undistorted_img, 'Green: Y-axis', (10, legend_y_start + 45), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+            cv2.putText(undistorted_img, 'Blue: Z-axis', (10, legend_y_start + 65), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+            cv2.putText(undistorted_img, 'Cyan: Corner points', (10, legend_y_start + 85), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+            
+            # Add pattern information in bottom-right corner
+            info_text = f"Pattern points: {len(objp)}"
+            text_size = cv2.getTextSize(info_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
+            info_x = undistorted_img.shape[1] - text_size[0] - 10
+            info_y = undistorted_img.shape[0] - 10
+            cv2.putText(undistorted_img, info_text, (info_x, info_y),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
             
             # Get unique filename from filename manager to avoid duplicates
             if self.filename_manager:
