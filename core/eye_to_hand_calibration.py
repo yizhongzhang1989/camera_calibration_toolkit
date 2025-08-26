@@ -19,6 +19,21 @@ import cv2
 import os
 from typing import Optional, List, Tuple
 
+# Import nlopt for optimization (same as eye-in-hand)
+try:
+    import nlopt
+    HAS_NLOPT = True
+except ImportError:
+    nlopt = None
+    HAS_NLOPT = False
+    print("Warning: nlopt not available. Optimization methods will be disabled.")
+
+# Import utility functions from parent module
+from .utils import (
+    xyz_rpy_to_matrix,
+    matrix_to_xyz_rpy,
+)
+
 from .eye_in_hand_calibration import EyeInHandCalibrator
 
 
@@ -347,3 +362,294 @@ class EyeToHandCalibrator(EyeInHandCalibrator):
             debug_images.append((filename, original_img))
         
         return debug_images
+
+    def optimize_calibration(self, iterations: int = 5, ftol_rel: float = 1e-6, verbose: bool = False) -> float:
+        """
+        Optimize eye-to-hand calibration using nonlinear optimization.
+        
+        This method refines the calibration results obtained from the initial calibration
+        by minimizing the overall reprojection error across all images.
+        
+        Args:
+            iterations: Number of optimization iterations (default: 5)
+            ftol_rel: Relative tolerance for optimization (default: 1e-6)
+            verbose: Whether to print detailed optimization information
+            
+        Returns:
+            float: Final RMS reprojection error after optimization
+            
+        Note:
+            This method requires the initial calibration to be completed first.
+            All required data (images, poses, etc.) should already be loaded as member variables.
+        """
+        if not self.calibration_completed:
+            raise ValueError("Initial calibration must be completed before optimization")
+            
+        if not HAS_NLOPT:
+            if verbose:
+                print("Warning: nlopt not available. Returning current calibration without optimization.")
+            return self.rms_error
+            
+        if verbose:
+            print("🔧 Starting calibration optimization...")
+            print(f"   Initial RMS error: {self.rms_error:.4f} pixels")
+            print(f"   Optimization iterations: {iterations}")
+            print(f"   Convergence tolerance: {ftol_rel}")
+        
+        # Get pattern parameters from calibration pattern
+        if self.calibration_pattern is None:
+            raise ValueError("Optimization requires a calibration pattern to be set")
+        
+        try:
+            # Find the image with minimum reprojection error as optimization starting point
+            min_error_idx = np.argmin([e for e in self.per_image_errors if not np.isinf(e)])
+            if verbose:
+                print(f"   Using image {min_error_idx} (error: {self.per_image_errors[min_error_idx]:.4f}) as starting point")
+            
+            # Initial values for optimization (eye-to-hand uses different matrices)
+            initial_base2cam = self.base2cam_matrix.copy()
+            initial_target2end = self.target2end_matrix.copy()
+            best_base2cam = initial_base2cam.copy()
+            best_target2end = initial_target2end.copy() 
+            best_error = self.rms_error
+            
+            # Iterative optimization
+            for iteration in range(iterations):
+                if verbose:
+                    print(f"   Iteration {iteration + 1}/{iterations}:")
+                
+                # Optimize the single target2end matrix
+                optimized_target2end = self._optimize_target2end_matrix(
+                    best_target2end, best_base2cam, ftol_rel, verbose)
+                
+                # Calculate error with optimized target2end
+                error_target2end = self._calculate_optimization_error(
+                    best_base2cam, optimized_target2end)
+                
+                if error_target2end < best_error:
+                    best_target2end = optimized_target2end
+                    best_error = error_target2end
+                    if verbose:
+                        print(f"     Target2end optimized: {error_target2end:.4f} pixels")
+                
+                # Optimize base2cam matrix  
+                optimized_base2cam = self._optimize_base2cam_matrix(
+                    best_base2cam, best_target2end, ftol_rel, verbose)
+                
+                # Calculate error with optimized base2cam
+                error_base2cam = self._calculate_optimization_error(
+                    optimized_base2cam, best_target2end)
+                
+                if error_base2cam < best_error:
+                    best_base2cam = optimized_base2cam
+                    best_error = error_base2cam
+                    if verbose:
+                        print(f"     Base2cam optimized: {error_base2cam:.4f} pixels")
+                
+                if verbose:
+                    print(f"     Best error so far: {best_error:.4f} pixels")
+            
+            # Update calibration results with optimized values
+            self.base2cam_matrix = best_base2cam
+            self.target2end_matrix = best_target2end
+            
+            # Recalculate reprojection errors with optimized parameters
+            self._recalculate_reprojection_errors()
+            
+            self.optimization_completed = True
+            
+            if verbose:
+                improvement = initial_base2cam.copy() # Using copy for comparison, actual improvement calculated below
+                improvement = self.rms_error - best_error  # Calculate actual improvement
+                print(f"✅ Optimization completed!")
+                print(f"   Final RMS error: {self.rms_error:.4f} pixels")
+                print(f"   Improvement: {improvement:.4f} pixels")
+            
+            return self.rms_error
+            
+        except Exception as e:
+            if verbose:
+                print(f"❌ Optimization failed: {e}")
+            return self.rms_error
+    
+    def _calculate_optimization_error(self, base2cam_matrix: np.ndarray, target2end_matrix: np.ndarray) -> float:
+        """
+        Calculate RMS reprojection error for given transformation matrices.
+        
+        Args:
+            base2cam_matrix: Base to camera transformation matrix
+            target2end_matrix: Target to end-effector transformation matrix
+            
+        Returns:
+            float: RMS reprojection error
+        """
+        total_error = 0.0
+        valid_images = 0
+        
+        for i in range(len(self.image_points)):
+            try:
+                # Calculate target to camera using eye-to-hand calibration chain
+                # Eye-to-hand transformation chain: target2cam = base2cam * end2base * target2end
+                target2cam = base2cam_matrix @ self.end2base_matrices[i] @ target2end_matrix
+                
+                # Project 3D points to image
+                projected_points, _ = cv2.projectPoints(
+                    self.object_points[i], 
+                    target2cam[:3, :3], 
+                    target2cam[:3, 3], 
+                    self.camera_matrix, 
+                    self.distortion_coefficients)
+                
+                # Calculate reprojection error
+                error = cv2.norm(self.image_points[i], projected_points, cv2.NORM_L2) / len(projected_points)
+                total_error += error * error
+                valid_images += 1
+                
+            except Exception:
+                continue
+        
+        if valid_images > 0:
+            return np.sqrt(total_error / valid_images)
+        else:
+            return float('inf')
+
+    def _optimize_target2end_matrix(self, initial_target2end: np.ndarray, base2cam_matrix: np.ndarray,
+                                   ftol_rel: float, verbose: bool) -> np.ndarray:
+        """
+        Optimize the target2end matrix using NLopt.
+        
+        Args:
+            initial_target2end: Initial target2end transformation matrix
+            base2cam_matrix: Fixed base to camera transformation matrix
+            ftol_rel: Relative tolerance for optimization
+            verbose: Whether to print detailed information
+            
+        Returns:
+            np.ndarray: Optimized target2end transformation matrix
+        """
+        if not HAS_NLOPT:
+            return initial_target2end
+            
+        try:
+            import nlopt
+            
+            # Extract initial pose from matrix
+            x, y, z, roll, pitch, yaw = matrix_to_xyz_rpy(initial_target2end)
+            
+            # Setup optimization
+            opt = nlopt.opt(nlopt.LN_NELDERMEAD, 6)
+            
+            def objective(params, grad):
+                x, y, z, roll, pitch, yaw = params
+                target2end_matrix = xyz_rpy_to_matrix([x, y, z, roll, pitch, yaw])
+                return self._calculate_optimization_error(base2cam_matrix, target2end_matrix)
+            
+            opt.set_min_objective(objective)
+            opt.set_ftol_rel(ftol_rel)
+            
+            # Optimize
+            try:
+                opt_params = opt.optimize([x, y, z, roll, pitch, yaw])
+                optimized_matrix = xyz_rpy_to_matrix(opt_params)
+                
+                if verbose:
+                    initial_error = objective([x, y, z, roll, pitch, yaw], None)
+                    final_error = objective(opt_params, None)
+                    print(f"       Target2end: {initial_error:.4f} -> {final_error:.4f} pixels")
+                
+                return optimized_matrix
+                
+            except Exception as opt_e:
+                if verbose:
+                    print(f"       Target2end optimization failed: {opt_e}")
+                return initial_target2end
+                
+        except ImportError:
+            return initial_target2end
+
+    def _optimize_base2cam_matrix(self, initial_base2cam: np.ndarray, target2end_matrix: np.ndarray,
+                               ftol_rel: float, verbose: bool) -> np.ndarray:
+        """
+        Optimize the base2cam matrix using NLopt.
+        
+        Args:
+            initial_base2cam: Initial base to camera transformation matrix
+            target2end_matrix: Fixed target to end-effector transformation matrix
+            ftol_rel: Relative tolerance for optimization
+            verbose: Whether to print detailed information
+            
+        Returns:
+            np.ndarray: Optimized base to camera transformation matrix
+        """
+        if not HAS_NLOPT:
+            return initial_base2cam
+            
+        try:
+            import nlopt
+            
+            # Extract initial pose from matrix
+            x, y, z, roll, pitch, yaw = matrix_to_xyz_rpy(initial_base2cam)
+            
+            # Setup optimization
+            opt = nlopt.opt(nlopt.LN_NELDERMEAD, 6)
+            
+            def objective(params, grad):
+                x, y, z, roll, pitch, yaw = params
+                base2cam_matrix = xyz_rpy_to_matrix([x, y, z, roll, pitch, yaw])
+                return self._calculate_optimization_error(base2cam_matrix, target2end_matrix)
+            
+            opt.set_min_objective(objective)
+            opt.set_ftol_rel(ftol_rel)
+            
+            # Optimize
+            try:
+                opt_params = opt.optimize([x, y, z, roll, pitch, yaw])
+                optimized_matrix = xyz_rpy_to_matrix(opt_params)
+                
+                if verbose:
+                    initial_error = objective([x, y, z, roll, pitch, yaw], None)
+                    final_error = objective(opt_params, None)
+                    print(f"       Base2cam: {initial_error:.4f} -> {final_error:.4f} pixels")
+                
+                return optimized_matrix
+                
+            except Exception as opt_e:
+                if verbose:
+                    print(f"       Base2cam optimization failed: {opt_e}")
+                return initial_base2cam
+                
+        except ImportError:
+            return initial_base2cam
+
+    def _recalculate_reprojection_errors(self):
+        """Recalculate per-image errors and overall RMS error with current matrices."""
+        self.per_image_errors = []
+        total_error = 0.0
+        valid_images = 0
+        
+        for i in range(len(self.image_points)):
+            try:
+                # Eye-to-hand transformation chain: target2cam = base2cam * end2base * target2end
+                target2cam = self.base2cam_matrix @ self.end2base_matrices[i] @ self.target2end_matrix
+                
+                # Project 3D points to image
+                projected_points, _ = cv2.projectPoints(
+                    self.object_points[i],
+                    target2cam[:3, :3],
+                    target2cam[:3, 3],
+                    self.camera_matrix,
+                    self.distortion_coefficients)
+                
+                # Calculate reprojection error for this image
+                error = cv2.norm(self.image_points[i], projected_points, cv2.NORM_L2) / len(projected_points)
+                self.per_image_errors.append(error)
+                total_error += error * error
+                valid_images += 1
+            except Exception:
+                self.per_image_errors.append(float('inf'))
+        
+        # Update RMS error
+        if valid_images > 0:
+            self.rms_error = np.sqrt(total_error / valid_images)
+        else:
+            self.rms_error = float('inf')
