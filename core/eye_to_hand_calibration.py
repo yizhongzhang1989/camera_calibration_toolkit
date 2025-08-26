@@ -503,49 +503,15 @@ class EyeToHandCalibrator(EyeInHandCalibrator):
             # Initial values for optimization (eye-to-hand uses different matrices)
             initial_base2cam = self.base2cam_matrix.copy()
             initial_target2end = self.target2end_matrix.copy()
-            best_base2cam = initial_base2cam.copy()
-            best_target2end = initial_target2end.copy() 
-            best_error = self.rms_error
+            initial_error = self.rms_error
             
-            # Iterative optimization
-            for iteration in range(iterations):
-                if verbose:
-                    print(f"   Iteration {iteration + 1}/{iterations}:")
-                
-                # Optimize the single target2end matrix
-                optimized_target2end = self._optimize_target2end_matrix(
-                    best_target2end, best_base2cam, ftol_rel, verbose)
-                
-                # Calculate error with optimized target2end
-                error_target2end = self._calculate_optimization_error(
-                    best_base2cam, optimized_target2end)
-                
-                if error_target2end < best_error:
-                    best_target2end = optimized_target2end
-                    best_error = error_target2end
-                    if verbose:
-                        print(f"     Target2end optimized: {error_target2end:.4f} pixels")
-                
-                # Optimize base2cam matrix  
-                optimized_base2cam = self._optimize_base2cam_matrix(
-                    best_base2cam, best_target2end, ftol_rel, verbose)
-                
-                # Calculate error with optimized base2cam
-                error_base2cam = self._calculate_optimization_error(
-                    optimized_base2cam, best_target2end)
-                
-                if error_base2cam < best_error:
-                    best_base2cam = optimized_base2cam
-                    best_error = error_base2cam
-                    if verbose:
-                        print(f"     Base2cam optimized: {error_base2cam:.4f} pixels")
-                
-                if verbose:
-                    print(f"     Best error so far: {best_error:.4f} pixels")
+            # Joint optimization of both matrices simultaneously
+            optimized_base2cam, optimized_target2end = self._optimize_matrices_jointly(
+                initial_base2cam, initial_target2end, ftol_rel, verbose)
             
             # Update calibration results with optimized values
-            self.base2cam_matrix = best_base2cam
-            self.target2end_matrix = best_target2end
+            self.base2cam_matrix = optimized_base2cam
+            self.target2end_matrix = optimized_target2end
             
             # Recalculate reprojection errors with optimized parameters
             self._recalculate_reprojection_errors()
@@ -553,8 +519,7 @@ class EyeToHandCalibrator(EyeInHandCalibrator):
             self.optimization_completed = True
             
             if verbose:
-                improvement = initial_base2cam.copy() # Using copy for comparison, actual improvement calculated below
-                improvement = self.rms_error - best_error  # Calculate actual improvement
+                improvement = initial_error - self.rms_error
                 print(f"✅ Optimization completed!")
                 print(f"   Final RMS error: {self.rms_error:.4f} pixels")
                 print(f"   Improvement: {improvement:.4f} pixels")
@@ -747,3 +712,73 @@ class EyeToHandCalibrator(EyeInHandCalibrator):
             self.rms_error = np.sqrt(total_error / valid_images)
         else:
             self.rms_error = float('inf')
+
+    def _optimize_matrices_jointly(self, initial_base2cam, initial_target2end, ftol_rel, verbose):
+        """
+        Optimize both base2cam and target2end matrices simultaneously.
+        This should converge faster than iterative optimization.
+        
+        Args:
+            initial_base2cam: Initial base-to-camera transformation matrix
+            initial_target2end: Initial target-to-end-effector transformation matrix  
+            ftol_rel: Relative tolerance for optimization
+            verbose: Whether to print optimization progress
+            
+        Returns:
+            tuple: (optimized_base2cam, optimized_target2end) matrices
+        """
+        try:
+            import nlopt
+            
+            # Convert initial matrices to parameter vectors
+            base2cam_params = matrix_to_xyz_rpy(initial_base2cam)  # [x, y, z, roll, pitch, yaw]
+            target2end_params = matrix_to_xyz_rpy(initial_target2end)  # [x, y, z, roll, pitch, yaw]
+            
+            # Combined parameter vector: [base2cam_params, target2end_params] (12 total)
+            initial_params = np.concatenate([base2cam_params, target2end_params])
+            
+            # Setup joint optimization
+            opt = nlopt.opt(nlopt.LN_NELDERMEAD, 12)  # 12 parameters total
+            
+            def joint_objective(params, grad):
+                """Objective function that optimizes both matrices simultaneously."""
+                # Split parameters back into two matrices
+                base2cam_params = params[:6]  # First 6 parameters for base2cam
+                target2end_params = params[6:]  # Last 6 parameters for target2end
+                
+                # Convert to matrices
+                base2cam_matrix = xyz_rpy_to_matrix(base2cam_params)
+                target2end_matrix = xyz_rpy_to_matrix(target2end_params)
+                
+                # Calculate error using both matrices
+                return self._calculate_optimization_error(base2cam_matrix, target2end_matrix)
+            
+            opt.set_min_objective(joint_objective)
+            opt.set_ftol_rel(ftol_rel)
+            
+            # Optimize both matrices jointly
+            try:
+                optimized_params = opt.optimize(initial_params)
+                
+                # Split optimized parameters back into matrices
+                optimized_base2cam = xyz_rpy_to_matrix(optimized_params[:6])
+                optimized_target2end = xyz_rpy_to_matrix(optimized_params[6:])
+                
+                if verbose:
+                    initial_error = joint_objective(initial_params, None)
+                    final_error = joint_objective(optimized_params, None)
+                    print(f"   Joint optimization: {initial_error:.4f} -> {final_error:.4f} pixels")
+                    improvement = (initial_error - final_error) / initial_error * 100
+                    print(f"   Improvement: {improvement:.1f}%")
+                
+                return optimized_base2cam, optimized_target2end
+                
+            except Exception as opt_e:
+                if verbose:
+                    print(f"   Joint optimization failed: {opt_e}")
+                return initial_base2cam, initial_target2end
+                
+        except ImportError:
+            if verbose:
+                print("   nlopt not available, skipping joint optimization")
+            return initial_base2cam, initial_target2end
