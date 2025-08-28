@@ -57,15 +57,21 @@ def main():
             return 1
             
         # Create calibration pattern
-        from core.calibration_patterns import create_chessboard_pattern
+        from core.calibration_patterns import load_pattern_from_json
         from core.utils import load_images_from_directory
         
-        pattern = create_chessboard_pattern(
-            pattern_type='standard',
-            width=args.xx,
-            height=args.yy,
-            square_size=args.square_size
-        )
+        pattern_config = {
+            "pattern_id": "standard_chessboard",
+            "name": "Standard Chessboard",
+            "description": "Traditional black and white checkerboard pattern",
+            "is_planar": True,
+            "parameters": {
+                "width": args.xx,
+                "height": args.yy,
+                "square_size": args.square_size
+            }
+        }
+        pattern = load_pattern_from_json(pattern_config)
         
         # Load images from directory
         image_paths = load_images_from_directory(args.calib_data_dir)
@@ -110,12 +116,18 @@ def main():
         print("Running intrinsic calibration...")
         
         # Create calibration pattern
-        pattern = create_chessboard_pattern(
-            pattern_type='standard',
-            width=args.xx,
-            height=args.yy,
-            square_size=args.square_size
-        )
+        pattern_config = {
+            "pattern_id": "standard_chessboard",
+            "name": "Standard Chessboard", 
+            "description": "Traditional black and white checkerboard pattern",
+            "is_planar": True,
+            "parameters": {
+                "width": args.xx,
+                "height": args.yy,
+                "square_size": args.square_size
+            }
+        }
+        pattern = load_pattern_from_json(pattern_config)
         
         # Load images from directory
         image_paths = load_images_from_directory(args.calib_data_dir)
@@ -153,8 +165,19 @@ def main():
         print("Running eye-in-hand calibration...")
         
         # Create calibration pattern
-        from core.calibration_patterns import create_chessboard_pattern
-        pattern = create_chessboard_pattern('standard', width=args.xx, height=args.yy, square_size=args.square_size)
+        # load_pattern_from_json was already imported above
+        pattern_config = {
+            "pattern_id": "standard_chessboard",
+            "name": "Standard Chessboard",
+            "description": "Traditional black and white checkerboard pattern", 
+            "is_planar": True,
+            "parameters": {
+                "width": args.xx,
+                "height": args.yy,
+                "square_size": args.square_size
+            }
+        }
+        pattern = load_pattern_from_json(pattern_config)
         
         # Initialize with modern API
         eye_in_hand_cal = EyeInHandCalibrator(

@@ -27,7 +27,7 @@ import numpy as np
 import cv2
 from typing import Tuple, List, Optional, Union
 from .base_calibrator import BaseCalibrator
-from .calibration_patterns import CalibrationPattern, create_chessboard_pattern
+from .calibration_patterns import CalibrationPattern
 
 
 class IntrinsicCalibrator(BaseCalibrator):
