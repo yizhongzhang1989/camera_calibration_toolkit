@@ -54,7 +54,7 @@ class EyeInHandCalibrator(BaseCalibrator):
     
     Following the same pattern as IntrinsicCalibrator with organized member variables:
     - Images and related: images, image_paths, image_points, object_points, image_size
-    - Pattern and related: calibration_pattern, pattern_type, pattern_params
+    - Pattern and related: calibration_pattern, pattern_params
     - Robot pose data: end2base_matrices, base2end_matrices, robot_poses
     - Camera intrinsics: camera_matrix, distortion_coefficients
     - Output values: cam2end_matrix, target2base_matrix, rvecs, tvecs, rms_error
@@ -63,7 +63,7 @@ class EyeInHandCalibrator(BaseCalibrator):
     
     def __init__(self, images=None, image_paths=None, robot_poses=None, 
                  camera_matrix=None, distortion_coefficients=None, 
-                 calibration_pattern=None, pattern_type=None):
+                 calibration_pattern=None):
         """
         Initialize EyeInHandCalibrator with smart constructor arguments.
         
@@ -74,7 +74,6 @@ class EyeInHandCalibrator(BaseCalibrator):
             camera_matrix: Camera intrinsic matrix or None
             distortion_coefficients: Distortion coefficients array or None
             calibration_pattern: CalibrationPattern instance or None
-            pattern_type: Pattern type string for backwards compatibility or None
         """
         # Initialize base class
         super().__init__()
@@ -113,7 +112,7 @@ class EyeInHandCalibrator(BaseCalibrator):
             self.load_camera_intrinsics(camera_matrix, distortion_coefficients)
             
         if calibration_pattern is not None:
-            self.set_calibration_pattern(calibration_pattern, pattern_type)
+            self.set_calibration_pattern(calibration_pattern)
     
     def set_robot_poses(self, robot_poses: List[Union[Dict, np.ndarray]]) -> bool:
         """

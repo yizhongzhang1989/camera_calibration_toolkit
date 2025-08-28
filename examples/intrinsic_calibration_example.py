@@ -81,8 +81,7 @@ def test_chessboard_calibration():
     # Smart constructor - sets member parameters directly
     calibrator = IntrinsicCalibrator(
         image_paths=image_paths,           # Member parameter set in constructor
-        calibration_pattern=pattern,      # Member parameter set in constructor
-        pattern_type=pattern_type          # Member parameter set in constructor (loaded from JSON)
+        calibration_pattern=pattern       # Member parameter set in constructor
     )
     
     print("✅ Calibrator initialized with smart constructor")
@@ -171,8 +170,7 @@ def test_charuco_calibration():
     # Smart constructor - sets member parameters directly
     calibrator = IntrinsicCalibrator(
         image_paths=image_paths,           # Member parameter set in constructor
-        calibration_pattern=pattern,      # Member parameter set in constructor
-        pattern_type=pattern_type          # Member parameter set in constructor (loaded from JSON)
+        calibration_pattern=pattern       # Member parameter set in constructor
     )
     
     print("✅ Calibrator initialized with ChArUco pattern")
@@ -261,8 +259,7 @@ def test_gridboard_calibration():
     # Smart constructor - sets member parameters directly
     calibrator = IntrinsicCalibrator(
         image_paths=image_paths,           # Member parameter set in constructor
-        calibration_pattern=pattern,      # Member parameter set in constructor
-        pattern_type=pattern_type          # Member parameter set in constructor (loaded from JSON)
+        calibration_pattern=pattern       # Member parameter set in constructor
     )
     
     print("✅ Calibrator initialized with GridBoard pattern")

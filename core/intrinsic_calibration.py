@@ -43,7 +43,7 @@ class IntrinsicCalibrator(BaseCalibrator):
     - distortion_model: Distortion model used for calibration
     """
     
-    def __init__(self, images=None, image_paths=None, calibration_pattern=None, pattern_type=None):
+    def __init__(self, images=None, image_paths=None, calibration_pattern=None):
         """
         Initialize IntrinsicCalibrator with smart constructor arguments.
         
@@ -51,10 +51,9 @@ class IntrinsicCalibrator(BaseCalibrator):
             images: List of image arrays (numpy arrays) or None
             image_paths: List of image file paths or None
             calibration_pattern: CalibrationPattern instance or None
-            pattern_type: Pattern type string for backwards compatibility or None
         """
         # Initialize base class with common functionality
-        super().__init__(images, image_paths, calibration_pattern, pattern_type)
+        super().__init__(images, image_paths, calibration_pattern)
         
         # Intrinsic-specific attributes
         self.camera_matrix = None            # Calibrated camera matrix
@@ -322,9 +321,6 @@ class IntrinsicCalibrator(BaseCalibrator):
             
             if "per_image_errors" in calibration_data and calibration_data["per_image_errors"]:
                 self.per_image_errors = calibration_data["per_image_errors"]
-            
-            if "pattern_info" in calibration_data:
-                self.pattern_type = calibration_data["pattern_info"]["name"]
             
             # Load extrinsics if available
             if "extrinsics" in calibration_data:

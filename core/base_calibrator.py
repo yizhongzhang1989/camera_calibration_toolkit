@@ -36,7 +36,7 @@ class BaseCalibrator(ABC):
     Specialized calibrators inherit from this class and implement specific calibration algorithms.
     """
     
-    def __init__(self, images=None, image_paths=None, calibration_pattern=None, pattern_type=None):
+    def __init__(self, images=None, image_paths=None, calibration_pattern=None):
         """
         Initialize BaseCalibrator with common parameters.
         
@@ -44,7 +44,6 @@ class BaseCalibrator(ABC):
             images: List of image arrays (numpy arrays) or None
             image_paths: List of image file paths or None
             calibration_pattern: CalibrationPattern instance or None
-            pattern_type: Pattern type string for backwards compatibility or None
         """
         # Images and related parameters (common to all calibrators)
         self.images = None                    # List of image arrays
@@ -56,7 +55,6 @@ class BaseCalibrator(ABC):
         
         # Calibration pattern and related parameters (common to all calibrators)
         self.calibration_pattern = None      # CalibrationPattern instance
-        self.pattern_type = None             # Pattern type string
         self.pattern_params = None           # Pattern-specific parameters dict
         
         # Common results and status (shared across calibration types)
@@ -76,7 +74,7 @@ class BaseCalibrator(ABC):
             self.set_images_from_arrays(images)
         
         if calibration_pattern is not None:
-            self.set_calibration_pattern(calibration_pattern, pattern_type)
+            self.set_calibration_pattern(calibration_pattern)
     
     def set_images_from_paths(self, image_paths: List[str]) -> bool:
         """
@@ -130,18 +128,21 @@ class BaseCalibrator(ABC):
         print(f"Set {len(images)} images from arrays")
         return True
     
-    def set_calibration_pattern(self, pattern: CalibrationPattern, pattern_type: str = None, **pattern_params):
+    def set_calibration_pattern(self, pattern: CalibrationPattern, **pattern_params):
         """
         Set calibration pattern and related parameters.
         
         Args:
             pattern: CalibrationPattern instance
-            pattern_type: Pattern type string (optional)
             **pattern_params: Additional pattern parameters
         """
         self.calibration_pattern = pattern
-        self.pattern_type = pattern_type
         self.pattern_params = pattern_params
+    
+    @property
+    def pattern_type(self) -> Optional[str]:
+        """Get pattern type from the calibration pattern."""
+        return self.calibration_pattern.pattern_id if self.calibration_pattern else None
     
     def detect_pattern_points(self, verbose: bool = False) -> bool:
         """

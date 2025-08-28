@@ -97,8 +97,7 @@ def calculate_camera_intrinsics(sample_dir):
         # Create IntrinsicCalibrator with smart constructor
         intrinsic_calibrator = IntrinsicCalibrator(
             image_paths=image_paths,
-            calibration_pattern=pattern,
-            pattern_type=pattern_type
+            calibration_pattern=pattern
         )
         
         # Detect pattern points
@@ -180,8 +179,7 @@ def test_eye_in_hand_calibration():
     calibrator = EyeInHandCalibrator(
         camera_matrix=camera_matrix,          # Camera intrinsics
         distortion_coefficients=distortion_coefficients,
-        calibration_pattern=pattern,         # Calibration pattern (loaded from JSON)
-        pattern_type=pattern_type            # Pattern type string (loaded from JSON)
+        calibration_pattern=pattern          # Calibration pattern (loaded from JSON)
     )
     
     print("✅ Calibrator initialized with smart constructor")

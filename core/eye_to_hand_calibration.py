@@ -56,7 +56,7 @@ class EyeToHandCalibrator(EyeInHandCalibrator):
     
     def __init__(self, images=None, image_paths=None, robot_poses=None, 
                  camera_matrix=None, distortion_coefficients=None, 
-                 calibration_pattern=None, pattern_type=None):
+                 calibration_pattern=None):
         """
         Initialize EyeToHandCalibrator with the same interface as EyeInHandCalibrator.
         
@@ -67,11 +67,10 @@ class EyeToHandCalibrator(EyeInHandCalibrator):
             camera_matrix: Camera intrinsic matrix or None
             distortion_coefficients: Distortion coefficients array or None
             calibration_pattern: CalibrationPattern instance or None
-            pattern_type: Pattern type string for backwards compatibility or None
         """
         # Initialize parent class
         super().__init__(images, image_paths, robot_poses, camera_matrix, 
-                        distortion_coefficients, calibration_pattern, pattern_type)
+                        distortion_coefficients, calibration_pattern)
         
         # Override result variable names for eye-to-hand
         self.base2cam_matrix = None          # Base to camera transformation matrix (instead of cam2end_matrix)
