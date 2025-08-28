@@ -339,7 +339,7 @@ def test_gridboard_calibration():
     if success:
         rms_error = calibrator.get_rms_error()
         # Check RMS error threshold - consider calibration failed if > 0.5
-        if rms_error > 1.5:
+        if rms_error > 0.5:
             print(f"\n❌ GridBoard calibration failed - RMS error too high!")
             print(f"   RMS Error: {rms_error:.4f} pixels (threshold: 1.5)")
             print(f"   High RMS error indicates poor calibration quality")
