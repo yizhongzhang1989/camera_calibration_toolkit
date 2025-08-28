@@ -95,6 +95,241 @@ class BaseCalibrator(ABC):
             - Calibrated parameters (camera matrix, transforms, etc.)
         """
         pass
+
+    def to_json(self) -> dict:
+        """
+        Serialize calibrator state to JSON-compatible dictionary.
+        
+        Saves the following parameters if they are not None:
+        - camera_matrix
+        - distortion_coefficients  
+        - image_size
+        - distortion_model
+        - calibration_pattern
+        - rms_error
+        - per_image_errors
+        - rvecs
+        - tvecs
+        - image_paths
+        - image_points
+        - point_ids
+        - object_points
+        
+        Returns:
+            dict: JSON-compatible dictionary containing calibrator state
+        """
+        data = {}
+        
+        # Save camera matrix
+        if self.camera_matrix is not None:
+            data['camera_matrix'] = self.camera_matrix.tolist()
+            
+        # Save distortion coefficients
+        if self.distortion_coefficients is not None:
+            data['distortion_coefficients'] = self.distortion_coefficients.tolist()
+            
+        # Save image size
+        if self.image_size is not None:
+            data['image_size'] = self.image_size
+            
+        # Save distortion model
+        if self.distortion_model is not None:
+            data['distortion_model'] = self.distortion_model
+            
+        # Save calibration pattern
+        if self.calibration_pattern is not None:
+            # Save pattern as JSON if it has to_json method, otherwise save pattern_id
+            if hasattr(self.calibration_pattern, 'to_json'):
+                data['calibration_pattern'] = self.calibration_pattern.to_json()
+            else:
+                # Fallback: save basic pattern info
+                data['calibration_pattern'] = {
+                    'pattern_id': getattr(self.calibration_pattern, 'pattern_id', 'unknown'),
+                    'pattern_type': type(self.calibration_pattern).__name__
+                }
+                
+        # Save RMS error
+        if self.rms_error is not None:
+            data['rms_error'] = float(self.rms_error)
+            
+        # Save per-image errors
+        if self.per_image_errors is not None:
+            data['per_image_errors'] = [float(err) for err in self.per_image_errors]
+            
+        # Save rotation vectors
+        if self.rvecs is not None:
+            data['rvecs'] = []
+            for rvec in self.rvecs:
+                if rvec is not None:
+                    data['rvecs'].append(rvec.tolist())
+                else:
+                    data['rvecs'].append(None)
+                    
+        # Save translation vectors
+        if self.tvecs is not None:
+            data['tvecs'] = []
+            for tvec in self.tvecs:
+                if tvec is not None:
+                    data['tvecs'].append(tvec.tolist())
+                else:
+                    data['tvecs'].append(None)
+                    
+        # Save image paths
+        if self.image_paths is not None:
+            data['image_paths'] = self.image_paths
+            
+        # Save image points
+        if self.image_points is not None:
+            data['image_points'] = []
+            for img_pts in self.image_points:
+                if img_pts is not None:
+                    data['image_points'].append(img_pts.tolist())
+                else:
+                    data['image_points'].append(None)
+                    
+        # Save point IDs
+        if self.point_ids is not None:
+            data['point_ids'] = []
+            for pt_ids in self.point_ids:
+                if pt_ids is not None:
+                    if isinstance(pt_ids, np.ndarray):
+                        data['point_ids'].append(pt_ids.tolist())
+                    else:
+                        data['point_ids'].append(pt_ids)
+                else:
+                    data['point_ids'].append(None)
+                    
+        # Save object points
+        if self.object_points is not None:
+            data['object_points'] = []
+            for obj_pts in self.object_points:
+                if obj_pts is not None:
+                    data['object_points'].append(obj_pts.tolist())
+                else:
+                    data['object_points'].append(None)
+        
+        return data
+    
+    def from_json(self, data: dict) -> None:
+        """
+        Deserialize calibrator state from JSON-compatible dictionary.
+        
+        Loads the following parameters if they exist in the data:
+        - camera_matrix
+        - distortion_coefficients
+        - image_size
+        - distortion_model
+        - calibration_pattern
+        - rms_error
+        - per_image_errors
+        - rvecs
+        - tvecs
+        - image_paths
+        - image_points
+        - point_ids
+        - object_points
+        
+        Args:
+            data: JSON-compatible dictionary containing calibrator state
+        """
+        # Load camera matrix
+        if 'camera_matrix' in data:
+            self.camera_matrix = np.array(data['camera_matrix'], dtype=np.float32)
+            
+        # Load distortion coefficients
+        if 'distortion_coefficients' in data:
+            self.distortion_coefficients = np.array(data['distortion_coefficients'], dtype=np.float32)
+            
+        # Load image size
+        if 'image_size' in data:
+            self.image_size = tuple(data['image_size'])
+            
+        # Load distortion model
+        if 'distortion_model' in data:
+            self.distortion_model = data['distortion_model']
+            
+        # Load calibration pattern
+        if 'calibration_pattern' in data:
+            pattern_data = data['calibration_pattern']
+            if isinstance(pattern_data, dict):
+                # Try to reconstruct pattern from JSON data
+                try:
+                    from .calibration_patterns import load_pattern_from_json
+                    self.calibration_pattern = load_pattern_from_json(pattern_data)
+                except Exception as e:
+                    print(f"Warning: Could not load calibration pattern from JSON: {e}")
+                    self.calibration_pattern = None
+            else:
+                print(f"Warning: Invalid calibration pattern data format")
+                
+        # Load RMS error
+        if 'rms_error' in data:
+            self.rms_error = float(data['rms_error'])
+            
+        # Load per-image errors
+        if 'per_image_errors' in data:
+            self.per_image_errors = [float(err) for err in data['per_image_errors']]
+            
+        # Load rotation vectors
+        if 'rvecs' in data:
+            self.rvecs = []
+            for rvec_data in data['rvecs']:
+                if rvec_data is not None:
+                    self.rvecs.append(np.array(rvec_data, dtype=np.float32))
+                else:
+                    self.rvecs.append(None)
+                    
+        # Load translation vectors
+        if 'tvecs' in data:
+            self.tvecs = []
+            for tvec_data in data['tvecs']:
+                if tvec_data is not None:
+                    self.tvecs.append(np.array(tvec_data, dtype=np.float32))
+                else:
+                    self.tvecs.append(None)
+                    
+        # Load image paths
+        if 'image_paths' in data:
+            self.image_paths = data['image_paths']
+            
+        # Load image points
+        if 'image_points' in data:
+            self.image_points = []
+            for img_pts_data in data['image_points']:
+                if img_pts_data is not None:
+                    self.image_points.append(np.array(img_pts_data, dtype=np.float32))
+                else:
+                    self.image_points.append(None)
+                    
+        # Load point IDs
+        if 'point_ids' in data:
+            self.point_ids = []
+            for pt_ids_data in data['point_ids']:
+                if pt_ids_data is not None:
+                    if isinstance(pt_ids_data, list) and len(pt_ids_data) > 0:
+                        # Convert to numpy array if it looks like numeric data
+                        try:
+                            self.point_ids.append(np.array(pt_ids_data))
+                        except:
+                            # Keep as list if conversion fails
+                            self.point_ids.append(pt_ids_data)
+                    else:
+                        self.point_ids.append(pt_ids_data)
+                else:
+                    self.point_ids.append(None)
+                    
+        # Load object points
+        if 'object_points' in data:
+            self.object_points = []
+            for obj_pts_data in data['object_points']:
+                if obj_pts_data is not None:
+                    self.object_points.append(np.array(obj_pts_data, dtype=np.float32))
+                else:
+                    self.object_points.append(None)
+        
+        # Update calibration completion status if we have camera matrix
+        if self.camera_matrix is not None and self.distortion_coefficients is not None:
+            self.calibration_completed = True
     
     @abstractmethod
     def save_results(self, save_directory: str) -> None:

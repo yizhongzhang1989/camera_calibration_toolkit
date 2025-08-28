@@ -141,10 +141,13 @@ def test_chessboard_calibration():
             # Save calibration data to JSON  
             output_dir = f"data/results/{pattern.pattern_id}_calibration"
             os.makedirs(output_dir, exist_ok=True)
-            calibrator.save_calibration(
-                os.path.join(output_dir, "calibration_results.json"),
-                include_extrinsics=True
-            )
+            
+            # Serialize calibration data to JSON
+            calibration_data = calibrator.to_json()
+            output_path = os.path.join(output_dir, "calibration_results.json")
+            with open(output_path, 'w') as f:
+                json.dump(calibration_data, f, indent=2)
+            
             print(f"   Calibration data saved to: {output_dir}/calibration_results.json")
             
             # Generate debug images
@@ -260,10 +263,13 @@ def test_charuco_calibration():
             # Save calibration data to JSON
             output_dir = f"data/results/{pattern.pattern_id.lower()}_calibration"
             os.makedirs(output_dir, exist_ok=True)
-            calibrator.save_calibration(
-                os.path.join(output_dir, "calibration_results.json"),
-                include_extrinsics=True
-            )
+            
+            # Serialize calibration data to JSON
+            calibration_data = calibrator.to_json()
+            output_path = os.path.join(output_dir, "calibration_results.json")
+            with open(output_path, 'w') as f:
+                json.dump(calibration_data, f, indent=2)
+            
             print(f"   Calibration data saved to: {output_dir}/calibration_results.json")
             
             # Generate debug images
@@ -367,10 +373,13 @@ def test_gridboard_calibration():
             # Save calibration data to JSON
             output_dir = f"data/results/{pattern.pattern_id.lower()}_calibration"
             os.makedirs(output_dir, exist_ok=True)
-            calibrator.save_calibration(
-                os.path.join(output_dir, "calibration_results.json"),
-                include_extrinsics=True
-            )
+            
+            # Serialize calibration data to JSON
+            calibration_data = calibrator.to_json()
+            output_path = os.path.join(output_dir, "calibration_results.json")
+            with open(output_path, 'w') as f:
+                json.dump(calibration_data, f, indent=2)
+            
             print(f"   Calibration data saved to: {output_dir}/calibration_results.json")
             
             # Generate debug images
