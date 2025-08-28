@@ -76,6 +76,33 @@ class BaseCalibrator(ABC):
         if calibration_pattern is not None:
             self.set_calibration_pattern(calibration_pattern)
     
+    @abstractmethod
+    def calibrate(self, **kwargs) -> bool:
+        """
+        Perform calibration using the specific algorithm.
+        Must be implemented by subclasses.
+        
+        Returns:
+            bool: True if calibration succeeded, False if failed
+            
+        Note:
+            After successful calibration, use getter methods to access results:
+            - Calibration quality metrics (RMS errors, etc.)
+            - Calibrated parameters (camera matrix, transforms, etc.)
+        """
+        pass
+    
+    @abstractmethod
+    def save_results(self, save_directory: str) -> None:
+        """
+        Save calibration results to files.
+        Must be implemented by subclasses.
+        
+        Args:
+            save_directory: Directory to save results
+        """
+        pass
+
     def set_images_from_paths(self, image_paths: List[str]) -> bool:
         """
         Set images from file paths.
@@ -415,30 +442,3 @@ class BaseCalibrator(ABC):
         
         return debug_images
     
-    # Abstract methods that must be implemented by specialized calibrators
-    @abstractmethod
-    def calibrate(self, **kwargs) -> bool:
-        """
-        Perform calibration using the specific algorithm.
-        Must be implemented by subclasses.
-        
-        Returns:
-            bool: True if calibration succeeded, False if failed
-            
-        Note:
-            After successful calibration, use getter methods to access results:
-            - Calibration quality metrics (RMS errors, etc.)
-            - Calibrated parameters (camera matrix, transforms, etc.)
-        """
-        pass
-    
-    @abstractmethod
-    def save_results(self, save_directory: str) -> None:
-        """
-        Save calibration results to files.
-        Must be implemented by subclasses.
-        
-        Args:
-            save_directory: Directory to save results
-        """
-        pass

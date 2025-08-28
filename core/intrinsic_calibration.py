@@ -60,6 +60,40 @@ class IntrinsicCalibrator(BaseCalibrator):
         self.distortion_coefficients = None  # Calibrated distortion coefficients
         self.distortion_model = None         # Distortion model used for calibration
     
+    # Abstract method implementations
+    def calibrate(self, **kwargs) -> bool:
+        """
+        Perform intrinsic camera calibration (wrapper for calibrate_camera).
+        
+        Args:
+            **kwargs: Arguments passed to calibrate_camera
+            
+        Returns:
+            bool: True if calibration succeeded, False if failed
+            
+        Note:
+            After successful calibration, use getter methods to access results:
+            - get_rms_error(): Overall RMS reprojection error
+            - get_camera_matrix(): Calibrated camera matrix
+            - get_distortion_coefficients(): Distortion coefficients
+        """
+        return self.calibrate_camera(**kwargs)
+
+    def save_results(self, save_directory: str) -> None:
+        """
+        Save calibration results (wrapper for save_calibration).
+        
+        Args:
+            save_directory: Directory to save results
+        """
+        if not self.is_calibrated():
+            raise ValueError("No calibration results to save. Run calibration first.")
+        
+        import os
+        os.makedirs(save_directory, exist_ok=True)
+        filepath = os.path.join(save_directory, "intrinsic_calibration_results.json")
+        self.save_calibration(filepath)
+
     def calibrate_camera(self, 
                         cameraMatrix: Optional[np.ndarray] = None,
                         distCoeffs: Optional[np.ndarray] = None, 
@@ -229,32 +263,6 @@ class IntrinsicCalibrator(BaseCalibrator):
                 print(f"❌ Calibration failed with exception: {e}")
             return False
     
-    # Getter methods for results
-    def get_rms_error(self) -> Optional[float]:
-        """Get overall RMS reprojection error (lower is better)."""
-        return self.rms_error
-    
-    def get_camera_matrix(self) -> Optional[np.ndarray]:
-        """Get calibrated camera matrix."""
-        return self.camera_matrix
-    
-    def get_distortion_coefficients(self) -> Optional[np.ndarray]:
-        """Get calibrated distortion coefficients."""
-        return self.distortion_coefficients
-    
-    def get_extrinsics(self) -> Tuple[Optional[List[np.ndarray]], Optional[List[np.ndarray]]]:
-        """Get rotation and translation vectors for each image."""
-        return self.rvecs, self.tvecs
-    
-    def get_reprojection_error(self) -> Tuple[Optional[float], Optional[List[float]]]:
-        """Get overall and per-image reprojection errors."""
-        return self.rms_error, self.per_image_errors
-    
-    def get_per_image_errors(self) -> Optional[List[float]]:
-        """Get per-image reprojection errors (None entries for failed detections)."""
-        return self.per_image_errors
-    
-    # I/O methods for saving and loading calibration data
     def save_calibration(self, filepath: str, include_extrinsics: bool = True) -> None:
         """
         Save calibration results to JSON file.
@@ -310,7 +318,31 @@ class IntrinsicCalibrator(BaseCalibrator):
             json.dump(calibration_data, f, indent=2, ensure_ascii=False)
         
         print(f"✅ Calibration data saved to: {filepath}")
+
+    def get_rms_error(self) -> Optional[float]:
+        """Get overall RMS reprojection error (lower is better)."""
+        return self.rms_error
     
+    def get_camera_matrix(self) -> Optional[np.ndarray]:
+        """Get calibrated camera matrix."""
+        return self.camera_matrix
+    
+    def get_distortion_coefficients(self) -> Optional[np.ndarray]:
+        """Get calibrated distortion coefficients."""
+        return self.distortion_coefficients
+    
+    def get_extrinsics(self) -> Tuple[Optional[List[np.ndarray]], Optional[List[np.ndarray]]]:
+        """Get rotation and translation vectors for each image."""
+        return self.rvecs, self.tvecs
+    
+    def get_reprojection_error(self) -> Tuple[Optional[float], Optional[List[float]]]:
+        """Get overall and per-image reprojection errors."""
+        return self.rms_error, self.per_image_errors
+    
+    def get_per_image_errors(self) -> Optional[List[float]]:
+        """Get per-image reprojection errors (None entries for failed detections)."""
+        return self.per_image_errors
+        
     def load_calibration(self, filepath: str) -> bool:
         """
         Load calibration results from JSON file.
@@ -361,75 +393,4 @@ class IntrinsicCalibrator(BaseCalibrator):
         except Exception as e:
             print(f"❌ Failed to load calibration data: {e}")
             return False
-    
-    def export_opencv_yaml(self, filepath: str) -> None:
-        """
-        Export calibration data in OpenCV YAML format for compatibility.
-        
-        Args:
-            filepath: Path to save the YAML file (should end with .yml or .yaml)
-        """
-        if not self.calibration_completed:
-            raise ValueError("No calibration data to export. Run calibration first.")
-        
-        import yaml
-        
-        # Create OpenCV-compatible data structure
-        opencv_data = {
-            "image_width": int(self.image_size[0]) if self.image_size else 0,
-            "image_height": int(self.image_size[1]) if self.image_size else 0,
-            "camera_matrix": {
-                "rows": 3,
-                "cols": 3,
-                "dt": "d",
-                "data": self.camera_matrix.flatten().tolist()
-            },
-            "distortion_coefficients": {
-                "rows": 1,
-                "cols": len(self.distortion_coefficients),
-                "dt": "d", 
-                "data": self.distortion_coefficients.flatten().tolist()
-            },
-            "avg_reprojection_error": float(self.rms_error)
-        }
-        
-        # Save to YAML file
-        os.makedirs(os.path.dirname(filepath) if os.path.dirname(filepath) else '.', exist_ok=True)
-        with open(filepath, 'w', encoding='utf-8') as f:
-            yaml.dump(opencv_data, f, default_flow_style=False)
-        
-        print(f"✅ OpenCV YAML data exported to: {filepath}")
-    
-    # Abstract method implementations
-    def calibrate(self, **kwargs) -> bool:
-        """
-        Perform intrinsic camera calibration (wrapper for calibrate_camera).
-        
-        Args:
-            **kwargs: Arguments passed to calibrate_camera
             
-        Returns:
-            bool: True if calibration succeeded, False if failed
-            
-        Note:
-            After successful calibration, use getter methods to access results:
-            - get_rms_error(): Overall RMS reprojection error
-            - get_camera_matrix(): Calibrated camera matrix
-            - get_distortion_coefficients(): Distortion coefficients
-        """
-        return self.calibrate_camera(**kwargs)
-    
-    def save_results(self, save_directory: str) -> None:
-        """
-        Save calibration results (wrapper for save_calibration).
-        
-        Args:
-            save_directory: Directory to save results
-        """
-        if not self.is_calibrated():
-            raise ValueError("No calibration results to save. Run calibration first.")
-        
-        import os
-        os.makedirs(save_directory, exist_ok=True)
-        filepath = os.path.join(save_directory, "intrinsic_calibration_results.json")
-        self.save_calibration(filepath)
