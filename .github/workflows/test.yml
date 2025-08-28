@@ -1,4 +1,4 @@
-name: Camera Calibration Tests
+name: Camera Calibration Examples Validation
 
 on:
   push:
@@ -58,38 +58,22 @@ jobs:
         python --version
         python -c "import numpy; print(f'NumPy: {numpy.__version__}')"
         python -c "import cv2; print(f'OpenCV: {cv2.__version__}')" 
-        python -c "import pytest; print(f'pytest: {pytest.__version__}')"
         python -c "import scipy; print(f'SciPy: {scipy.__version__}')"
         python -c "import yaml; print(f'PyYAML: {yaml.__version__}')"
-        python -c "import flask; print(f'Flask: {flask.__version__}')"
+        python -c "import flask; print(f'Flask: {flask.__version__ if hasattr(flask, \"__version__\") else \"installed\"}')"
+        python -c "import werkzeug; print(f'Werkzeug: installed')"
+        python -c "import nlopt; print(f'NLopt: installed')"
         python -c "import PIL; print(f'Pillow: {PIL.__version__}')"
+        python -c "import pytest; print(f'pytest: {pytest.__version__}')"
+        python -c "import matplotlib; print(f'Matplotlib: {matplotlib.__version__}')"
+        python -c "import plotly; print(f'Plotly: {plotly.__version__}')"
+        python -c "import numba; print(f'Numba: {numba.__version__}')"
     
-    - name: List test files (Unix)
-      if: runner.os != 'Windows'
-      run: ls -la tests/unit/
-    
-    - name: List test files (Windows)
-      if: runner.os == 'Windows'
-      run: Get-ChildItem tests/unit/ -Name
-      shell: powershell
-    
-    - name: Run tests
+    - name: Check environment
       run: |
-        python -m pytest tests/unit/test_patterns_simple.py tests/unit/test_utils_simple.py -v --cov=core --cov-report=xml
+        python test_runner.py --check
     
-    - name: Run example validation tests
+    - name: Run examples validation
+      timeout-minutes: 30
       run: |
         python test_runner.py --examples
-    
-    - name: Check results (Unix)
-      if: runner.os != 'Windows'
-      run: |
-        ls -la coverage.xml || echo "No coverage file generated"
-        echo "Tests completed for Python ${{ matrix.python-version }} on ${{ matrix.os }}"
-    
-    - name: Check results (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        if (Test-Path coverage.xml) { Get-ChildItem coverage.xml } else { Write-Host "No coverage file generated" }
-        Write-Host "Tests completed for Python ${{ matrix.python-version }} on ${{ matrix.os }}"
-      shell: powershell

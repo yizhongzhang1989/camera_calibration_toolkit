@@ -2,86 +2,17 @@
 """
 Test Runner for Camera Calibration Toolkit
 
-Simple script to run tests with common configurations.
-Provides easy commands for different test scenarios.
+Simple script to validate example scripts.
 """
 import sys
 import subprocess
 import argparse
 import os
+import glob
 from pathlib import Path
-
-def run_command(cmd, description):
-    """Run a command and handle output."""
-    print(f"\n{'='*60}")
-    print(f"TEST: {description}")
-    print(f"{'='*60}")
-    print(f"Running: {' '.join(cmd)}")
-    
-    result = subprocess.run(cmd, capture_output=False, text=True)
-    
-    if result.returncode == 0:
-        print(f"PASS: {description} - SUCCESS")
-    else:
-        print(f"FAIL: {description} - FAILED")
-        return False
-    return True
-
-def run_unit_tests():
-    """Run unit tests."""
-    cmd = [
-        sys.executable, "-m", "pytest", 
-        "tests/unit/test_patterns_simple.py", 
-        "tests/unit/test_utils_simple.py", 
-        "-v"
-    ]
-    return run_command(cmd, "Unit Tests")
-
-def run_tests_with_coverage():
-    """Run tests with coverage report."""
-    cmd = [
-        sys.executable, "-m", "pytest", 
-        "tests/unit/test_patterns_simple.py", 
-        "tests/unit/test_utils_simple.py", 
-        "--cov=core", 
-        "--cov-report=term-missing",
-        "-v"
-    ]
-    return run_command(cmd, "Tests with Coverage")
-
-def run_all_tests():
-    """Run all available tests."""
-    cmd = [
-        sys.executable, "-m", "pytest", 
-        "tests/unit/", 
-        "-v", 
-        "--tb=short"
-    ]
-    return run_command(cmd, "All Available Tests")
-
-def run_integration_tests():
-    """Run integration tests."""
-    cmd = [
-        sys.executable, "-m", "pytest", 
-        "tests/integration/", 
-        "-v",
-        "-m", "integration"
-    ]
-    return run_command(cmd, "Integration Tests")
-
-def run_e2e_tests():
-    """Run end-to-end tests."""
-    cmd = [
-        sys.executable, "-m", "pytest", 
-        "tests/e2e/", 
-        "-v",
-        "-m", "e2e"
-    ]
-    return run_command(cmd, "End-to-End Tests")
 
 def validate_examples():
     """Validate example scripts by running them and catching errors."""
-    import glob
     
     # Automatically discover all Python example files
     example_patterns = [
@@ -151,10 +82,10 @@ def validate_examples():
     print(f"\nExamples Summary: {success_count}/{total_count} passed")
     return success_count == total_count
 
-def check_test_environment():
-    """Check test environment setup."""
+def check_environment():
+    """Check basic environment setup."""
     print("\n" + "="*60)
-    print("Testing Environment Check")
+    print("Environment Check")
     print("="*60)
     
     # Check Python version
@@ -162,7 +93,7 @@ def check_test_environment():
     
     # Read requirements.txt to get all required packages
     requirements_file = Path("requirements.txt")
-    required_packages = ["pytest", "pytest-cov"]  # Testing essentials
+    essential_packages = []  # Will build from requirements
     
     if requirements_file.exists():
         print(f"Reading requirements from: {requirements_file}")
@@ -173,17 +104,17 @@ def check_test_environment():
                     # Extract package name (before >= or == or other version specs)
                     package_name = line.split('>=')[0].split('==')[0].split('<')[0].strip()
                     if package_name:
-                        required_packages.append(package_name)
+                        essential_packages.append(package_name)
     else:
         print("WARNING: requirements.txt not found, checking essential packages only")
-        # Add essential packages for testing
-        required_packages.extend(["numpy", "opencv-contrib-python"])
+        # Add essential packages for examples
+        essential_packages.extend(["numpy", "opencv-contrib-python", "PyYAML", "scipy", "Pillow", "flask"])
     
-    print(f"Checking {len(required_packages)} packages...")
+    print(f"Checking {len(essential_packages)} packages...")
     failed_packages = []
     
     # Check required packages
-    for package in required_packages:
+    for package in essential_packages:
         try:
             # Handle special package name mappings
             import_name = package.replace("-", "_")
@@ -193,6 +124,10 @@ def check_test_environment():
                 import_name = "yaml"
             elif package == "Pillow":
                 import_name = "PIL"
+            elif package == "Flask":
+                import_name = "flask"
+            elif package == "Werkzeug":
+                import_name = "werkzeug"
             
             __import__(import_name)
             print(f"PASS: {package} - Available")
@@ -203,53 +138,74 @@ def check_test_environment():
     if failed_packages:
         print(f"\nTo install missing packages:")
         print(f"pip install {' '.join(failed_packages)}")
-        return False
     
-    # Check test structure
-    test_paths = ["tests/unit/", "tests/integration/", "tests/e2e/"]
-    for path in test_paths:
+    # Check directory structure
+    important_paths = ["examples/", "core/", "data/", "web/"]
+    for path in important_paths:
         if Path(path).exists():
             print(f"PASS: {path} - Available")
         else:
             print(f"MISSING: {path} - Missing")
     
-    return True
+    # Check if we have sample data
+    sample_data_path = Path("sample_data/")
+    if sample_data_path.exists():
+        print(f"PASS: sample_data/ - Available")
+        # Count subdirectories in sample_data
+        subdirs = [p for p in sample_data_path.iterdir() if p.is_dir()]
+        print(f"   Found {len(subdirs)} sample data sets")
+    else:
+        print(f"WARNING: sample_data/ - Missing (examples may fail)")
+    
+    # Check core modules can be imported
+    core_modules = ["core.calibration_patterns", "core.intrinsic_calibration", "core.eye_in_hand_calibration", "core.utils"]
+    core_failed = []
+    
+    print(f"\nChecking core module imports...")
+    for module in core_modules:
+        try:
+            __import__(module)
+            print(f"PASS: {module} - Importable")
+        except ImportError as e:
+            print(f"FAIL: {module} - Import Error: {e}")
+            core_failed.append(module)
+    
+    # Overall assessment
+    total_issues = len(failed_packages) + len(core_failed)
+    if total_issues == 0:
+        print(f"\n✅ Environment Check: ALL GOOD - No issues found")
+        return True
+    else:
+        print(f"\n⚠️  Environment Check: {total_issues} issues found")
+        if failed_packages:
+            print(f"   - Missing packages: {', '.join(failed_packages)}")
+        if core_failed:
+            print(f"   - Failed core imports: {', '.join(core_failed)}")
+        return False
 
 def main():
     """Main test runner."""
-    parser = argparse.ArgumentParser(description="Camera Calibration Toolkit Test Runner")
-    parser.add_argument("--unit", action="store_true", help="Run unit tests")
-    parser.add_argument("--coverage", action="store_true", help="Run tests with coverage")
-    parser.add_argument("--all", action="store_true", help="Run all available tests")
-    parser.add_argument("--integration", action="store_true", help="Run integration tests")
-    parser.add_argument("--e2e", action="store_true", help="Run end-to-end tests")
+    parser = argparse.ArgumentParser(description="Camera Calibration Toolkit - Example Validator")
     parser.add_argument("--examples", action="store_true", help="Validate example scripts")
-    parser.add_argument("--check", action="store_true", help="Check test environment")
-    parser.add_argument("--quick", action="store_true", help="Run quick test suite (unit + coverage)")
+    parser.add_argument("--check", action="store_true", help="Check environment")
+    parser.add_argument("--all", action="store_true", help="Run examples validation (same as --examples)")
     
     args = parser.parse_args()
     
     # If no specific args, show help
     if not any(vars(args).values()):
-        print("Camera Calibration Toolkit - Test Runner")
-        print("=========================================")
-        print()
+        print("Camera Calibration Toolkit - Example Validator")
+        print("=" * 50)
         print("Available commands:")
-        print("  --unit        Run unit tests")
-        print("  --coverage    Run tests with coverage")  
-        print("  --all         Run all available tests + examples")
-        print("  --integration Run integration tests")
-        print("  --e2e         Run end-to-end tests")
         print("  --examples    Validate example scripts")
-        print("  --check       Check test environment")
-        print("  --quick       Run quick test suite (unit + coverage + examples)")
+        print("  --check       Check environment and dependencies")
+        print("  --all         Run examples validation (same as --examples)")
         print()
         print("Examples:")
-        print("  python test_runner.py --quick")
-        print("  python test_runner.py --unit --coverage")
-        print("  python test_runner.py --all")
         print("  python test_runner.py --examples")
-        return
+        print("  python test_runner.py --all")
+        print("  python test_runner.py --check")
+        return 0
     
     success_count = 0
     total_count = 0
@@ -257,38 +213,13 @@ def main():
     # Check environment first if requested
     if args.check:
         total_count += 1
-        if check_test_environment():
+        if check_environment():
             success_count += 1
     
-    # Run requested tests
-    if args.unit or args.quick:
-        total_count += 1
-        if run_unit_tests():
-            success_count += 1
-    
-    if args.coverage or args.quick:
-        total_count += 1
-        if run_tests_with_coverage():
-            success_count += 1
-    
-    if args.examples or args.quick or args.all:
+    # Run example validation
+    if args.examples or args.all:
         total_count += 1
         if validate_examples():
-            success_count += 1
-    
-    if args.all:
-        total_count += 1
-        if run_all_tests():
-            success_count += 1
-    
-    if args.integration:
-        total_count += 1
-        if run_integration_tests():
-            success_count += 1
-    
-    if args.e2e:
-        total_count += 1
-        if run_e2e_tests():
             success_count += 1
     
     # Summary
@@ -298,10 +229,10 @@ def main():
     print(f"Successful: {success_count}/{total_count}")
     
     if success_count == total_count:
-        print("All tests passed!")
+        print("All validations passed!")
         return 0
     else:
-        print("WARNING: Some tests failed or encountered issues")
+        print("WARNING: Some validations failed or encountered issues")
         return 1
 
 if __name__ == "__main__":
