@@ -8,21 +8,22 @@ Provides easy commands for different test scenarios.
 import sys
 import subprocess
 import argparse
+import os
 from pathlib import Path
 
 def run_command(cmd, description):
     """Run a command and handle output."""
     print(f"\n{'='*60}")
-    print(f"🔧 {description}")
+    print(f"TEST: {description}")
     print(f"{'='*60}")
     print(f"Running: {' '.join(cmd)}")
     
     result = subprocess.run(cmd, capture_output=False, text=True)
     
     if result.returncode == 0:
-        print(f"✅ {description} - SUCCESS")
+        print(f"PASS: {description} - SUCCESS")
     else:
-        print(f"❌ {description} - FAILED")
+        print(f"FAIL: {description} - FAILED")
         return False
     return True
 
@@ -79,27 +80,81 @@ def run_e2e_tests():
     return run_command(cmd, "End-to-End Tests")
 
 def validate_examples():
-    """Validate example scripts."""
-    examples = [
-        "examples/intrinsic_calibration_example.py",
-        "examples/eye_in_hand_calibration_example.py"
+    """Validate example scripts by running them and catching errors."""
+    import glob
+    
+    # Automatically discover all Python example files
+    example_patterns = [
+        "examples/*.py",
+        "examples/**/*.py"  # Include subdirectories if any
     ]
     
-    success = True
-    for example in examples:
-        if Path(example).exists():
-            cmd = [sys.executable, example, "--validate"]
-            if not run_command(cmd, f"Validate {example}"):
-                success = False
-        else:
-            print(f"⚠️  Example not found: {example}")
+    examples = set()  # Use set to avoid duplicates
+    for pattern in example_patterns:
+        examples.update(glob.glob(pattern, recursive=True))
     
-    return success
+    # Remove any __pycache__ or other non-example files
+    examples = [ex for ex in examples if not any(exclude in ex for exclude in ['__pycache__', '.pyc', '__init__.py'])]
+    
+    # Sort for consistent output
+    examples.sort()
+    
+    print("============================================================")
+    print("Example Scripts Validation")
+    print("============================================================")
+    print(f"Discovered {len(examples)} example files:")
+    for example in examples:
+        print(f"  - {example}")
+    print("")
+    
+    success_count = 0
+    total_count = len(examples)
+    
+    for example in examples:
+        example_path = Path(example)
+        print(f"\nTesting {example_path.name}...")
+        
+        if not example_path.exists():
+            print(f"FAIL - Example not found: {example}")
+            continue
+            
+        try:
+            # Run the example with a timeout and proper encoding handling
+            result = subprocess.run(
+                [sys.executable, str(example_path)], 
+                capture_output=True, 
+                text=True, 
+                timeout=300,  # 5 minute timeout
+                encoding='utf-8',
+                errors='replace',  # Replace problematic unicode characters
+                env={**os.environ, 'PYTHONIOENCODING': 'utf-8:replace'}
+            )
+            
+            if result.returncode == 0:
+                print(f"PASS - {example_path.name} - SUCCESS")
+                success_count += 1
+            else:
+                print(f"FAIL - {example_path.name} - FAILED")
+                print(f"   Return code: {result.returncode}")
+                if result.stderr:
+                    # Show first few lines of error
+                    error_lines = result.stderr.strip().split('\n')[:3]
+                    for line in error_lines:
+                        print(f"   Error: {line}")
+                        
+        except subprocess.TimeoutExpired:
+            print(f"TIMEOUT - {example_path.name} - TIMEOUT (5 minutes)")
+            
+        except Exception as e:
+            print(f"ERROR - {example_path.name} - EXCEPTION: {e}")
+    
+    print(f"\nExamples Summary: {success_count}/{total_count} passed")
+    return success_count == total_count
 
 def check_test_environment():
     """Check test environment setup."""
     print("\n" + "="*60)
-    print("🔍 Testing Environment Check")
+    print("Testing Environment Check")
     print("="*60)
     
     # Check Python version
@@ -110,7 +165,7 @@ def check_test_environment():
     required_packages = ["pytest", "pytest-cov"]  # Testing essentials
     
     if requirements_file.exists():
-        print(f"📋 Reading requirements from: {requirements_file}")
+        print(f"Reading requirements from: {requirements_file}")
         with open(requirements_file, 'r') as f:
             for line in f:
                 line = line.strip()
@@ -120,11 +175,11 @@ def check_test_environment():
                     if package_name:
                         required_packages.append(package_name)
     else:
-        print("⚠️  requirements.txt not found, checking essential packages only")
+        print("WARNING: requirements.txt not found, checking essential packages only")
         # Add essential packages for testing
         required_packages.extend(["numpy", "opencv-contrib-python"])
     
-    print(f"🔍 Checking {len(required_packages)} packages...")
+    print(f"Checking {len(required_packages)} packages...")
     failed_packages = []
     
     # Check required packages
@@ -140,13 +195,13 @@ def check_test_environment():
                 import_name = "PIL"
             
             __import__(import_name)
-            print(f"✅ {package} - Available")
+            print(f"PASS: {package} - Available")
         except ImportError:
-            print(f"❌ {package} - Missing")
+            print(f"MISSING: {package} - Missing")
             failed_packages.append(package)
     
     if failed_packages:
-        print(f"\n📋 To install missing packages:")
+        print(f"\nTo install missing packages:")
         print(f"pip install {' '.join(failed_packages)}")
         return False
     
@@ -154,9 +209,9 @@ def check_test_environment():
     test_paths = ["tests/unit/", "tests/integration/", "tests/e2e/"]
     for path in test_paths:
         if Path(path).exists():
-            print(f"✅ {path} - Available")
+            print(f"PASS: {path} - Available")
         else:
-            print(f"❌ {path} - Missing")
+            print(f"MISSING: {path} - Missing")
     
     return True
 
@@ -182,17 +237,18 @@ def main():
         print("Available commands:")
         print("  --unit        Run unit tests")
         print("  --coverage    Run tests with coverage")  
-        print("  --all         Run all available tests")
+        print("  --all         Run all available tests + examples")
         print("  --integration Run integration tests")
         print("  --e2e         Run end-to-end tests")
         print("  --examples    Validate example scripts")
         print("  --check       Check test environment")
-        print("  --quick       Run quick test suite")
+        print("  --quick       Run quick test suite (unit + coverage + examples)")
         print()
         print("Examples:")
         print("  python test_runner.py --quick")
         print("  python test_runner.py --unit --coverage")
         print("  python test_runner.py --all")
+        print("  python test_runner.py --examples")
         return
     
     success_count = 0
@@ -215,6 +271,11 @@ def main():
         if run_tests_with_coverage():
             success_count += 1
     
+    if args.examples or args.quick or args.all:
+        total_count += 1
+        if validate_examples():
+            success_count += 1
+    
     if args.all:
         total_count += 1
         if run_all_tests():
@@ -230,22 +291,17 @@ def main():
         if run_e2e_tests():
             success_count += 1
     
-    if args.examples:
-        total_count += 1
-        if validate_examples():
-            success_count += 1
-    
     # Summary
     print(f"\n{'='*60}")
-    print(f"📊 Test Summary")
+    print(f"Test Summary")
     print(f"{'='*60}")
     print(f"Successful: {success_count}/{total_count}")
     
     if success_count == total_count:
-        print("🎉 All tests passed!")
+        print("All tests passed!")
         return 0
     else:
-        print("⚠️  Some tests failed or encountered issues")
+        print("WARNING: Some tests failed or encountered issues")
         return 1
 
 if __name__ == "__main__":
