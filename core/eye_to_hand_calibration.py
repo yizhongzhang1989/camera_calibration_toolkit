@@ -80,7 +80,7 @@ class EyeToHandCalibrator(EyeInHandCalibrator):
         print("   📷 Camera matrix provided: {}".format(self.camera_matrix is not None))
         print("   🎯 Target mounting: Direct attachment")
     
-    def calibrate(self, method: int = cv2.CALIB_HAND_EYE_HORAUD, verbose: bool = False) -> float:
+    def calibrate(self, method: int = cv2.CALIB_HAND_EYE_HORAUD, verbose: bool = False) -> bool:
         """
         Perform eye-to-hand calibration using the correct OpenCV calibrateHandEye arguments.
         
@@ -96,7 +96,13 @@ class EyeToHandCalibrator(EyeInHandCalibrator):
             verbose: Whether to print detailed information
             
         Returns:
-            float: RMS reprojection error (0.0 if calibration failed)
+            bool: True if calibration succeeded, False if failed
+            
+        Note:
+            After successful calibration, use getter methods to access results:
+            - get_rms_error(): Overall RMS reprojection error
+            - get_transformation_matrix(): Base to camera transform
+            - get_per_image_errors(): Per-image reprojection errors
         """
         if self.camera_matrix is None or self.distortion_coefficients is None:
             raise ValueError("Camera intrinsic parameters have not been loaded")
@@ -213,13 +219,21 @@ class EyeToHandCalibrator(EyeInHandCalibrator):
                 print(f"{base2cam_4x4}")
                 print(f"Per-image errors: {[f'{err:.4f}' for err in self.per_image_errors if not np.isinf(err)]}")
 
-            return self.rms_error
+            return True
             
         except Exception as e:
             if verbose:
                 print(f"❌ Eye-to-hand calibration failed: {e}")
             self.calibration_completed = False
-            return 0.0
+            return False
+        
+    def get_rms_error(self) -> Optional[float]:
+        """Get overall RMS reprojection error (lower is better)."""
+        return self.rms_error
+    
+    def get_per_image_errors(self) -> Optional[List[float]]:
+        """Get per-image reprojection errors."""
+        return self.per_image_errors
         
     def get_transformation_matrix(self) -> Optional[np.ndarray]:
         """Get the base to camera transformation matrix (eye-to-hand result)."""

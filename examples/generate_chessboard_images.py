@@ -120,6 +120,7 @@ def generate_patterns():
     ]
     
     generated_files = []
+    failed_patterns = []
     
     for i, config in enumerate(patterns, 1):
         print(f"🔲 Pattern {i}/{len(patterns)}: {config['name']}")
@@ -164,6 +165,10 @@ def generate_patterns():
             filename = f"{config['name']}.png"
             filepath = os.path.join(output_dir, filename)
             cv2.imwrite(filepath, image)
+            
+            # Verify the image was actually saved
+            if not os.path.exists(filepath):
+                raise Exception(f"Failed to save image file: {filepath}")
             
             # Get file size
             file_size = os.path.getsize(filepath)
@@ -217,12 +222,20 @@ def generate_patterns():
             
         except Exception as e:
             print(f"   ❌ Error creating {config['name']}: {e}")
+            failed_patterns.append(config['name'])
         
         print()
     
     # Summary
     end_time = datetime.now()
-    print("✅ Pattern generation complete!")
+    success_count = len(patterns) - len(failed_patterns)
+    
+    if failed_patterns:
+        print(f"⚠️  Pattern generation completed with {len(failed_patterns)} failures!")
+        print(f"   Failed patterns: {', '.join(failed_patterns)}")
+    else:
+        print("✅ Pattern generation completed successfully!")
+    
     print(f"📂 All images saved to: {output_dir}")
     print(f"⏰ Completed at: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
     
@@ -241,7 +254,34 @@ def generate_patterns():
     print("   • Mount patterns on rigid, flat surfaces")
     print("   • Ensure good lighting and avoid reflections")
     print("   • Check pattern info files for detailed specifications")
+    
+    # Return success/failure indication
+    if failed_patterns:
+        return len(failed_patterns)  # Return number of failures
+    else:
+        return 0  # Success
+
+
+def main():
+    """Main function with proper error handling."""
+    try:
+        result = generate_patterns()
+        
+        if result == 0:
+            print(f"\n✅ All patterns generated successfully!")
+            return 0
+        else:
+            print(f"\n❌ {result} pattern(s) failed to generate!")
+            return 1
+            
+    except Exception as e:
+        print(f"\n❌ CRITICAL ERROR: Pattern generation failed:")
+        print(f"   Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return 2
 
 
 if __name__ == "__main__":
-    generate_patterns()
+    import sys
+    sys.exit(main())

@@ -462,11 +462,9 @@ def calibrate():
                 print()
                 
                 # Create new calibrator instance for this session
-                # Create new calibrator instance for this session
                 calibrator = IntrinsicCalibrator(
                     image_paths=image_paths,
-                    calibration_pattern=pattern,
-                    pattern_type=pattern_type
+                    calibration_pattern=pattern
                 )
                 
                 print("🎯 PATTERN DETECTION PHASE")
@@ -496,12 +494,24 @@ def calibrate():
                 # 'standard' uses default flags (0)
                 
                 # Run calibration
-                rms_error = calibrator.calibrate_camera(
+                success = calibrator.calibrate(
                     flags=calibration_flags,
                     verbose=True
                 )
                 
-                if rms_error > 0:
+                if success:
+                    # Get calibration results 
+                    rms_error = calibrator.get_rms_error()
+                    
+                    # Check RMS error threshold - consider calibration failed if > 0.5
+                    if rms_error > 0.5:
+                        print(f"❌ Calibration failed - RMS error too high: {rms_error:.4f} pixels (threshold: 0.5)")
+                        return jsonify({
+                            'error': f'Calibration failed - RMS error too high: {rms_error:.4f} pixels (threshold: 0.5)',
+                            'rms_error': rms_error
+                        }), 400
+                    
+                    print(f"✅ Calibration successful - RMS error: {rms_error:.4f} pixels")
                     print()
                     print("💾 SAVING CALIBRATION RESULTS")
                     print("-" * 30)
@@ -638,20 +648,21 @@ def calibrate():
                     print("🎉 CALIBRATION COMPLETED SUCCESSFULLY!")
                     print("=" * 60)
                 else:
+                    # Calibration completely failed
                     total_time = time.time() - start_time
-                    print("�?CALIBRATION FAILED")
+                    print("❌ CALIBRATION FAILED")
                     print("-" * 20)
                     print("Possible causes:")
-                    print("�?Insufficient pattern detections")
-                    print("�?Poor image quality")
-                    print("�?Incorrect chessboard parameters")
-                    print("�?Images too similar (lack of variety)")
+                    print("• Insufficient pattern detections")
+                    print("• Poor image quality")
+                    print("• Incorrect pattern parameters")
+                    print("• Images too similar (lack of variety)")
                     print(f"⏱️  Time elapsed: {total_time:.2f} seconds")
                     print("=" * 60)
-                    results = {
+                    return jsonify({
                         'success': False,
-                        'error': 'Intrinsic calibration failed'
-                    }
+                        'error': 'Calibration failed - could not compute camera parameters'
+                    }), 400
             
             elif calibration_type == 'eye_in_hand':
                 # Eye-in-hand calibration
@@ -694,29 +705,34 @@ def calibrate():
                     
                     intrinsic_cal = IntrinsicCalibrator(
                         image_paths=image_paths,
-                        calibration_pattern=pattern,
-                        pattern_type=parameters.get('pattern_type', 'standard')
+                        calibration_pattern=pattern
                     )
                     
                     if not intrinsic_cal.detect_pattern_points(verbose=True):
-                        print("�?Pattern detection failed for eye-in-hand calibration")
+                        print("Pattern detection failed for eye-in-hand calibration")
                         return jsonify({'error': 'Pattern detection failed for eye-in-hand calibration'}), 400
                     
-                    rms_error = intrinsic_cal.calibrate_camera(verbose=True)
-                    if rms_error <= 0:
-                        print("�?Intrinsic calibration failed")
+                    success = intrinsic_cal.calibrate(verbose=True)
+                    if not success:
+                        print("Intrinsic calibration failed")
                         return jsonify({'error': 'Intrinsic calibration failed'}), 500
                     
+                    # Get calibration results
                     camera_matrix = intrinsic_cal.get_camera_matrix()
                     dist_coeffs = intrinsic_cal.get_distortion_coefficients()
+                    rms_error = intrinsic_cal.get_rms_error()
+                    
+                    # Check RMS error threshold - consider calibration failed if > 0.5
+                    if rms_error > 0.5:
+                        print(f"Intrinsic calibration failed - RMS error too high: {rms_error:.4f} pixels")
+                        return jsonify({'error': f'Intrinsic calibration failed - RMS error too high: {rms_error:.4f} pixels (threshold: 0.5)'}), 500
                 
                 # Create eye-in-hand calibrator instance with modern API
                 # Reuse the same pattern that was used for intrinsic calibration
                 eye_in_hand_calibrator = EyeInHandCalibrator(
                     camera_matrix=camera_matrix,
                     distortion_coefficients=dist_coeffs,
-                    calibration_pattern=pattern,  # Use same pattern from intrinsic calibration
-                    pattern_type=parameters.get('pattern_type', 'standard')
+                    calibration_pattern=pattern  # Use same pattern from intrinsic calibration
                 )
                 
                 print(f"�?Eye-in-hand calibrator initialized with modern API")

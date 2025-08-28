@@ -422,13 +422,18 @@ class BaseCalibrator(ABC):
     
     # Abstract methods that must be implemented by specialized calibrators
     @abstractmethod
-    def calibrate(self, **kwargs) -> float:
+    def calibrate(self, **kwargs) -> bool:
         """
         Perform calibration using the specific algorithm.
         Must be implemented by subclasses.
         
         Returns:
-            float: RMS calibration error
+            bool: True if calibration succeeded, False if failed
+            
+        Note:
+            After successful calibration, use getter methods to access results:
+            - Calibration quality metrics (RMS errors, etc.)
+            - Calibrated parameters (camera matrix, transforms, etc.)
         """
         pass
     

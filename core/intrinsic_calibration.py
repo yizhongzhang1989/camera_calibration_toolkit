@@ -65,7 +65,7 @@ class IntrinsicCalibrator(BaseCalibrator):
                         distCoeffs: Optional[np.ndarray] = None, 
                         flags: int = 0,
                         criteria: Optional[Tuple] = None,
-                        verbose: bool = False) -> float:
+                        verbose: bool = False) -> bool:
         """
         Calibrate camera following OpenCV's calibrateCamera interface.
         
@@ -80,13 +80,19 @@ class IntrinsicCalibrator(BaseCalibrator):
             verbose: Whether to print detailed progress
             
         Returns:
-            float: RMS reprojection error (0.0 if calibration failed)
+            bool: True if calibration succeeded, False if failed
             
         Note:
             Before calling this method, you must:
             1. Set images: set_images_from_paths() or set_images_from_arrays()
             2. Set pattern: set_calibration_pattern()  
-            3. Detect points: detect_pattern_points()
+            3. Detect points: detect_pattern_points() (or let this method do it automatically)
+            
+            After successful calibration, use these getters to access results:
+            - get_rms_error(): Overall RMS reprojection error (lower is better)
+            - get_camera_matrix(): Calibrated camera intrinsic matrix
+            - get_distortion_coefficients(): Calibrated distortion coefficients
+            - get_per_image_errors(): Per-image reprojection errors
             
         Distortion Model Flags:
             Use cv2.CALIB_* flags to control distortion models:
@@ -96,7 +102,12 @@ class IntrinsicCalibrator(BaseCalibrator):
             - Tilted (14 coeff): cv2.CALIB_RATIONAL_MODEL | cv2.CALIB_THIN_PRISM_MODEL | cv2.CALIB_TILTED_MODEL
         """
         if self.image_points is None or self.object_points is None:
-            raise ValueError("Point correspondences not available. Call detect_pattern_points() first.")
+            if verbose:
+                print("Image and object points not calculated yet. Running pattern detection...")
+            
+            # Automatically detect pattern points if not done yet
+            if not self.detect_pattern_points(verbose=verbose):
+                raise ValueError("Pattern detection failed. Cannot proceed with calibration.")
         
         # Count successful detections (non-None entries)
         successful_count = sum(1 for pts in self.image_points if pts is not None)
@@ -207,18 +218,22 @@ class IntrinsicCalibrator(BaseCalibrator):
                     successful_errors = [f'{err:.4f}' for err in self.per_image_errors if err is not None]
                     print(f"Per-image errors: {successful_errors}")
                 
-                return ret
+                return True
             else:
                 if verbose:
                     print("❌ Calibration failed - OpenCV returned invalid results")
-                return 0.0
+                return False
                 
         except Exception as e:
             if verbose:
                 print(f"❌ Calibration failed with exception: {e}")
-            return 0.0
+            return False
     
     # Getter methods for results
+    def get_rms_error(self) -> Optional[float]:
+        """Get overall RMS reprojection error (lower is better)."""
+        return self.rms_error
+    
     def get_camera_matrix(self) -> Optional[np.ndarray]:
         """Get calibrated camera matrix."""
         return self.camera_matrix
@@ -234,6 +249,10 @@ class IntrinsicCalibrator(BaseCalibrator):
     def get_reprojection_error(self) -> Tuple[Optional[float], Optional[List[float]]]:
         """Get overall and per-image reprojection errors."""
         return self.rms_error, self.per_image_errors
+    
+    def get_per_image_errors(self) -> Optional[List[float]]:
+        """Get per-image reprojection errors (None entries for failed detections)."""
+        return self.per_image_errors
     
     # I/O methods for saving and loading calibration data
     def save_calibration(self, filepath: str, include_extrinsics: bool = True) -> None:
@@ -382,7 +401,7 @@ class IntrinsicCalibrator(BaseCalibrator):
         print(f"✅ OpenCV YAML data exported to: {filepath}")
     
     # Abstract method implementations
-    def calibrate(self, **kwargs) -> float:
+    def calibrate(self, **kwargs) -> bool:
         """
         Perform intrinsic camera calibration (wrapper for calibrate_camera).
         
@@ -390,7 +409,13 @@ class IntrinsicCalibrator(BaseCalibrator):
             **kwargs: Arguments passed to calibrate_camera
             
         Returns:
-            float: RMS calibration error
+            bool: True if calibration succeeded, False if failed
+            
+        Note:
+            After successful calibration, use getter methods to access results:
+            - get_rms_error(): Overall RMS reprojection error
+            - get_camera_matrix(): Calibrated camera matrix
+            - get_distortion_coefficients(): Distortion coefficients
         """
         return self.calibrate_camera(**kwargs)
     

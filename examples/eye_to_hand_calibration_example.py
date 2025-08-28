@@ -113,11 +113,12 @@ def calculate_camera_intrinsics_standalone():
         
         # Perform intrinsic calibration
         print("   Running intrinsic calibration...")
-        rms_error = intrinsic_calibrator.calibrate_camera(verbose=True)
+        success = intrinsic_calibrator.calibrate_camera(verbose=True)
         
-        if rms_error > 0:
+        if success:
             camera_matrix = intrinsic_calibrator.get_camera_matrix()
             distortion_coeffs = intrinsic_calibrator.get_distortion_coefficients()
+            rms_error = intrinsic_calibrator.get_rms_error()
             
             print(f"✅ Standalone intrinsic calibration successful!")
             print(f"   RMS error: {rms_error:.4f} pixels")
@@ -236,11 +237,12 @@ def calculate_camera_intrinsics(sample_dir):
         
         # Perform intrinsic calibration
         print("   Running intrinsic calibration...")
-        rms_error = intrinsic_calibrator.calibrate_camera(verbose=True)
+        success = intrinsic_calibrator.calibrate_camera(verbose=True)
         
-        if rms_error > 0:
+        if success:
             camera_matrix = intrinsic_calibrator.get_camera_matrix()
             distortion_coeffs = intrinsic_calibrator.get_distortion_coefficients()
+            rms_error = intrinsic_calibrator.get_rms_error()
             
             print(f"✅ Intrinsic calibration successful!")
             print(f"   RMS error: {rms_error:.4f} pixels")
@@ -270,7 +272,7 @@ def calculate_camera_intrinsics(sample_dir):
 
 def test_eye_to_hand_calibration():
     """Test eye-in-hand calibration workflow using sample data."""
-    print("🤖 Eye-in-Hand Camera Calibration")
+    print("Eye-in-Hand Camera Calibration")
     print("=" * 50)
     
     # Check sample data directory
@@ -367,9 +369,10 @@ def test_eye_to_hand_calibration():
                 calibrator.per_image_errors = None
                 
                 # Perform calibration with this method
-                rms_error = calibrator.calibrate(method=method_const, verbose=False)
+                success = calibrator.calibrate(method=method_const, verbose=False)
                 
-                if rms_error > 0:
+                if success:
+                    rms_error = calibrator.get_rms_error()
                     print(f"   ✅ Success: RMS error = {rms_error:.4f} pixels")
                     
                     # Store results
@@ -607,22 +610,39 @@ def inspect_sample_data():
             print(f"   Channels: {img.shape[2] if len(img.shape) > 2 else 1}")
 
 
-if __name__ == "__main__":
-    print("🤖 Hand-in-Eye Camera Calibration Example")
+def main():
+    """Main function with proper error handling."""
+    print("Eye-to-Hand Camera Calibration Example")
     print("=" * 70)
-    print("Demonstrates eye-in-hand calibration for robot-mounted cameras")
+    print("Demonstrates eye-to-hand calibration for robot-mounted cameras")
     print()
     
-    # Inspect sample data first
-    inspect_sample_data()
-    
-    # Run calibration with integrated optimization
-    success = test_eye_to_hand_calibration()
-    
-    print(f"\n✨ Eye-to-Hand calibration example completed!")
-    print(f"   Results saved to: data/results/eye_to_hand_calibration/")
-    if success:
-        print(f"   ✅ Calibration and optimization successful")
-        print(f"   📸 Before/after optimization images available for comparison")
-    else:
-        print(f"   ❌ Calibration failed")
+    try:
+        # Inspect sample data first
+        inspect_sample_data()
+        
+        # Run calibration with integrated optimization
+        success = test_eye_to_hand_calibration()
+        
+        print(f"\n✨ Eye-to-Hand calibration example completed!")
+        print(f"   Results saved to: data/results/eye_to_hand_calibration/")
+        
+        if success:
+            print(f"   ✅ Calibration and optimization successful")
+            print(f"   📸 Before/after optimization images available for comparison")
+            return 0
+        else:
+            print(f"   ❌ Calibration failed")
+            return 1
+            
+    except Exception as e:
+        print(f"\n❌ CRITICAL ERROR: Eye-to-hand calibration failed with exception:")
+        print(f"   Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return 2
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())
