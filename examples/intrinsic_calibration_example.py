@@ -161,16 +161,16 @@ def test_chessboard_calibration():
             
             print(f"   Pattern detection images: {len(pattern_images)} images in {pattern_debug_dir}")
             
-            # Draw 3D axes on undistorted images
-            axes_debug_dir = os.path.join(output_dir, "undistorted_axes")
-            os.makedirs(axes_debug_dir, exist_ok=True)
-            axes_images = calibrator.draw_axes_on_undistorted_images()
+            # Draw reprojection analysis on images
+            reprojection_debug_dir = os.path.join(output_dir, "reprojection_analysis")
+            os.makedirs(reprojection_debug_dir, exist_ok=True)
+            reprojection_images = calibrator.draw_reprojection_on_images()
             
-            for filename, debug_img in axes_images:
-                output_path = os.path.join(axes_debug_dir, f"{filename}.jpg")
+            for filename, debug_img in reprojection_images:
+                output_path = os.path.join(reprojection_debug_dir, f"{filename}.jpg")
                 cv2.imwrite(output_path, debug_img)
             
-            print(f"   Undistorted axes images: {len(axes_images)} images in {axes_debug_dir}")
+            print(f"   Reprojection analysis images: {len(reprojection_images)} images in {reprojection_debug_dir}")
     
     if not success:
         print(f"\n❌ Calibration failed!")
@@ -280,16 +280,16 @@ def test_charuco_calibration():
             
             print(f"   Pattern detection images: {len(pattern_images)} images in {pattern_debug_dir}")
             
-            # Draw 3D axes on undistorted images
-            axes_debug_dir = os.path.join(output_dir, "undistorted_axes")
-            os.makedirs(axes_debug_dir, exist_ok=True)
-            axes_images = calibrator.draw_axes_on_undistorted_images()
+            # Draw reprojection analysis on images
+            reprojection_debug_dir = os.path.join(output_dir, "reprojection_analysis")
+            os.makedirs(reprojection_debug_dir, exist_ok=True)
+            reprojection_images = calibrator.draw_reprojection_on_images()
             
-            for filename, debug_img in axes_images:
-                output_path = os.path.join(axes_debug_dir, f"{filename}.jpg")
+            for filename, debug_img in reprojection_images:
+                output_path = os.path.join(reprojection_debug_dir, f"{filename}.jpg")
                 cv2.imwrite(output_path, debug_img)
             
-            print(f"   Undistorted axes images: {len(axes_images)} images in {axes_debug_dir}")
+            print(f"   Reprojection analysis images: {len(reprojection_images)} images in {reprojection_debug_dir}")
     
     if not success:
         print(f"\n❌ ChArUco calibration failed!")
@@ -387,16 +387,16 @@ def test_gridboard_calibration():
             
             print(f"   Pattern detection images: {len(pattern_images)} images in {pattern_debug_dir}")
             
-            # Draw 3D axes on undistorted images
-            axes_debug_dir = os.path.join(output_dir, "undistorted_axes")
-            os.makedirs(axes_debug_dir, exist_ok=True)
-            axes_images = calibrator.draw_axes_on_undistorted_images()
+            # Draw reprojection analysis on images
+            reprojection_debug_dir = os.path.join(output_dir, "reprojection_analysis")
+            os.makedirs(reprojection_debug_dir, exist_ok=True)
+            reprojection_images = calibrator.draw_reprojection_on_images()
             
-            for filename, debug_img in axes_images:
-                output_path = os.path.join(axes_debug_dir, f"{filename}.jpg")
+            for filename, debug_img in reprojection_images:
+                output_path = os.path.join(reprojection_debug_dir, f"{filename}.jpg")
                 cv2.imwrite(output_path, debug_img)
             
-            print(f"   Undistorted axes images: {len(axes_images)} images in {axes_debug_dir}")
+            print(f"   Reprojection analysis images: {len(reprojection_images)} images in {reprojection_debug_dir}")
     
     if not success:
         print(f"\n❌ GridBoard calibration failed!")

@@ -293,6 +293,164 @@ class BaseCalibrator(ABC):
         
         return debug_images
     
+    def draw_reprojection_on_images(self, camera_matrix: Optional[np.ndarray] = None,
+                                   distortion_coefficients: Optional[np.ndarray] = None) -> List[Tuple[str, np.ndarray]]:
+        """
+        Draw reprojected calibration pattern points on original images.
+        
+        This function projects the 3D object points back onto the images using the calibrated
+        camera parameters and compares them with the detected corner points. Shows both detected
+        corners (green) and reprojected points (red) with per-image reprojection error.
+        
+        Args:
+            camera_matrix: Camera matrix to use for projection. If None, uses self.camera_matrix
+            distortion_coefficients: Distortion coefficients. If None, uses self.distortion_coefficients
+            
+        Returns:
+            List of tuples (filename_without_extension, debug_image_array) for successfully detected images only
+        """
+        if not self.is_calibrated():
+            raise ValueError("Calibration not completed. Run calibrate() first.")
+            
+        if not self.images or not self.image_points or not self.object_points:
+            raise ValueError("No images or detected points available. Run detect_pattern_points() first.")
+        
+        if not self.rvecs or not self.tvecs:
+            raise ValueError("No extrinsic parameters available. Ensure calibration completed successfully.")
+        
+        # Use provided camera parameters or try to get from calibrator
+        if camera_matrix is None:
+            camera_matrix = getattr(self, 'camera_matrix', None)
+        if distortion_coefficients is None:
+            distortion_coefficients = getattr(self, 'distortion_coefficients', None)
+            
+        if camera_matrix is None or distortion_coefficients is None:
+            raise ValueError("Camera matrix and distortion coefficients must be provided or available from calibration")
+        
+        debug_images = []
+        
+        # Iterate through all images - arrays are now aligned
+        for i, img in enumerate(self.images):
+            # Skip images with no detection (None entries)
+            if (self.image_points[i] is None or self.object_points[i] is None or 
+                self.rvecs[i] is None or self.tvecs[i] is None):
+                continue
+                
+            # Get the detection and calibration results for this image
+            detected_corners = self.image_points[i]
+            object_points = self.object_points[i]
+            rvec = self.rvecs[i]
+            tvec = self.tvecs[i]
+            
+            # Create copy of original image
+            debug_img = img.copy()
+            
+            # Project 3D object points to image plane
+            reprojected_points, _ = cv2.projectPoints(
+                object_points, rvec, tvec, camera_matrix, distortion_coefficients
+            )
+            reprojected_points = reprojected_points.reshape(-1, 2)
+            
+            # Calculate reprojection error for this image
+            detected_corners_2d = detected_corners.reshape(-1, 2)
+            diff = detected_corners_2d - reprojected_points
+            per_point_errors = np.sqrt(np.sum(diff**2, axis=1))
+            mean_error = np.mean(per_point_errors)
+            
+            # Draw detected corners (green circles)
+            for corner in detected_corners_2d.astype(int):
+                cv2.circle(debug_img, tuple(corner), 6, (0, 255, 0), 2)  # Green circles
+            
+            # Draw reprojected points (red crosses)
+            for point in reprojected_points.astype(int):
+                cv2.drawMarker(debug_img, tuple(point), (0, 0, 255), 
+                             cv2.MARKER_CROSS, 10, 2)  # Red crosses
+            
+            # Calculate axis length based on pattern dimensions (marker size)
+            if hasattr(self.calibration_pattern, 'square_size'):
+                axis_length = self.calibration_pattern.square_size
+            elif hasattr(self.calibration_pattern, 'marker_size'):
+                axis_length = self.calibration_pattern.marker_size
+            else:
+                axis_length = 0.02  # Default 2cm
+            
+            # Define 3D axis points at origin of calibration pattern coordinate system
+            axis_3d = np.float32([
+                [0, 0, 0],                  # Origin
+                [axis_length, 0, 0],        # X-axis (red)
+                [0, axis_length, 0],        # Y-axis (green)
+                [0, 0, -axis_length]        # Z-axis (blue) - negative to point up
+            ]).reshape(-1, 3)
+            
+            # Project 3D axis points to image plane
+            axis_2d, _ = cv2.projectPoints(
+                axis_3d, rvec, tvec, camera_matrix, distortion_coefficients
+            )
+            axis_2d = axis_2d.reshape(-1, 2).astype(int)
+            
+            # Draw axes at pattern origin
+            origin = tuple(axis_2d[0])
+            x_end = tuple(axis_2d[1])
+            y_end = tuple(axis_2d[2])
+            z_end = tuple(axis_2d[3])
+            
+            # Draw axis lines
+            cv2.arrowedLine(debug_img, origin, x_end, (0, 0, 255), 3)    # X-axis: red
+            cv2.arrowedLine(debug_img, origin, y_end, (0, 255, 0), 3)    # Y-axis: green
+            cv2.arrowedLine(debug_img, origin, z_end, (255, 0, 0), 3)    # Z-axis: blue
+            
+            # Add axis labels
+            cv2.putText(debug_img, 'X', (x_end[0] + 10, x_end[1]), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            cv2.putText(debug_img, 'Y', (y_end[0] + 10, y_end[1]), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+            cv2.putText(debug_img, 'Z', (z_end[0] + 10, z_end[1]), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
+            
+            # Add legend in top-right corner
+            img_height, img_width = debug_img.shape[:2]
+            legend_x = img_width - 250
+            legend_y_start = 30
+            
+            # Add semi-transparent background for legend
+            overlay = debug_img.copy()
+            cv2.rectangle(overlay, (legend_x - 10, legend_y_start - 20), 
+                         (img_width - 10, legend_y_start + 85), (0, 0, 0), -1)
+            cv2.addWeighted(overlay, 0.7, debug_img, 0.3, 0, debug_img)
+            
+            cv2.putText(debug_img, 'Reprojection Analysis:', (legend_x, legend_y_start), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            cv2.putText(debug_img, 'Green: Detected corners', (legend_x, legend_y_start + 20), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
+            cv2.putText(debug_img, 'Red: Reprojected points', (legend_x, legend_y_start + 40), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
+            cv2.putText(debug_img, 'RGB Axes: Pattern origin', (legend_x, legend_y_start + 60), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+            
+            # Add per-image error in bottom-left corner
+            error_text = f"RMS Error: {mean_error:.3f} pixels"
+            text_size = cv2.getTextSize(error_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
+            
+            # Add semi-transparent background for error text
+            overlay = debug_img.copy()
+            cv2.rectangle(overlay, (5, img_height - text_size[1] - 15), 
+                         (text_size[0] + 15, img_height - 5), (0, 0, 0), -1)
+            cv2.addWeighted(overlay, 0.8, debug_img, 0.2, 0, debug_img)
+            
+            cv2.putText(debug_img, error_text, (10, img_height - 10), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            
+            # Get unique filename from filename manager to avoid duplicates
+            if self.filename_manager:
+                filename = self.filename_manager.get_unique_filename(i)
+            else:
+                # Fallback for cases without filename manager
+                filename = f"image_{i:03d}"
+            
+            debug_images.append((filename, debug_img))
+        
+        return debug_images
+    
     def draw_axes_on_undistorted_images(self, axis_length: Optional[float] = None, 
                                       camera_matrix: Optional[np.ndarray] = None,
                                       distortion_coefficients: Optional[np.ndarray] = None) -> List[Tuple[str, np.ndarray]]:
