@@ -54,12 +54,7 @@ class IntrinsicCalibrator(BaseCalibrator):
         """
         # Initialize base class with common functionality
         super().__init__(images, image_paths, calibration_pattern)
-        
-        # Intrinsic-specific attributes
-        self.camera_matrix = None            # Calibrated camera matrix
-        self.distortion_coefficients = None  # Calibrated distortion coefficients
-        self.distortion_model = None         # Distortion model used for calibration
-    
+            
     # Abstract method implementations
     def calibrate(self, **kwargs) -> bool:
         """

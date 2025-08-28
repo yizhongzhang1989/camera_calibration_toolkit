@@ -46,7 +46,7 @@ class BaseCalibrator(ABC):
             calibration_pattern: CalibrationPattern instance or None
         """
         # Images and related parameters (common to all calibrators)
-        self.images = None                    # List of image arrays
+        self.images = None                   # List of image arrays
         self.image_paths = None              # List of image file paths
         self.image_points = None             # List of detected 2D points for each image
         self.point_ids = None                # List of detected point IDs for each image (for ChArUco etc.)
@@ -55,11 +55,15 @@ class BaseCalibrator(ABC):
         
         # Calibration pattern and related parameters (common to all calibrators)
         self.calibration_pattern = None      # CalibrationPattern instance
-        self.pattern_params = None           # Pattern-specific parameters dict
         
+        # Intrinsic-specific attributes
+        self.camera_matrix = None            # Calibrated camera matrix
+        self.distortion_coefficients = None  # Calibrated distortion coefficients
+        self.distortion_model = None         # Distortion model used for calibration
+
         # Common results and status (shared across calibration types)
-        self.rvecs = None                    # Rotation vectors for each image
-        self.tvecs = None                    # Translation vectors for each image
+        self.rvecs = None                    # Rotation vectors of calibration pattern for each image
+        self.tvecs = None                    # Translation vectors  of calibration pattern for each image
         self.rms_error = None                # Overall RMS reprojection error
         self.per_image_errors = None         # RMS error for each image
         self.calibration_completed = False   # Whether calibration has been completed successfully
@@ -155,7 +159,7 @@ class BaseCalibrator(ABC):
         print(f"Set {len(images)} images from arrays")
         return True
     
-    def set_calibration_pattern(self, pattern: CalibrationPattern, **pattern_params):
+    def set_calibration_pattern(self, pattern: CalibrationPattern):
         """
         Set calibration pattern and related parameters.
         
@@ -164,7 +168,6 @@ class BaseCalibrator(ABC):
             **pattern_params: Additional pattern parameters
         """
         self.calibration_pattern = pattern
-        self.pattern_params = pattern_params
     
     def detect_pattern_points(self, verbose: bool = False) -> bool:
         """

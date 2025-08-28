@@ -82,11 +82,7 @@ class EyeInHandCalibrator(BaseCalibrator):
         self.robot_poses = None              # List of robot pose data (original format)
         self.end2base_matrices = None        # List of end-effector to base transformation matrices
         self.base2end_matrices = None        # List of base to end-effector transformation matrices
-        
-        # Camera intrinsic parameters (input data as members)
-        self.camera_matrix = None            # Camera intrinsic matrix
-        self.distortion_coefficients = None  # Distortion coefficients
-        
+                
         # Extrinsic parameters (intermediate results as members)
         self.rvecs = None                    # Target to camera rotation vectors
         self.tvecs = None                    # Target to camera translation vectors
