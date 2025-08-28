@@ -139,11 +139,6 @@ class BaseCalibrator(ABC):
         self.calibration_pattern = pattern
         self.pattern_params = pattern_params
     
-    @property
-    def pattern_type(self) -> Optional[str]:
-        """Get pattern type from the calibration pattern."""
-        return self.calibration_pattern.pattern_id if self.calibration_pattern else None
-    
     def detect_pattern_points(self, verbose: bool = False) -> bool:
         """
         Detect calibration pattern points in all images using modern pattern system.

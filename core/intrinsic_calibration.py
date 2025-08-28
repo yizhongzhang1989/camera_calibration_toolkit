@@ -271,7 +271,7 @@ class IntrinsicCalibrator(BaseCalibrator):
             "calibration_info": {
                 "timestamp": __import__('datetime').datetime.now().isoformat(),
                 "image_count": len([pts for pts in self.image_points if pts is not None]) if self.image_points else 0,
-                "pattern_type": self.pattern_type,
+                "pattern_type": self.calibration_pattern.pattern_id if self.calibration_pattern else "unknown",
                 "distortion_model": self.distortion_model,
                 "rms_error": float(self.rms_error)
             },

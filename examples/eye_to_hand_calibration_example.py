@@ -41,8 +41,7 @@ def load_pattern_config(config_path):
         config_path: Path to the JSON configuration file
         
     Returns:
-        tuple: (pattern, pattern_type) where pattern is the calibration pattern
-               and pattern_type is the pattern type string
+        CalibrationPattern: The loaded calibration pattern
     """
     try:
         with open(config_path, 'r') as f:
@@ -54,9 +53,8 @@ def load_pattern_config(config_path):
         
         # Create pattern using the JSON data
         pattern = load_pattern_from_json(config_data)
-        pattern_type = config_data['pattern_id']
         
-        return pattern, pattern_type
+        return pattern
         
     except Exception as e:
         print(f"❌ Failed to load pattern configuration: {e}")
@@ -95,7 +93,7 @@ def calculate_camera_intrinsics_standalone():
             print(f"❌ Pattern configuration not found: {config_path}")
             return None, None
         
-        pattern, pattern_type = load_pattern_config(config_path)
+        pattern = load_pattern_config(config_path)
         
         # Create IntrinsicCalibrator with smart constructor
         intrinsic_calibrator = IntrinsicCalibrator(
@@ -104,7 +102,7 @@ def calculate_camera_intrinsics_standalone():
         )
         
         print(f"   Image size: {intrinsic_calibrator.image_size}")
-        print(f"   Pattern type: {pattern_type}")
+        print(f"   Pattern type: {pattern.pattern_id}")
         
         # Detect pattern points
         if not intrinsic_calibrator.detect_pattern_points(verbose=True):
@@ -222,7 +220,7 @@ def calculate_camera_intrinsics(sample_dir):
             print(f"❌ Pattern configuration not found: {config_path}")
             return None, None
         
-        pattern, pattern_type = load_pattern_config(config_path)
+        pattern = load_pattern_config(config_path)
         
         # Create IntrinsicCalibrator with smart constructor
         intrinsic_calibrator = IntrinsicCalibrator(
@@ -304,7 +302,7 @@ def test_eye_to_hand_calibration():
         print(f"❌ Pattern configuration not found: {config_path}")
         return False
         
-    pattern, pattern_type = load_pattern_config(config_path)
+    pattern = load_pattern_config(config_path)
     
     # Smart constructor approach - initialize with all data at once
     # CHANGED: Use EyeToHandCalibrator instead of EyeInHandCalibrator

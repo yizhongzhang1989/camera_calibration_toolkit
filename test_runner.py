@@ -173,10 +173,10 @@ def check_environment():
     # Overall assessment
     total_issues = len(failed_packages) + len(core_failed)
     if total_issues == 0:
-        print(f"\n✅ Environment Check: ALL GOOD - No issues found")
+        print(f"\n[PASS] Environment Check: ALL GOOD - No issues found")
         return True
     else:
-        print(f"\n⚠️  Environment Check: {total_issues} issues found")
+        print(f"\n[WARN] Environment Check: {total_issues} issues found")
         if failed_packages:
             print(f"   - Missing packages: {', '.join(failed_packages)}")
         if core_failed:
