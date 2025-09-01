@@ -66,7 +66,9 @@ class HandEyeCalibrator(BaseCalibrator):
                  images: Optional[List[np.ndarray]] = None,
                  end2base_matrices: Optional[List[np.ndarray]] = None,
                  image_paths: Optional[List[str]] = None, 
-                 calibration_pattern: Optional[CalibrationPattern] = None):
+                 calibration_pattern: Optional[CalibrationPattern] = None,
+                 camera_matrix: Optional[np.ndarray] = None,
+                 distortion_coefficients: Optional[np.ndarray] = None):
         """
         Initialize HandEyeCalibrator with unified interface for both calibration types.
         
@@ -76,6 +78,8 @@ class HandEyeCalibrator(BaseCalibrator):
             end2base_matrices: List of 4x4 transformation matrices from end-effector to base
             image_paths: List of image file paths or None
             calibration_pattern: CalibrationPattern instance or None
+            camera_matrix: 3x3 camera intrinsic matrix or None (if None, will be calibrated)
+            distortion_coefficients: Camera distortion coefficients or None (if None, will be calibrated)
             
         Raises:
             ValueError: If calibration_type is not "eye_in_hand" or "eye_to_hand"
@@ -93,6 +97,9 @@ class HandEyeCalibrator(BaseCalibrator):
             end2base_matrices should contain 4x4 homogeneous transformation matrices
             representing the pose of the robot end-effector relative to the base frame.
             
+            If camera_matrix and distortion_coefficients are provided, intrinsic calibration
+            will be skipped and the provided parameters will be used directly.
+            
             When both image_paths and end2base_matrices are provided, the provided 
             end2base_matrices take precedence and JSON files are NOT loaded automatically.
             Use set_images_from_paths() explicitly if you want to load from JSON files.
@@ -105,6 +112,14 @@ class HandEyeCalibrator(BaseCalibrator):
         self.calibration_type = calibration_type
         self.end2base_matrices = end2base_matrices
         
+        # calibration target
+        if calibration_type == "eye_in_hand":
+            self.cam2end_matrix = None
+            self.target2base_matrix = None
+        else:
+            self.cam2base_matrix = None
+            self.target2cam_matrix = None
+
         # Handle special case: if both image_paths and end2base_matrices are provided,
         # don't automatically load from JSON files to avoid overwriting the provided matrices
         if image_paths is not None and end2base_matrices is not None:
@@ -123,6 +138,22 @@ class HandEyeCalibrator(BaseCalibrator):
         else:
             # Standard initialization - let base class handle image loading
             super().__init__(images, image_paths, calibration_pattern)
+        
+        # Set camera intrinsics if provided
+        if camera_matrix is not None:
+            self.camera_matrix = np.array(camera_matrix, dtype=np.float32)
+        if distortion_coefficients is not None:
+            self.distortion_coefficients = np.array(distortion_coefficients, dtype=np.float32)
+            
+        # Validate camera matrix if provided
+        if self.camera_matrix is not None:
+            if self.camera_matrix.shape != (3, 3):
+                raise ValueError(f"camera_matrix must be 3x3, got shape {self.camera_matrix.shape}")
+                
+        # Validate distortion coefficients if provided
+        if self.distortion_coefficients is not None:
+            if len(self.distortion_coefficients.shape) != 1 or self.distortion_coefficients.shape[0] < 4:
+                raise ValueError(f"distortion_coefficients must be a 1D array with at least 4 elements, got shape {self.distortion_coefficients.shape}")
         
         # Validation of input consistency
         self._validate_input_consistency()
@@ -301,7 +332,19 @@ class HandEyeCalibrator(BaseCalibrator):
         """
         self.end2base_matrices = matrices
         self._validate_input_consistency()
-    
+
+    def set_camera_intrinsics(self, camera_matrix: np.ndarray, 
+                              distortion_coefficients: np.ndarray) -> None:
+        """
+        Set camera intrinsic parameters.
+        
+        Args:
+            camera_matrix: 3x3 camera intrinsic matrix
+            distortion_coefficients: Distortion coefficients
+        """
+        self.camera_matrix = camera_matrix
+        self.distortion_coefficients = distortion_coefficients
+
     def get_calibration_info(self) -> dict:
         """
         Get comprehensive calibration information.
