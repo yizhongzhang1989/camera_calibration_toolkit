@@ -544,6 +544,75 @@ class EyeToHandCalibrator(EyeInHandCalibrator):
         else:
             self.rms_error = float('inf')
 
+    def optimize_calibration(self, iterations: int = 100, ftol_rel: float = 1e-6, verbose: bool = False) -> float:
+        """
+        Optimize eye-to-hand calibration results by jointly refining base2cam and target2end matrices.
+        
+        This method uses nonlinear optimization to minimize reprojection error by
+        simultaneously optimizing both the base-to-camera transformation
+        and the target-to-end-effector transformation.
+        
+        Args:
+            iterations: Maximum number of optimization iterations
+            ftol_rel: Relative tolerance for convergence
+            verbose: Whether to print optimization progress
+            
+        Returns:
+            float: Final RMS reprojection error after optimization
+            
+        Raises:
+            ValueError: If calibration has not been completed
+            ImportError: If nlopt optimization library is not available
+        """
+        if not self.calibration_completed:
+            raise ValueError("Calibration must be completed before optimization. Call calibrate() first.")
+            
+        if not HAS_NLOPT:
+            raise ImportError("nlopt library is required for optimization but not available")
+            
+        if verbose:
+            print(f"Starting eye-to-hand optimization with {iterations} max iterations...")
+            print(f"Initial RMS error: {self.rms_error:.4f} pixels")
+            
+        # Store initial values
+        initial_base2cam = self.base2cam_matrix.copy()
+        initial_target2end = self.target2end_matrix.copy()
+        initial_error = self.rms_error
+        
+        try:
+            # Perform joint optimization
+            optimized_base2cam, optimized_target2end = self._optimize_matrices_jointly(
+                initial_base2cam, initial_target2end, ftol_rel, verbose
+            )
+            
+            # Update matrices with optimized results
+            self.base2cam_matrix = optimized_base2cam
+            self.target2end_matrix = optimized_target2end
+            
+            # Recalculate errors with optimized matrices
+            self._recalculate_reprojection_errors()
+            
+            # Mark optimization as completed
+            self.optimization_completed = True
+            
+            if verbose:
+                improvement = initial_error - self.rms_error
+                improvement_pct = (improvement / initial_error) * 100 if initial_error > 0 else 0
+                print(f"Eye-to-hand optimization completed!")
+                print(f"Final RMS error: {self.rms_error:.4f} pixels")
+                print(f"Improvement: {improvement:.4f} pixels ({improvement_pct:.1f}%)")
+                
+            return self.rms_error
+            
+        except Exception as e:
+            if verbose:
+                print(f"Eye-to-hand optimization failed: {e}")
+            # Restore original matrices
+            self.base2cam_matrix = initial_base2cam
+            self.target2end_matrix = initial_target2end
+            self.rms_error = initial_error
+            return initial_error
+
     def _optimize_matrices_jointly(self, initial_base2cam, initial_target2end, ftol_rel, verbose):
         """
         Optimize both base2cam and target2end matrices simultaneously.

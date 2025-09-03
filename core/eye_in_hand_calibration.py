@@ -444,6 +444,75 @@ class EyeInHandCalibrator(BaseCalibrator):
             self.calibration_completed = False
             return False
     
+    def optimize_calibration(self, iterations: int = 100, ftol_rel: float = 1e-6, verbose: bool = False) -> float:
+        """
+        Optimize calibration results by jointly refining cam2end and target2base matrices.
+        
+        This method uses nonlinear optimization to minimize reprojection error by
+        simultaneously optimizing both the camera-to-end-effector transformation
+        and the target-to-base transformation.
+        
+        Args:
+            iterations: Maximum number of optimization iterations
+            ftol_rel: Relative tolerance for convergence
+            verbose: Whether to print optimization progress
+            
+        Returns:
+            float: Final RMS reprojection error after optimization
+            
+        Raises:
+            ValueError: If calibration has not been completed
+            ImportError: If nlopt optimization library is not available
+        """
+        if not self.calibration_completed:
+            raise ValueError("Calibration must be completed before optimization. Call calibrate() first.")
+            
+        if not HAS_NLOPT:
+            raise ImportError("nlopt library is required for optimization but not available")
+            
+        if verbose:
+            print(f"Starting optimization with {iterations} max iterations...")
+            print(f"Initial RMS error: {self.rms_error:.4f} pixels")
+            
+        # Store initial values
+        initial_cam2end = self.cam2end_matrix.copy()
+        initial_target2base = self.target2base_matrix.copy()
+        initial_error = self.rms_error
+        
+        try:
+            # Perform joint optimization
+            optimized_cam2end, optimized_target2base = self._optimize_matrices_jointly(
+                initial_cam2end, initial_target2base, ftol_rel, verbose
+            )
+            
+            # Update matrices with optimized results
+            self.cam2end_matrix = optimized_cam2end
+            self.target2base_matrix = optimized_target2base
+            
+            # Recalculate errors with optimized matrices
+            self._recalculate_reprojection_errors()
+            
+            # Mark optimization as completed
+            self.optimization_completed = True
+            
+            if verbose:
+                improvement = initial_error - self.rms_error
+                improvement_pct = (improvement / initial_error) * 100 if initial_error > 0 else 0
+                print(f"Optimization completed!")
+                print(f"Final RMS error: {self.rms_error:.4f} pixels")
+                print(f"Improvement: {improvement:.4f} pixels ({improvement_pct:.1f}%)")
+                
+            return self.rms_error
+            
+        except Exception as e:
+            if verbose:
+                print(f"Optimization failed: {e}")
+            # Restore original matrices
+            self.cam2end_matrix = initial_cam2end
+            self.target2base_matrix = initial_target2base
+            self.rms_error = initial_error
+            return initial_error
+
     # Getter methods for results (following IntrinsicCalibrator pattern)
     def get_rms_error(self) -> Optional[float]:
         """Get overall RMS reprojection error (lower is better)."""
