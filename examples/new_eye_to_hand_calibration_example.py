@@ -244,6 +244,27 @@ def main():
             print("❌ Eye-to-hand calibration data validation failed")
             return False
         
+        # Step 5.5: Calculate target-to-camera matrices
+        print("\n" + "="*60)
+        print("🎯 Step 5.5: Calculate Target-to-Camera Matrices")
+        print("="*60)
+        
+        try:
+            # First detect calibration patterns in all images
+            eye_to_hand_calibrator.detect_pattern_points(verbose=True)
+            
+            # Calculate target2cam matrices for all detected patterns
+            eye_to_hand_calibrator._calculate_target2cam_matrices(verbose=True)
+            
+            # Count successful calculations
+            successful_matrices = sum(1 for matrix in eye_to_hand_calibrator.target2cam_matrices if matrix is not None)
+            print(f"✅ Successfully calculated {successful_matrices} target2cam matrices")
+            
+        except Exception as e:
+            print(f"⚠️ Target2cam matrix calculation failed: {e}")
+            import traceback
+            traceback.print_exc()
+        
         # Step 6: Display calibration information
         print("\n" + "="*60)
         print("📊 Step 6: Eye-to-Hand Calibration Information")

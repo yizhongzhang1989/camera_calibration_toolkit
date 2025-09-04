@@ -79,6 +79,9 @@ class HandEyeBaseCalibrator(BaseCalibrator):
         # Robot pose data (common to both eye-in-hand and eye-to-hand)
         self.end2base_matrices = end2base_matrices
         
+        # Target to camera transformation matrices (computed from rvec/tvec)
+        self.target2cam_matrices = None
+        
         # Calibration result attributes
         self.best_method = None
         self.best_method_name = None
@@ -354,6 +357,88 @@ class HandEyeBaseCalibrator(BaseCalibrator):
         if not self.calibration_completed:
             raise ValueError("Calibration not completed. Run calibrate() first.")
         return self.best_method_name
+
+    def _calculate_target2cam_matrices(self, verbose: bool = False) -> None:
+        """
+        Calculate target-to-camera transformation matrices for all detected calibration patterns.
+        
+        This function attempts to calculate poses for all images with detected patterns and
+        converts them to 4x4 transformation matrices representing the pose of the calibration
+        target (pattern) relative to the camera coordinate system.
+        
+        Args:
+            verbose: Whether to print detailed information about pose calculation
+            
+        Note:
+            Results are stored in:
+            - self.rvecs and self.tvecs arrays (rotation vectors and translation vectors)
+            - self.target2cam_matrices array (4x4 transformation matrices)
+            All arrays are aligned with self.images. None values indicate failed calculations.
+            
+            Pose calculation attempts solvePnP for each detected pattern and validates:
+            - solvePnP success (ret == True)
+            - No NaN or infinite values in rvec/tvec
+            - Non-zero pose magnitudes (filters out degenerate solutions)
+        """
+        if verbose:
+            print(f"📐 Calculating target-to-camera matrices for all detected patterns...")
+        
+        # Initialize pose arrays aligned with images
+        self.rvecs = [None] * len(self.images)
+        self.tvecs = [None] * len(self.images)
+        self.target2cam_matrices = [None] * len(self.images)
+        
+        successful_poses = 0
+        
+        for i in range(len(self.images)):
+            if (self.image_points[i] is not None and 
+                self.object_points[i] is not None):
+                
+                # Try to calculate pose from detected pattern points
+                try:
+                    ret, rvec, tvec = cv2.solvePnP(
+                        self.object_points[i], 
+                        self.image_points[i], 
+                        self.camera_matrix, 
+                        self.distortion_coefficients
+                    )
+                    
+                    if ret and rvec is not None and tvec is not None:
+                        # Check if pose is reasonable (not NaN or infinite)
+                        if (np.all(np.isfinite(rvec)) and np.all(np.isfinite(tvec)) and
+                            np.linalg.norm(rvec) > 1e-6 and np.linalg.norm(tvec) > 1e-6):
+                            self.rvecs[i] = rvec
+                            self.tvecs[i] = tvec
+                            
+                            # Convert rvec and tvec to 4x4 transformation matrix
+                            rotation_matrix, _ = cv2.Rodrigues(rvec)
+                            target2cam_matrix = np.eye(4, dtype=np.float32)
+                            target2cam_matrix[:3, :3] = rotation_matrix
+                            target2cam_matrix[:3, 3] = tvec.flatten()
+                            self.target2cam_matrices[i] = target2cam_matrix
+                            
+                            successful_poses += 1
+                            
+                            if verbose:
+                                print(f"   ✅ Image {i}: Valid target2cam matrix calculated")
+                        elif verbose:
+                            print(f"   ⚠️  Image {i}: Invalid pose calculated (NaN or unreasonable values)")
+                    elif verbose:
+                        print(f"   ❌ Image {i}: solvePnP failed")
+                        
+                except Exception as e:
+                    if verbose:
+                        print(f"   ❌ Image {i}: Pose calculation failed - {e}")
+                    continue
+            elif verbose:
+                print(f"   ⚪ Image {i}: No pattern detected")
+        
+        if verbose:
+            failed_poses = len(self.images) - successful_poses
+            print(f"📊 Target2Cam Matrix Calculation Summary:")
+            print(f"   • Successful matrices: {successful_poses}")
+            print(f"   • Failed calculations: {failed_poses}")
+            print(f"   • Total images: {len(self.images)}")
 
     # ============================================================================
     # Common Result Access Methods
