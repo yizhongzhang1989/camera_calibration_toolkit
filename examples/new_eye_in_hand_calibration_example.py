@@ -7,7 +7,20 @@ This example demonstrates how to use the NewEyeInHandCalibrator class for
 eye-in-hand calibration (camera mounted on robot end-effector):
 
 1. Load robot pose images and corresponding end-effector poses from eye_in_hand_test_data
-2. Calculate camera intrinsic parameters using eye_in_hand_test_data images
+2. Calcula        print("📊 Summary:")
+        print(f"   • Loaded {len(images)} image-pose pairs")
+        print(f"   • Intrinsic calibration RMS error: {rms_error:.4f} pixels")
+        if eye_in_hand_calibrator.calibration_completed:
+            print(f"   • Eye-in-hand calibration: ✅ COMPLETED")
+            print(f"   • Best calibration method: {eye_in_hand_calibrator.best_method_name}")
+            print(f"   • Hand-eye calibration RMS error: {eye_in_hand_calibrator.rms_error:.4f} pixels")
+        else:
+            print(f"   • Eye-in-hand calibration: ⚠️ NOT PERFORMED")
+        print(f"   • All data validation: ✅ PASSED")
+        print(f"   • IO operations: ✅ TESTED")
+        print(f"   • Results saved to: {results_dir}")
+        print("\nNote: This example now includes COMPLETE eye-in-hand calibration functionality!")
+        print("The NewEyeInHandCalibrator class provides both data handling AND calibration algorithms.")a intrinsic parameters using eye_in_hand_test_data images
 3. Load and validate all calibration data
 4. Test the new IO-only architecture
 
@@ -259,27 +272,6 @@ def main():
             print("❌ Eye-in-hand calibration data validation failed")
             return False
         
-        # Step 4.5: Calculate target-to-camera matrices
-        print("\n" + "="*60)
-        print("🎯 Step 4.5: Calculate Target-to-Camera Matrices")
-        print("="*60)
-        
-        try:
-            # First detect calibration patterns in all images
-            eye_in_hand_calibrator.detect_pattern_points(verbose=True)
-            
-            # Calculate target2cam matrices for all detected patterns
-            eye_in_hand_calibrator._calculate_target2cam_matrices(verbose=True)
-            
-            # Count successful calculations
-            successful_matrices = sum(1 for matrix in eye_in_hand_calibrator.target2cam_matrices if matrix is not None)
-            print(f"✅ Successfully calculated {successful_matrices} target2cam matrices")
-            
-        except Exception as e:
-            print(f"⚠️ Target2cam matrix calculation failed: {e}")
-            import traceback
-            traceback.print_exc()
-        
         # Step 5: Display calibration information
         print("\n" + "="*60)
         print("📊 Step 5: Eye-in-Hand Calibration Information")
@@ -294,15 +286,36 @@ def main():
         print(f"   • Has extrinsics: {calib_info['has_extrinsics']}")
         print(f"   • Calibration completed: {calib_info['calibration_completed']}")
         
+        # Step 5.5: Test Eye-in-Hand Calibration
+        print("\n" + "="*60)
+        print("🤖 Step 5.5: Test Eye-in-Hand Calibration")
+        print("="*60)
+        
+        # Reset the dummy cam2end matrix that might have been set
+        eye_in_hand_calibrator.cam2end_matrix = None
+        eye_in_hand_calibrator.calibration_completed = False
+        
+        print("🧪 Testing calibration with automatic method selection...")
+        calibration_success = eye_in_hand_calibrator.calibrate(method=None, verbose=True)
+        
+        if calibration_success:
+            print(f"✅ Eye-in-hand calibration completed successfully!")
+            print(f"   • Best method: {eye_in_hand_calibrator.best_method_name}")
+            print(f"   • RMS error: {eye_in_hand_calibrator.rms_error:.4f} pixels")
+            print(f"   • Camera-to-end transformation matrix shape: {eye_in_hand_calibrator.cam2end_matrix.shape}")
+            print(f"   • Target-to-base transformation matrix shape: {eye_in_hand_calibrator.target2base_matrix.shape}")
+        else:
+            print("❌ Eye-in-hand calibration failed")
+        
         # Step 6: Test IO methods
         print("\n" + "="*60)
         print("💾 Step 6: Test IO Methods")
         print("="*60)
         
-        # Test cam2end matrix operations (should be None initially)
-        print(f"📄 Initial cam2end_matrix: {eye_in_hand_calibrator.get_cam2end_matrix()}")
+        # Test cam2end matrix operations (should be calibrated now)
+        print(f"📄 Current cam2end_matrix shape: {eye_in_hand_calibrator.get_cam2end_matrix().shape if eye_in_hand_calibrator.get_cam2end_matrix() is not None else 'None'}")
         
-        # Test setting a dummy cam2end matrix
+        # Test setting a dummy cam2end matrix (this will overwrite the calibrated one)
         dummy_cam2end = np.eye(4)
         eye_in_hand_calibrator.set_cam2end_matrix(dummy_cam2end)
         print(f"✅ Set dummy cam2end_matrix")

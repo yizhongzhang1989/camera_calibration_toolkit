@@ -24,6 +24,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import os
 import json
 import numpy as np
+import cv2
 from typing import Tuple, List, Optional, Dict, Any
 
 from .hand_eye_base_calibration import HandEyeBaseCalibrator
@@ -262,23 +263,380 @@ class NewEyeInHandCalibrator(HandEyeBaseCalibrator):
             'rms_error': self.rms_error
         }
 
-    def calibrate(self, **kwargs) -> bool:
+    def _calculate_optimal_target2base_matrix(self, cam2end_4x4: np.ndarray, verbose: bool = False) -> np.ndarray:
         """
-        Placeholder calibrate method for IO-only architecture.
+        Calculate the single target2base matrix that minimizes overall reprojection error.
         
-        Note: This is a placeholder method to satisfy the abstract base class.
-        Actual calibration logic has been moved to dedicated calibration modules.
+        This method finds the target2base transformation that best explains all the
+        observed target positions across all images, rather than calculating a
+        separate target2base for each image which would result in zero error.
         
         Args:
-            **kwargs: Additional parameters (not used in IO-only version)
+            cam2end_4x4: The camera to end-effector transformation matrix from calibration
+            verbose: Whether to print detailed information
             
         Returns:
-            bool: Always returns True as this is IO-only
+            np.ndarray: 4x4 target to base transformation matrix
         """
-        print("⚠️ Warning: calibrate() called on IO-only NewEyeInHandCalibrator")
-        print("   Calibration algorithms have been moved to dedicated modules.")
-        print("   This class now handles only data loading and management.")
-        return True
+        if verbose:
+            print("Calculating optimal target2base matrix...")
+        
+        best_error = float('inf')
+        best_target2base = None
+        
+        # Try using each image's target2cam transformation to estimate target2base
+        # Then find the one that gives the smallest overall reprojection error
+        candidate_target2base_matrices = []
+        
+        for i in range(len(self.target2cam_matrices)):
+            if self.target2cam_matrices[i] is not None:
+                # Calculate target2base using this image's measurements
+                candidate_target2base = self.end2base_matrices[i] @ cam2end_4x4 @ self.target2cam_matrices[i]
+                candidate_target2base_matrices.append(candidate_target2base)
+        
+        # Test each candidate to find the one with minimum overall reprojection error
+        for candidate_idx, candidate_target2base in enumerate(candidate_target2base_matrices):
+            # Use the separate reprojection error function for each candidate
+            rms_error, _ = self._calculate_reprojection_errors(cam2end_4x4, candidate_target2base, verbose=False)
+            
+            if rms_error < best_error:
+                best_error = rms_error
+                best_target2base = candidate_target2base.copy()
+                if verbose:
+                    print(f"  Candidate {candidate_idx}: RMS error = {rms_error:.4f} (best so far)")
+            elif verbose:
+                print(f"  Candidate {candidate_idx}: RMS error = {rms_error:.4f}")
+        
+        if best_target2base is not None:
+            if verbose:
+                print(f"✅ Optimal target2base matrix found with RMS error: {best_error:.4f}")
+                print("Target2base transformation matrix:")
+                print(best_target2base)
+        else:
+            if verbose:
+                print("⚠️ Could not find optimal target2base matrix, using first candidate")
+            best_target2base = candidate_target2base_matrices[0] if candidate_target2base_matrices else np.eye(4)
+        
+        return best_target2base
+
+    def calculate_reprojection_errors(self, cam2end_matrix: Optional[np.ndarray] = None, target2base_matrix: Optional[np.ndarray] = None, verbose: bool = False) -> Tuple[float, List[float]]:
+        """
+        Calculate reprojection errors using hand-eye calibration results.
+        
+        This is a public method that can be used to calculate reprojection errors
+        for given transformation matrices or the stored calibration results.
+        
+        Args:
+            cam2end_matrix: 4x4 camera-to-end-effector transformation matrix. 
+                          If None, uses self.cam2end_matrix
+            target2base_matrix: 4x4 target-to-base transformation matrix.
+                              If None, uses self.target2base_matrix
+            verbose: Whether to print detailed error information
+            
+        Returns:
+            Tuple of (rms_error, per_image_errors):
+            - rms_error: Overall RMS reprojection error across all valid images
+            - per_image_errors: List of reprojection errors for each image (inf for invalid images)
+            
+        Raises:
+            ValueError: If required matrices or data are not available
+        """
+        # Use provided matrices or stored calibration results
+        if cam2end_matrix is None:
+            if self.cam2end_matrix is None:
+                raise ValueError("No cam2end_matrix provided and no calibration results stored")
+            cam2end_matrix = self.cam2end_matrix
+            
+        if target2base_matrix is None:
+            if self.target2base_matrix is None:
+                raise ValueError("No target2base_matrix provided and no calibration results stored")
+            target2base_matrix = self.target2base_matrix
+        
+        # Validate prerequisites for reprojection error calculation
+        if self.image_points is None or self.object_points is None:
+            raise ValueError("Pattern points not detected. Run detect_pattern_points() first.")
+            
+        if self.end2base_matrices is None:
+            raise ValueError("Robot poses not loaded")
+            
+        if self.camera_matrix is None or self.distortion_coefficients is None:
+            raise ValueError("Camera intrinsic parameters not available")
+        
+        return self._calculate_reprojection_errors(cam2end_matrix, target2base_matrix, verbose)
+
+    def calibrate(self, method: Optional[int] = None, verbose: bool = False) -> bool:
+        """
+        Perform eye-in-hand calibration using the specified method or find the best method.
+        
+        This method uses the data stored in class members (images, robot poses, camera intrinsics)
+        to perform hand-eye calibration. If method is None, all available methods will be tested
+        and the one with the lowest reprojection error will be selected.
+        
+        Args:
+            method: Optional OpenCV calibration method constant. If None, all methods will be 
+                   tested and the best one selected. Available options:
+                   - cv2.CALIB_HAND_EYE_TSAI
+                   - cv2.CALIB_HAND_EYE_PARK
+                   - cv2.CALIB_HAND_EYE_HORAUD
+                   - cv2.CALIB_HAND_EYE_ANDREFF
+                   - cv2.CALIB_HAND_EYE_DANIILIDIS
+            verbose: Whether to print detailed calibration progress and results
+            
+        Returns:
+            bool: True if calibration succeeded, False otherwise
+            
+        Note:
+            Before calling this method, ensure that:
+            1. Images and robot poses are loaded
+            2. Camera intrinsic parameters are available
+            3. Calibration patterns are detected (call detect_pattern_points())
+            4. Target-to-camera matrices are calculated (call _calculate_target2cam_matrices())
+        """
+        try:
+            # detect pattern points
+            self.detect_pattern_points()
+
+            # Calculate target2cam matrices
+            self._calculate_target2cam_matrices()
+
+            # Validate prerequisites
+            self._validate_calibration_prerequisites()
+            
+            if verbose:
+                print(f"🤖 Running eye-in-hand calibration with {len([p for p in self.image_points if p is not None])} image-pose pairs")
+            
+            # If no method specified, try all methods and find the best
+            if method is None:
+                if verbose:
+                    print("🔍 No method specified, testing all available methods...")
+                
+                best_method = None
+                best_method_name = None
+                best_rms_error = float('inf')
+                best_cam2end = None
+                best_target2base = None
+                best_per_image_errors = None
+                
+                methods_to_try = self.get_available_methods()
+                
+                for test_method, method_name in methods_to_try.items():
+                    if verbose:
+                        print(f"\n🧪 Testing method: {method_name} ({test_method})")
+                    
+                    try:
+                        # Perform calibration with this method
+                        success, cam2end_matrix, target2base_matrix, rms_error, per_image_errors = self._perform_single_calibration(test_method, verbose)
+                        
+                        if success and rms_error < best_rms_error:
+                            best_method = test_method
+                            best_method_name = method_name
+                            best_rms_error = rms_error
+                            best_cam2end = cam2end_matrix.copy()
+                            best_target2base = target2base_matrix.copy()
+                            best_per_image_errors = per_image_errors.copy()
+                            
+                            if verbose:
+                                print(f"   ✅ New best method: {method_name} with RMS error {rms_error:.4f}")
+                        elif success:
+                            if verbose:
+                                print(f"   ✅ Method {method_name} succeeded with RMS error {rms_error:.4f}")
+                        else:
+                            if verbose:
+                                print(f"   ❌ Method {method_name} failed")
+                                
+                    except Exception as e:
+                        if verbose:
+                            print(f"   ❌ Method {method_name} failed with error: {e}")
+                        continue
+                
+                if best_method is not None:
+                    # Store the best results
+                    self.cam2end_matrix = best_cam2end
+                    self.target2base_matrix = best_target2base
+                    self.rms_error = best_rms_error
+                    self.per_image_errors = best_per_image_errors
+                    self.best_method = best_method
+                    self.best_method_name = best_method_name
+                    self.calibration_completed = True
+                    
+                    if verbose:
+                        print(f"\n🎉 Best method selected: {best_method_name} with RMS error {best_rms_error:.4f}")
+                        print(f"Camera to end-effector transformation matrix:")
+                        print(f"{best_cam2end}")
+                    
+                    return True
+                else:
+                    if verbose:
+                        print("❌ All calibration methods failed")
+                    return False
+            
+            else:
+                # Use the specified method
+                method_name = self.get_method_name(method)
+                if verbose:
+                    print(f"🎯 Using specified method: {method_name} ({method})")
+                
+                success, cam2end_matrix, target2base_matrix, rms_error, per_image_errors = self._perform_single_calibration(method, verbose)
+                
+                if success:
+                    # Store results
+                    self.cam2end_matrix = cam2end_matrix
+                    self.target2base_matrix = target2base_matrix
+                    self.rms_error = rms_error
+                    self.per_image_errors = per_image_errors
+                    self.best_method = method
+                    self.best_method_name = method_name
+                    self.calibration_completed = True
+                    
+                    if verbose:
+                        print(f"✅ Eye-in-hand calibration completed successfully!")
+                        print(f"RMS reprojection error: {rms_error:.4f} pixels")
+                        print(f"Camera to end-effector transformation matrix:")
+                        print(f"{cam2end_matrix}")
+                    
+                    return True
+                else:
+                    if verbose:
+                        print(f"❌ Eye-in-hand calibration failed with method {method_name}")
+                    return False
+                    
+        except Exception as e:
+            if verbose:
+                print(f"❌ Eye-in-hand calibration failed: {e}")
+            self.calibration_completed = False
+            return False
+
+    def _calculate_reprojection_errors(self, cam2end_matrix: np.ndarray, target2base_matrix: np.ndarray, verbose: bool = False) -> Tuple[float, List[float]]:
+        """
+        Calculate reprojection errors using hand-eye calibration results.
+        
+        This method projects 3D calibration points to 2D image points using the calibrated
+        hand-eye transformation and compares with detected pattern points to compute
+        reprojection errors.
+        
+        Args:
+            cam2end_matrix: 4x4 camera-to-end-effector transformation matrix
+            target2base_matrix: 4x4 target-to-base transformation matrix
+            verbose: Whether to print detailed error information
+            
+        Returns:
+            Tuple of (rms_error, per_image_errors):
+            - rms_error: Overall RMS reprojection error across all valid images
+            - per_image_errors: List of reprojection errors for each image (inf for invalid images)
+        """
+        per_image_errors = []
+        total_error = 0.0
+        valid_error_count = 0
+        
+        for i in range(len(self.image_points)):
+            if (self.image_points[i] is not None and 
+                self.object_points[i] is not None and 
+                self.end2base_matrices[i] is not None):
+                try:
+                    # Calculate reprojected points using hand-eye calibration result
+                    end2cam_matrix = np.linalg.inv(cam2end_matrix)
+                    base2end_matrix = np.linalg.inv(self.end2base_matrices[i])
+                    
+                    # Target to camera using hand-eye calibration and the target2base matrix
+                    eyeinhand_target2cam = end2cam_matrix @ base2end_matrix @ target2base_matrix
+                    
+                    # Project 3D points to image
+                    projected_points, _ = cv2.projectPoints(
+                        self.object_points[i], 
+                        eyeinhand_target2cam[:3, :3], 
+                        eyeinhand_target2cam[:3, 3], 
+                        self.camera_matrix, 
+                        self.distortion_coefficients)
+                    
+                    # Calculate reprojection error for this image
+                    error = cv2.norm(self.image_points[i], projected_points, cv2.NORM_L2) / len(projected_points)
+                    per_image_errors.append(error)
+                    total_error += error * error
+                    valid_error_count += 1
+                    
+                    if verbose:
+                        print(f"   Image {i}: Reprojection error = {error:.4f} pixels")
+                        
+                except Exception as e:
+                    if verbose:
+                        print(f"   Warning: Could not calculate reprojection error for image {i}: {e}")
+                    per_image_errors.append(float('inf'))
+            else:
+                if verbose:
+                    print(f"   Image {i}: Skipped (missing data)")
+                per_image_errors.append(float('inf'))
+        
+        # Calculate RMS error
+        if valid_error_count > 0:
+            rms_error = np.sqrt(total_error / valid_error_count)
+            if verbose:
+                print(f"   Overall RMS reprojection error: {rms_error:.4f} pixels ({valid_error_count} valid images)")
+        else:
+            rms_error = float('inf')
+            if verbose:
+                print("   No valid images for reprojection error calculation")
+        
+        return rms_error, per_image_errors
+
+    def _perform_single_calibration(self, method: int, verbose: bool = False) -> Tuple[bool, Optional[np.ndarray], Optional[np.ndarray], float, Optional[List[float]]]:
+        """
+        Perform calibration with a single method.
+        
+        Args:
+            method: OpenCV calibration method constant
+            verbose: Whether to print detailed information
+            
+        Returns:
+            Tuple of (success, cam2end_matrix, target2base_matrix, rms_error, per_image_errors)
+        """
+        try:
+            # Filter valid data points
+            valid_indices = []
+            for i in range(len(self.image_points)):
+                if (self.image_points[i] is not None and 
+                    self.object_points[i] is not None and 
+                    self.end2base_matrices[i] is not None and
+                    self.target2cam_matrices[i] is not None):
+                    valid_indices.append(i)
+            
+            if len(valid_indices) < 3:
+                if verbose:
+                    print(f"   Insufficient valid data: {len(valid_indices)} points (need at least 3)")
+                return False, None, None, float('inf'), None
+            
+            # Prepare data for OpenCV calibration
+            end2base_Rs = np.array([self.end2base_matrices[i][:3, :3] for i in valid_indices])
+            end2base_ts = np.array([self.end2base_matrices[i][:3, 3] for i in valid_indices])
+            
+            # Use rvecs and tvecs from target2cam matrices
+            target2cam_Rs = np.array([self.target2cam_matrices[i][:3, :3] for i in valid_indices])
+            target2cam_ts = np.array([self.target2cam_matrices[i][:3, 3] for i in valid_indices])
+            
+            # Convert rotation matrices to rotation vectors
+            rvecs_array = np.array([cv2.Rodrigues(R)[0] for R in target2cam_Rs])
+            tvecs_array = target2cam_ts.reshape(-1, 3, 1)
+            
+            # Perform eye-in-hand calibration using OpenCV
+            cam2end_R, cam2end_t = cv2.calibrateHandEye(
+                end2base_Rs, end2base_ts, rvecs_array, tvecs_array, method)
+            
+            # Create 4x4 transformation matrix
+            cam2end_4x4 = np.eye(4)
+            cam2end_4x4[:3, :3] = cam2end_R
+            cam2end_4x4[:3, 3] = cam2end_t[:, 0]
+            
+            # Calculate the optimal target2base matrix
+            target2base_matrix = self._calculate_optimal_target2base_matrix(cam2end_4x4, verbose)
+            
+            # Calculate reprojection errors using the separate function
+            rms_error, per_image_errors = self._calculate_reprojection_errors(cam2end_4x4, target2base_matrix, verbose)
+            
+            return True, cam2end_4x4, target2base_matrix, rms_error, per_image_errors
+            
+        except Exception as e:
+            if verbose:
+                print(f"   Calibration failed: {e}")
+            return False, None, None, float('inf'), None
 
     def save_results(self, save_directory: str) -> None:
         """

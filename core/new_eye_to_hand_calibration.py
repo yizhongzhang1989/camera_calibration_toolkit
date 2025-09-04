@@ -250,22 +250,25 @@ class NewEyeToHandCalibrator(HandEyeBaseCalibrator):
             'rms_error': self.rms_error
         }
 
-    def calibrate(self, **kwargs) -> bool:
+    def calibrate(self, method: Optional[int] = None, verbose: bool = False) -> bool:
         """
         Placeholder calibrate method for IO-only architecture.
         
-        Note: This is a placeholder method to satisfy the abstract base class.
+        Note: This is a placeholder method to satisfy the base class interface.
         Actual calibration logic has been moved to dedicated calibration modules.
         
         Args:
-            **kwargs: Additional parameters (not used in IO-only version)
+            method: Optional OpenCV calibration method constant (not used in IO-only version)
+            verbose: Whether to print detailed information (not used in IO-only version)
             
         Returns:
-            bool: Always returns True as this is IO-only
+            bool: Always returns False as this is IO-only (no actual calibration performed)
         """
         print("⚠️ Warning: calibrate() called on IO-only NewEyeToHandCalibrator")
         print("   Calibration algorithms have been moved to dedicated modules.")
         print("   This class now handles only data loading and management.")
+        print("   Use a dedicated calibration module to perform actual calibration.")
+        return False
         return True
 
     def save_results(self, save_directory: str) -> None:

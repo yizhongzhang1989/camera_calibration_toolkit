@@ -321,6 +321,20 @@ def main():
         print("\nNote: Calibration algorithms have been moved to dedicated modules.")
         print("This example demonstrates the new IO-only architecture.")
         
+        # Demonstrate the new calibrate interface
+        print("\n" + "="*60)
+        print("🧪 Demonstrating New Calibration Interface")
+        print("="*60)
+        
+        print("📋 Available calibration methods:")
+        methods = eye_to_hand_calibrator.get_available_methods()
+        for method_id, method_name in methods.items():
+            print(f"   • {method_name}: {method_id}")
+        
+        print(f"\n🔍 Testing placeholder calibrate() method:")
+        result = eye_to_hand_calibrator.calibrate(method=None, verbose=True)
+        print(f"   Calibration result: {result} (expected: False for IO-only class)")
+        
         return True
         
     except Exception as e:

@@ -25,6 +25,7 @@ import json
 import numpy as np
 import cv2
 from typing import Tuple, List, Optional, Union, Dict, Any
+from abc import ABC, abstractmethod
 from .base_calibrator import BaseCalibrator
 from .calibration_patterns import CalibrationPattern
 
@@ -439,6 +440,116 @@ class HandEyeBaseCalibrator(BaseCalibrator):
             print(f"   • Successful matrices: {successful_poses}")
             print(f"   • Failed calculations: {failed_poses}")
             print(f"   • Total images: {len(self.images)}")
+
+    @staticmethod
+    def get_available_methods() -> Dict[int, str]:
+        """
+        Get all available OpenCV hand-eye calibration methods.
+        
+        Returns:
+            dict: Mapping of OpenCV method constants to their human-readable names
+        """
+        return {
+            cv2.CALIB_HAND_EYE_TSAI: "TSAI",
+            cv2.CALIB_HAND_EYE_PARK: "PARK", 
+            cv2.CALIB_HAND_EYE_HORAUD: "HORAUD",
+            cv2.CALIB_HAND_EYE_ANDREFF: "ANDREFF",
+            cv2.CALIB_HAND_EYE_DANIILIDIS: "DANIILIDIS"
+        }
+    
+    @staticmethod
+    def get_method_name(method: int) -> str:
+        """
+        Get human-readable name for an OpenCV calibration method constant.
+        
+        Args:
+            method: OpenCV method constant (e.g., cv2.CALIB_HAND_EYE_TSAI)
+            
+        Returns:
+            str: Human-readable method name (e.g., "TSAI")
+        """
+        methods = HandEyeBaseCalibrator.get_available_methods()
+        return methods.get(method, f"Unknown method ({method})")
+    
+    def _validate_calibration_prerequisites(self) -> None:
+        """
+        Validate that all prerequisites for calibration are met.
+        
+        Raises:
+            ValueError: If required data is missing or invalid
+        """
+        # Check basic data availability
+        if self.images is None or len(self.images) == 0:
+            raise ValueError("No images loaded. Load images before calibration.")
+            
+        if self.end2base_matrices is None or len(self.end2base_matrices) == 0:
+            raise ValueError("No robot poses loaded. Load end2base matrices before calibration.")
+            
+        if len(self.images) != len(self.end2base_matrices):
+            raise ValueError(f"Image count ({len(self.images)}) must match pose count ({len(self.end2base_matrices)})")
+        
+        # Check intrinsic calibration
+        if self.camera_matrix is None:
+            raise ValueError("Camera intrinsic matrix not available. Perform intrinsic calibration first.")
+            
+        if self.distortion_coefficients is None:
+            raise ValueError("Camera distortion coefficients not available. Perform intrinsic calibration first.")
+        
+        # Check pattern detection and pose calculation
+        if not hasattr(self, 'image_points') or self.image_points is None:
+            raise ValueError("Pattern points not detected. Run detect_pattern_points() first.")
+            
+        if not hasattr(self, 'target2cam_matrices') or self.target2cam_matrices is None:
+            raise ValueError("Target-to-camera matrices not calculated. Run _calculate_target2cam_matrices() first.")
+        
+        # Count valid data points
+        valid_points = sum(1 for pts in self.image_points if pts is not None)
+        valid_matrices = sum(1 for matrix in self.target2cam_matrices if matrix is not None)
+        
+        if valid_points < 3:
+            raise ValueError(f"Need at least 3 images with detected patterns, got {valid_points}")
+            
+        if valid_matrices < 3:
+            raise ValueError(f"Need at least 3 valid target2cam matrices, got {valid_matrices}")
+
+    def calibrate(self, method: Optional[int] = None, verbose: bool = False) -> bool:
+        """
+        Perform hand-eye calibration using the specified method or find the best method.
+        
+        This is the main calibration interface that should be implemented by inheriting classes.
+        The function provides a unified interface for both eye-in-hand and eye-to-hand calibration.
+        
+        Args:
+            method: Optional OpenCV calibration method constant. If None, all methods will be 
+                   tested and the best one (lowest reprojection error) will be selected.
+                   Valid methods depend on calibration type:
+                   - Eye-in-hand: cv2.CALIB_HAND_EYE_TSAI, cv2.CALIB_HAND_EYE_PARK, 
+                                  cv2.CALIB_HAND_EYE_HORAUD, cv2.CALIB_HAND_EYE_ANDREFF, 
+                                  cv2.CALIB_HAND_EYE_DANIILIDIS
+                   - Eye-to-hand: Same methods but different transformation relationships
+            verbose: Whether to print detailed calibration progress and results
+            
+        Returns:
+            bool: True if calibration succeeded, False otherwise
+            
+        Raises:
+            NotImplementedError: This is an abstract method that must be implemented by subclasses
+            ValueError: If required data is missing or invalid
+            
+        Note:
+            Before calling this method, ensure that:
+            1. Images and robot poses are loaded
+            2. Camera intrinsic parameters are available (via intrinsic calibration)
+            3. Calibration patterns are detected in images
+            4. Target-to-camera matrices are calculated
+            
+            After successful calibration:
+            - self.calibration_completed will be True
+            - self.best_method and self.best_method_name will contain the best method info
+            - Transformation matrices will be available via getter methods
+            - RMS error and per-image errors will be calculated
+        """
+        raise NotImplementedError("calibrate() method must be implemented by subclasses")
 
     # ============================================================================
     # Common Result Access Methods
