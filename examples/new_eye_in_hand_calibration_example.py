@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
 """
-New Hand-in-Eye Calibration Example
+New Eye-in-Hand Calibration Example
 ===================================
 
 This example demonstrates how to use the NewEyeInHandCalibrator class for 
-hand-in-eye calibration (camera mounted on robot end-effector):
+eye-in-hand calibration (camera mounted on robot end-effector):
 
-1. Load robot pose images and corresponding end-effector poses
-2. Calculate camera intrinsic parameters using actual calibration images
-3. Detect calibration patterns in images
-4. Compare different OpenCV hand-eye calibration methods
-5. Perform optimization to improve calibration accuracy
-6. Generate before/after reprojection images for comparison
-7. Save calibration results and comprehensive debug images
+1. Load robot pose images and corresponding end-effector poses from eye_in_hand_test_data
+2. Calculate camera intrinsic parameters using eye_in_hand_test_data images
+3. Load and validate all calibration data
+4. Test the new IO-only architecture
 
-This example uses the NEW NewEyeInHandCalibrator that inherits from HandEyeBaseCalibrator,
-providing the same functionality with improved architecture and code deduplication.
+Note: Calibration algorithms have been removed from NewEyeInHandCalibrator.
+This example focuses on data loading and intrinsic calibration only.
+Future calibration functionality will be added via dedicated calibration modules.
 """
 
 import os
@@ -30,368 +28,300 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.new_eye_in_hand_calibration import NewEyeInHandCalibrator
 from core.intrinsic_calibration import IntrinsicCalibrator
 from core.calibration_patterns import load_pattern_from_json
-from core.utils import load_images_from_directory
 
 
-def load_pattern_config(config_path):
-    """Load pattern configuration from JSON file.
+def perform_intrinsic_calibration(data_dir: str, results_dir: str) -> tuple:
+    """
+    Perform camera intrinsic calibration using images and pattern from the specified directory.
     
     Args:
-        config_path: Path to the JSON configuration file
+        data_dir: Directory containing calibration images and pattern configuration
+        results_dir: Directory to save intrinsic calibration results
         
     Returns:
-        CalibrationPattern: The loaded calibration pattern
+        tuple: (camera_matrix, distortion_coefficients, rms_error) or (None, None, None) if failed
     """
-    try:
-        with open(config_path, 'r') as f:
-            config_data = json.load(f)
-        
-        print(f"📋 Loading pattern configuration from: {config_path}")
-        print(f"   Pattern: {config_data.get('name', 'Unknown')}")
-        print(f"   Type: {config_data.get('pattern_id', 'Unknown')}")
-        
-        # Create pattern using the JSON data
-        pattern = load_pattern_from_json(config_data)
-        
-        return pattern
-        
-    except Exception as e:
-        print(f"❌ Failed to load pattern configuration: {e}")
-        return None
-
-
-def inspect_sample_data(sample_dir):
-    """Inspect the sample data to show what's available."""
-    print("🔍 Inspecting Sample Data")
-    print("=" * 30)
-    
-    # Get image files
-    image_files = [f for f in os.listdir(sample_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
-    image_files.sort(key=lambda x: int(''.join(filter(str.isdigit, x))) if any(c.isdigit() for c in x) else 0)
-    
-    # Get pose files
-    pose_files = [f for f in os.listdir(sample_dir) if f.endswith('.json') and not f.endswith('config.json')]
-    pose_files.sort(key=lambda x: int(''.join(filter(str.isdigit, x))) if any(c.isdigit() for c in x) else 0)
-    
-    print(f"📊 Sample data statistics:")
-    print(f"   Image files: {len(image_files)}")
-    print(f"   Pose files: {len(pose_files)}")
-    
-    # Show sample pose file format
-    if pose_files:
-        sample_pose = pose_files[0]
-        try:
-            with open(os.path.join(sample_dir, sample_pose), 'r') as f:
-                pose_data = json.load(f)
-            
-            print(f"\n📄 Sample pose file format ({sample_pose}):")
-            print(f"   Keys: {list(pose_data.keys())}")
-            
-            if 'end_xyzrpy' in pose_data:
-                xyz_rpy = pose_data['end_xyzrpy']
-                print(f"   Position: x={xyz_rpy[0]:.3f}, y={xyz_rpy[1]:.3f}, z={xyz_rpy[2]:.3f}")
-                print(f"   Orientation: rx={xyz_rpy[3]:.3f}, ry={xyz_rpy[4]:.3f}, rz={xyz_rpy[5]:.3f}")
-                
-        except Exception as e:
-            print(f"   ⚠️ Could not read pose file: {e}")
-    
-    # Show sample image format
-    if image_files:
-        sample_image = image_files[0]
-        try:
-            img_path = os.path.join(sample_dir, sample_image)
-            img = cv2.imread(img_path)
-            if img is not None:
-                print(f"\n🖼️ Sample image format ({sample_image}):")
-                print(f"   Resolution: {img.shape[1]}x{img.shape[0]}")
-                print(f"   Channels: {img.shape[2] if len(img.shape) == 3 else 1}")
-            
-        except Exception as e:
-            print(f"   ⚠️ Could not read image file: {e}")
-
-
-def calculate_camera_intrinsics(sample_dir):
-    """Calculate camera intrinsic parameters using IntrinsicCalibrator."""
-    print("📷 Calculating camera intrinsic parameters...")
-    
-    # Get image files for intrinsic calibration
-    image_files = [f for f in os.listdir(sample_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
-    image_files.sort(key=lambda x: int(''.join(filter(str.isdigit, x))) if any(c.isdigit() for c in x) else 0)
-    image_paths = [os.path.join(sample_dir, f) for f in image_files]
-    
-    print(f"   Using {len(image_paths)} images for intrinsic calibration")
-    
-    # Load pattern configuration
-    config_path = os.path.join(sample_dir, "chessboard_config.json")
-    pattern = load_pattern_config(config_path)
-    if pattern is None:
-        return None, None
+    print("\n" + "="*60)
+    print("📐 Performing Camera Intrinsic Calibration")
+    print("="*60)
     
     try:
-        # Create intrinsic calibrator
-        intrinsic_calibrator = IntrinsicCalibrator(calibration_pattern=pattern)
+        # Step 1: Load calibration pattern configuration
+        pattern_config_path = os.path.join(data_dir, "chessboard_config.json")
+        if not os.path.exists(pattern_config_path):
+            raise FileNotFoundError(f"Pattern config not found: {pattern_config_path}")
         
-        # Load images
-        intrinsic_calibrator.set_images_from_paths(image_paths)
+        # Load JSON data from file
+        with open(pattern_config_path, 'r') as f:
+            pattern_json_data = json.load(f)
         
-        # Detect pattern points
-        if not intrinsic_calibrator.detect_pattern_points(verbose=True):
-            print("❌ Failed to detect calibration patterns for intrinsic calibration")
-            return None, None
+        calibration_pattern = load_pattern_from_json(pattern_json_data)
+        print(f"✅ Loaded pattern: {calibration_pattern}")
         
-        # Perform intrinsic calibration
-        print("   Running intrinsic calibration...")
-        success = intrinsic_calibrator.calibrate_camera(verbose=True)
+        # Step 2: Load images for intrinsic calibration
+        image_files = [f for f in os.listdir(data_dir) if f.endswith('.jpg')]
+        image_files.sort()  # Sort to ensure consistent ordering
+        
+        print(f"🔍 Found {len(image_files)} image files")
+        
+        images = []
+        for image_file in image_files:
+            image_path = os.path.join(data_dir, image_file)
+            image = cv2.imread(image_path)
+            if image is not None:
+                images.append(image)
+                print(f"✅ Loaded image: {image_file}")
+            else:
+                print(f"⚠️ Warning: Could not load {image_file}")
+        
+        print(f"📊 Successfully loaded {len(images)} images for intrinsic calibration")
+        
+        # Step 3: Perform intrinsic calibration
+        intrinsic_calibrator = IntrinsicCalibrator(
+            images=images,
+            calibration_pattern=calibration_pattern
+        )
+        
+        print(f"🔍 Performing intrinsic calibration with {len(images)} images...")
+        success = intrinsic_calibrator.calibrate(verbose=True)
         
         if success:
             camera_matrix = intrinsic_calibrator.get_camera_matrix()
-            distortion_coeffs = intrinsic_calibrator.get_distortion_coefficients()
-            rms_error = intrinsic_calibrator.get_reprojection_error()
-            
-            # Handle tuple return
-            if isinstance(rms_error, tuple):
-                rms_error = rms_error[0]
+            distortion_coefficients = intrinsic_calibrator.get_distortion_coefficients()
+            rms_error = intrinsic_calibrator.get_rms_error()
             
             print(f"✅ Intrinsic calibration successful!")
             print(f"   RMS error: {rms_error:.4f} pixels")
-            print(f"   Camera matrix:")
-            print(f"     fx={camera_matrix[0,0]:.2f}, fy={camera_matrix[1,1]:.2f}")
-            print(f"     cx={camera_matrix[0,2]:.2f}, cy={camera_matrix[1,2]:.2f}")
-            print(f"   Distortion coefficients: {distortion_coeffs.flatten()}")
+            print(f"   Camera matrix shape: {camera_matrix.shape}")
+            print(f"   Distortion coefficients shape: {distortion_coefficients.shape}")
             
             # Save intrinsic calibration results
-            intrinsic_output_dir = "data/results/intrinsic_calibration_for_handeye"
-            os.makedirs(intrinsic_output_dir, exist_ok=True)
-            intrinsic_calibrator.save_calibration(
-                os.path.join(intrinsic_output_dir, 'intrinsic_calibration_results.json'),
-                include_extrinsics=True
-            )
-            print(f"✅ Calibration data saved to: {intrinsic_output_dir}\\intrinsic_calibration_results.json")
-            print(f"   Intrinsic calibration results saved to: {intrinsic_output_dir}")
+            intrinsic_results_dir = os.path.join(results_dir, "intrinsic_calibration")
+            intrinsic_calibrator.save_results(intrinsic_results_dir)
+            print(f"✅ Intrinsic calibration results saved to: {intrinsic_results_dir}")
             
-            return camera_matrix, distortion_coeffs
+            return camera_matrix, distortion_coefficients, rms_error
+            
         else:
-            print("❌ Intrinsic calibration failed")
-            return None, None
+            raise RuntimeError("Intrinsic calibration failed")
             
     except Exception as e:
-        print(f"❌ Error during intrinsic calibration: {e}")
-        return None, None
+        print(f"❌ Intrinsic calibration failed: {e}")
+        return None, None, None
 
 
-def test_new_eye_in_hand_calibration():
-    """Test NEW eye-in-hand calibration workflow using sample data."""
-    print("Hand-in-Eye Camera Calibration Example")
-    print("=" * 70)
-    print("Demonstrates eye-in-hand calibration for robot-mounted cameras")
-    print()
+def load_data(data_dir: str) -> tuple:
+    """
+    Load images and robot pose matrices from the specified directory.
     
-    # Inspect sample data first
-    sample_dir = os.path.join("sample_data", "eye_in_hand_test_data")
-    if not os.path.exists(sample_dir):
-        print(f"❌ Sample data directory not found: {sample_dir}")
-        print("Please ensure the eye_in_hand_test_data directory exists with:")
-        print("  - Calibration images (0.jpg, 1.jpg, ...)")
-        print("  - Robot pose files (0.json, 1.json, ...)")
-        return
-    
-    inspect_sample_data(sample_dir)
-    
-    print("Eye-in-Hand Camera Calibration")
-    print("=" * 50)
-    print(f"📁 Using sample data from: {sample_dir}")
-    
-    # Calculate camera intrinsic parameters first
-    # This is essential for accurate hand-eye calibration
-    camera_matrix, distortion_coefficients = calculate_camera_intrinsics(sample_dir)
-    if camera_matrix is None or distortion_coefficients is None:
-        print("❌ Failed to calculate camera intrinsics - cannot proceed with hand-eye calibration")
-        return False
+    Args:
+        data_dir: Directory containing images and corresponding JSON pose files
         
-    print(f"📷 Camera intrinsics calculated successfully:")
-    print(f"   fx={camera_matrix[0,0]:.1f}, fy={camera_matrix[1,1]:.1f}")
-    print(f"   cx={camera_matrix[0,2]:.1f}, cy={camera_matrix[1,2]:.1f}")
-    print(f"   Distortion: {distortion_coefficients.flatten()}")
-    
-    # Load pattern configuration from JSON file (same as used for intrinsics)
-    config_path = os.path.join(sample_dir, "chessboard_config.json")
-    if not os.path.exists(config_path):
-        print(f"❌ Pattern configuration not found: {config_path}")
-        return False
-        
-    pattern = load_pattern_config(config_path)
-    
-    # Smart constructor approach - initialize with all data at once
-    # Get image files
-    image_files = [f for f in os.listdir(sample_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
-    image_files.sort(key=lambda x: int(''.join(filter(str.isdigit, x))) if any(c.isdigit() for c in x) else 0)
-    image_paths = [os.path.join(sample_dir, f) for f in image_files]
-    
-    calibrator = NewEyeInHandCalibrator(
-        image_paths=image_paths,              # Load images and JSON poses automatically
-        camera_matrix=camera_matrix,          # Camera intrinsics
-        distortion_coefficients=distortion_coefficients.flatten(),
-        calibration_pattern=pattern          # Calibration pattern (loaded from JSON)
-    )
-    
-    print("✅ Calibrator initialized with smart constructor")
-    print(f"   Camera intrinsics loaded: {calibrator.camera_matrix is not None}")
-    print(f"   Calibration pattern set: {calibrator.calibration_pattern is not None}")
-    
-    # Check if images and poses were loaded
-    info = calibrator.get_calibration_info()
-    print(f"Successfully loaded {info['image_count']} calibration images and poses")
-    
-    print(f"✅ Calibration data loaded:")
-    print(f"   Images: {info['image_count']}")
-    print(f"   Robot poses: {info['transform_count']}")
-    if calibrator.images:
-        print(f"   Image size: ({calibrator.images[0].shape[1]}, {calibrator.images[0].shape[0]})")
-    
-    # Detect calibration pattern points in images  
-    print(f"\n🎯 Detecting calibration patterns...")
-    
-    # Use the high-level calibrate method which handles pattern detection internally
-    print("\n🔧 Testing different hand-eye calibration methods...")
+    Returns:
+        tuple: (images, end2base_matrices, calibration_pattern) or (None, None, None) if failed
+    """
+    print("\n" + "="*60)
+    print("📂 Loading Eye-in-Hand Data")
+    print("="*60)
     
     try:
-        # Test different OpenCV calibration methods
-        methods = [
-            (cv2.CALIB_HAND_EYE_TSAI, "TSAI"),
-            (cv2.CALIB_HAND_EYE_PARK, "PARK"), 
-            (cv2.CALIB_HAND_EYE_HORAUD, "HORAUD"),
-            (cv2.CALIB_HAND_EYE_ANDREFF, "ANDREFF"),
-            (cv2.CALIB_HAND_EYE_DANIILIDIS, "DANIILIDIS")
-        ]
+        # Step 1: Load calibration pattern configuration
+        pattern_config_path = os.path.join(data_dir, "chessboard_config.json")
+        if not os.path.exists(pattern_config_path):
+            raise FileNotFoundError(f"Pattern config not found: {pattern_config_path}")
         
-        results = []
-        best_method = None
-        best_error = float('inf')
+        # Load JSON data from file
+        with open(pattern_config_path, 'r') as f:
+            pattern_json_data = json.load(f)
         
-        print(f"\n📊 Comparing {len(methods)} calibration methods:")
-        print("=" * 60)
+        calibration_pattern = load_pattern_from_json(pattern_json_data)
+        print(f"✅ Loaded pattern: {calibration_pattern}")
         
-        for i, (method_const, method_name) in enumerate(methods):
+        # Step 2: Get all image files in the directory
+        image_files = [f for f in os.listdir(data_dir) if f.endswith('.jpg')]
+        image_files.sort()  # Sort to ensure consistent ordering
+        
+        print(f"🔍 Found {len(image_files)} image files")
+        
+        # Step 3: Load images and corresponding poses
+        images = []
+        end2base_matrices = []
+        
+        for image_file in image_files:
+            # Get corresponding JSON file
+            json_file = image_file.replace('.jpg', '.json')
+            image_path = os.path.join(data_dir, image_file)
+            json_path = os.path.join(data_dir, json_file)
+            
+            if not os.path.exists(json_path):
+                print(f"⚠️ Warning: No pose file found for {image_file}, skipping")
+                continue
+                
+            # Load image
+            image = cv2.imread(image_path)
+            if image is None:
+                print(f"⚠️ Warning: Could not load image {image_file}, skipping")
+                continue
+                
+            # Load robot pose
             try:
-                print(f"\n🎯 Method {i+1}/5: {method_name}")
-                
-                # Reset calibrator state for fair comparison  
-                calibrator.calibration_completed = False
-                calibrator.rms_error = None
-                calibrator.per_image_errors = None
-                
-                # Perform calibration with this method (includes pattern detection)
-                success = calibrator.calibrate(method=method_const, verbose=False)
-                
-                if success and calibrator.rms_error is not None and calibrator.rms_error > 0:
-                    rms_error = calibrator.rms_error
-                    print(f"   ✅ Success: RMS error = {rms_error:.4f} pixels")
+                with open(json_path, 'r') as f:
+                    pose_data = json.load(f)
                     
-                    # Store results
-                    results.append({
-                        'name': method_name,
-                        'method': method_const,
-                        'rms_error': rms_error,
-                        'transformation': calibrator.get_transformation_matrix().copy(),
-                        'per_image_errors': calibrator.per_image_errors.copy() if calibrator.per_image_errors is not None else None
-                    })
-                    
-                    # Track best method
-                    if rms_error < best_error:
-                        best_error = rms_error
-                        best_method = method_name
-                        
-                else:
-                    print(f"   ❌ Failed: Calibration returned invalid results")
-                    
+                # Extract end2base transformation matrix
+                end2base_matrix = np.array(pose_data['end2base'])
+                
+                images.append(image)
+                end2base_matrices.append(end2base_matrix)
+                
+                print(f"✅ Loaded: {image_file} with pose data")
+                
             except Exception as e:
-                print(f"   ❌ Exception: {str(e)}")
+                print(f"⚠️ Warning: Could not load pose for {image_file}: {e}")
+                continue
         
-        # Display comparison results
-        if results:
-            print(f"\n📈 Calibration Methods Comparison:")
-            print("=" * 50)
+        print(f"📊 Successfully loaded {len(images)} image-pose pairs")
+        
+        if len(images) == 0:
+            raise RuntimeError("No valid image-pose pairs were loaded")
             
-            # Sort results by error (best first)
-            results.sort(key=lambda x: x['rms_error'])
-            
-            print(f"{'Method':<12} {'RMS Error':<12} {'Status'}")
-            print("-" * 35)
-            
-            for result in results:
-                status = "🏆 Best" if result['name'] == best_method else "✅ Good"
-                print(f"{result['name']:<12} {result['rms_error']:<12.4f} {status}")
-            
-            # Use the best method's results  
-            best_result = results[0]  # First in sorted list
-            final_transformation = best_result['transformation']
-            final_rms = best_result['rms_error']
-            final_per_image_errors = best_result['per_image_errors']
-            
-            # Set the calibrator to the best result state
-            calibrator.calibration_completed = True
-            calibrator.rms_error = final_rms
-            calibrator.per_image_errors = final_per_image_errors
-            
-            print(f"\n🎯 Using best method: {best_result['name']}")
-            print(f"   RMS reprojection error: {final_rms:.4f} pixels")
-            print(f"   Camera to end-effector transformation matrix:")
-            for i, row in enumerate(final_transformation):
-                print(f"   [{' '.join([f'{val:8.4f}' for val in row])}]")
-                
-            # Show per-image error statistics
-            if final_per_image_errors is not None:
-                errors = [e for e in final_per_image_errors if not np.isinf(e)]
-                if errors:
-                    print(f"   Error statistics: min={min(errors):.3f}, max={max(errors):.3f}, std={np.std(errors):.3f}")
-                    errors_summary = [f'{e:.3f}' for e in errors[:5]]
-                    print(f"   Per-image errors (first 5): {errors_summary}")
-            
-            print(f"\n📊 Additional calibration analysis completed using built-in error calculation")
-            
-            # Save calibration results
-            output_dir = "data/results/eye_in_hand_calibration"
-            os.makedirs(output_dir, exist_ok=True)
-            
-            print(f"\n💾 Calibration results saved to: {output_dir}")
-            
-            # Note about optimization
-            print(f"\n🔍 Performing calibration optimization...")
-            initial_rms = final_rms
-            print(f"   Initial RMS error: {initial_rms:.4f} pixels")
-            print(f"   Note: Optimization refines both target2base and cam2end matrices")
-            print(f"         using nonlinear optimization to minimize reprojection error")
-            print(f"⚠️  Optimization not implemented in NewEyeInHandCalibrator yet")
-            print(f"   Using original calibration results")
-            print(f"   RMS error: {initial_rms:.4f} pixels")
-            
-            print(f"\n✨ Hand-in-Eye Calibration with Optimization Complete!")
-            print(f"   Final calibration matrix (camera to end-effector):")
-            for i, row in enumerate(final_transformation):
-                print(f"   [{' '.join([f'{val:8.4f}' for val in row])}]")
-            print(f"   Final RMS error: {final_rms:.4f} pixels")
-            
-            return True
-            
-        else:
-            print("❌ No successful calibration methods found")
-            return False
-            
+        return images, end2base_matrices, calibration_pattern
+        
     except Exception as e:
-        print(f"❌ Error during calibration: {e}")
+        print(f"❌ Data loading failed: {e}")
+        return None, None, None
+
+
+def main():
+    """
+    Main function demonstrating new eye-in-hand calibration data loading and intrinsic calibration.
+    """
+    print("=" * 80)
+    print("🤖 New Eye-in-Hand Calibration Example - Data Loading & Intrinsic Calibration")
+    print("=" * 80)
+    
+    # Define data paths
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    eye_in_hand_data_dir = os.path.join(project_root, "sample_data", "eye_in_hand_test_data")
+    results_dir = os.path.join(project_root, "data", "results", "new_eye_in_hand_example")
+    
+    print(f"📂 Eye-in-hand data directory: {eye_in_hand_data_dir}")
+    print(f"💾 Results will be saved to: {results_dir}")
+    
+    # Create results directory
+    os.makedirs(results_dir, exist_ok=True)
+    
+    # Step 1: Load data (images, poses, and pattern) from eye-in-hand directory
+    images, end2base_matrices, calibration_pattern = load_data(eye_in_hand_data_dir)
+    
+    if images is None:
+        print("❌ Failed to load eye-in-hand data")
+        return False
+    
+    # Step 2: Perform intrinsic calibration using the eye-in-hand data directory
+    camera_matrix, distortion_coefficients, rms_error = perform_intrinsic_calibration(
+        data_dir=eye_in_hand_data_dir,
+        results_dir=results_dir
+    )
+    
+    if camera_matrix is None:
+        print("❌ Failed to perform intrinsic calibration")
+        return False
+    
+    # Step 3: Initialize NewEyeInHandCalibrator with loaded data
+    print("\n" + "="*60)
+    print("🤖 Step 3: Initialize New Eye-in-Hand Calibrator")
+    print("="*60)
+    
+    try:
+        # Create eye-in-hand calibrator with all loaded data
+        eye_in_hand_calibrator = NewEyeInHandCalibrator(
+            images=images,
+            end2base_matrices=end2base_matrices,
+            image_paths=None,  # Set to None as we directly provide images and matrices
+            calibration_pattern=calibration_pattern,
+            camera_matrix=camera_matrix,
+            distortion_coefficients=distortion_coefficients.flatten()  # Flatten to 1D array
+        )
+        
+        print("✅ NewEyeInHandCalibrator initialized successfully")
+        
+        # Step 4: Test data validation
+        print("\n" + "="*60)
+        print("✅ Step 4: Validate Eye-in-Hand Data")
+        print("="*60)
+        
+        is_valid = eye_in_hand_calibrator.validate_eye_in_hand_data()
+        
+        if is_valid:
+            print("✅ All eye-in-hand calibration data is valid!")
+        else:
+            print("❌ Eye-in-hand calibration data validation failed")
+            return False
+        
+        # Step 5: Display calibration information
+        print("\n" + "="*60)
+        print("📊 Step 5: Eye-in-Hand Calibration Information")
+        print("="*60)
+        
+        calib_info = eye_in_hand_calibrator.get_calibration_info()
+        print(f"📋 Calibration Info:")
+        print(f"   • Images loaded: {calib_info['image_count']}")
+        print(f"   • Robot poses: {calib_info['transform_count']}")
+        print(f"   • Pattern: {calib_info['pattern_type']}")
+        print(f"   • Has intrinsics: {calib_info['has_intrinsics']}")
+        print(f"   • Has extrinsics: {calib_info['has_extrinsics']}")
+        print(f"   • Calibration completed: {calib_info['calibration_completed']}")
+        
+        # Step 6: Test IO methods
+        print("\n" + "="*60)
+        print("💾 Step 6: Test IO Methods")
+        print("="*60)
+        
+        # Test cam2end matrix operations (should be None initially)
+        print(f"📄 Initial cam2end_matrix: {eye_in_hand_calibrator.get_cam2end_matrix()}")
+        
+        # Test setting a dummy cam2end matrix
+        dummy_cam2end = np.eye(4)
+        eye_in_hand_calibrator.set_cam2end_matrix(dummy_cam2end)
+        print(f"✅ Set dummy cam2end_matrix")
+        print(f"📄 Retrieved cam2end_matrix shape: {eye_in_hand_calibrator.get_cam2end_matrix().shape}")
+        
+        # Test getting calibration results
+        results = eye_in_hand_calibrator.get_calibration_results()
+        print(f"📊 Calibration results keys: {list(results.keys())}")
+        
+        # Step 7: Save results
+        print("\n" + "="*60)
+        print("💾 Step 7: Save Results")
+        print("="*60)
+        
+        try:
+            eye_in_hand_calibrator.save_eye_in_hand_results(results_dir)
+            print("✅ Eye-in-hand results saved successfully")
+        except Exception as e:
+            print(f"⚠️ Could not save results: {e}")
+        
+        print("\n" + "="*80)
+        print("🎉 NEW EYE-IN-HAND CALIBRATION EXAMPLE COMPLETED SUCCESSFULLY!")
+        print("="*80)
+        print(f"📊 Summary:")
+        print(f"   • Loaded {len(images)} image-pose pairs")
+        print(f"   • Intrinsic calibration RMS error: {rms_error:.4f} pixels")
+        print(f"   • All data validation: ✅ PASSED")
+        print(f"   • IO operations: ✅ TESTED")
+        print(f"   • Results saved to: {results_dir}")
+        print("\nNote: Calibration algorithms have been moved to dedicated modules.")
+        print("This example demonstrates the new IO-only architecture.")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Eye-in-hand calibrator initialization failed: {e}")
         import traceback
         traceback.print_exc()
         return False
 
 
 if __name__ == "__main__":
-    success = test_new_eye_in_hand_calibration()
-    
-    if success:
-        print(f"\n✨ Eye-in-Hand calibration example completed!")
-        print(f"   Results saved to: data/results/eye_in_hand_calibration/")
-        print(f"   ✅ Calibration and optimization successful")
-        print(f"   📸 Before/after optimization images available for comparison")
-    else:
-        print(f"\n❌ Eye-in-Hand calibration example failed!")
-        print(f"   Please check the error messages above for details")
+    main()
