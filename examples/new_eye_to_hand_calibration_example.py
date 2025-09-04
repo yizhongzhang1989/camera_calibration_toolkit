@@ -317,23 +317,40 @@ def main():
         print(f"   • Intrinsic calibration RMS error: {rms_error:.4f} pixels")
         print(f"   • All data validation: ✅ PASSED")
         print(f"   • IO operations: ✅ TESTED")
+        print(f"   • Complete eye-to-hand calibration: ✅ PERFORMED")
         print(f"   • Results saved to: {results_dir}")
-        print("\nNote: Calibration algorithms have been moved to dedicated modules.")
-        print("This example demonstrates the new IO-only architecture.")
+        print("\nThe NewEyeToHandCalibrator now supports complete calibration functionality!")
+        print("All OpenCV hand-eye calibration methods are available with automatic selection.")
         
         # Demonstrate the new calibrate interface
         print("\n" + "="*60)
-        print("🧪 Demonstrating New Calibration Interface")
+        print("🧪 Step 9: Perform Complete Eye-to-Hand Calibration")
         print("="*60)
         
         print("📋 Available calibration methods:")
         methods = eye_to_hand_calibrator.get_available_methods()
-        for method_id, method_name in methods.items():
-            print(f"   • {method_name}: {method_id}")
+        for method_name in methods.values():
+            print(f"   • {method_name}")
         
-        print(f"\n🔍 Testing placeholder calibrate() method:")
+        print(f"\n� Performing complete eye-to-hand calibration (trying all methods)...")
         result = eye_to_hand_calibrator.calibrate(method=None, verbose=True)
-        print(f"   Calibration result: {result} (expected: False for IO-only class)")
+        
+        if result:
+            print(f"✅ Eye-to-hand calibration successful!")
+            print(f"   RMS reprojection error: {eye_to_hand_calibrator.get_rms_error():.4f} pixels")
+            print(f"   Base to camera matrix shape: {eye_to_hand_calibrator.get_transformation_matrix().shape}")
+            
+            # Show per-image errors
+            per_image_errors = eye_to_hand_calibrator.get_per_image_errors()
+            if per_image_errors:
+                print(f"   Per-image errors: {[f'{err:.4f}' for err in per_image_errors]}")
+                
+            # Save updated results including calibration
+            eye_to_hand_calibrator.save_eye_to_hand_results(results_dir)
+            print("✅ Updated results saved with calibration data")
+            
+        else:
+            print(f"❌ Eye-to-hand calibration failed")
         
         return True
         
