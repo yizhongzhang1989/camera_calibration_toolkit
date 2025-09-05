@@ -7,14 +7,20 @@ This example demonstrates how to use the NewEyeInHandCalibrator class for
 eye-in-hand calibration (camera mounted on robot end-effector):
 
 1. Load robot pose images and corresponding end-effector poses from eye_in_hand_test_data
-2. Calculate intrinsic parameters using eye_in_hand_test_data images
-3. Load and validate all calibration data
+2. Perform intrinsic calibration using eye_in_hand_test_data images
+3. Initialize NewEyeInHandCalibrator with loaded data
 4. Perform complete eye-in-hand calibration with updated dictionary return format
-5. Test IO operations and save results
+5. Generate comprehensive debug images for calibration analysis
+6. Save results and test IO operations
 
-Note: This example demonstrates the complete eye-in-hand calibration workflow
-including the updated calibrate() method that returns comprehensive results
-in dictionary format instead of simple boolean values.
+Features demonstrated:
+- Updated calibrate() method with comprehensive dictionary return format
+- Complete eye-in-hand calibration workflow with JSON serialization
+- Debug image generation: pattern detection, axes visualization, reprojection analysis
+- Comprehensive calibration validation and error reporting
+
+Note: This example shows the complete workflow including visual debugging capabilities
+for analyzing calibration quality through generated test images.
 """
 
 import os
@@ -247,9 +253,9 @@ def main():
         
         print("✅ NewEyeInHandCalibrator initialized successfully")
         
-        # Step 5.5: Test Eye-in-Hand Calibration
+        # Step 4: Perform Eye-in-Hand Calibration
         print("\n" + "="*60)
-        print("🤖 Step 5.5: Test Eye-in-Hand Calibration")
+        print("🤖 Step 4: Perform Eye-in-Hand Calibration")
         print("="*60)
                 
         print("🧪 Testing calibration with automatic method selection...")
@@ -261,16 +267,65 @@ def main():
             print(f"   • Valid images: {len([p for p in eye_in_hand_calibrator.image_points if p is not None])}/{len(eye_in_hand_calibrator.image_points)}")
             print(f"   • Camera-to-end transformation matrix shape: {calibration_result['cam2end_matrix'].shape}")
             print(f"   • Target-to-base transformation matrix shape: {calibration_result['target2base_matrix'].shape}")
+            
+            # Step 5: Generate Debug Images
+            print("\n" + "="*60)
+            print("🔍 Step 5: Generate Debug Images")
+            print("="*60)
+            
+            # Set up output directory for debug images
+            debug_output_dir = os.path.join(results_dir, "debug_images")
+            os.makedirs(debug_output_dir, exist_ok=True)
+            
+            print(f"🎨 Generating debug images...")
+            
+            try:
+                # Draw detected patterns on original images
+                pattern_debug_dir = os.path.join(debug_output_dir, "pattern_detection")
+                os.makedirs(pattern_debug_dir, exist_ok=True)
+                pattern_images = eye_in_hand_calibrator.draw_pattern_on_images()
+                
+                for filename, debug_img in pattern_images:
+                    output_path = os.path.join(pattern_debug_dir, f"{filename}.jpg")
+                    cv2.imwrite(output_path, debug_img)
+                
+                print(f"   ✅ Pattern detection images: {len(pattern_images)} images saved to {pattern_debug_dir}")
+                
+                # Draw 3D axes on undistorted images
+                axes_debug_dir = os.path.join(debug_output_dir, "undistorted_axes")
+                os.makedirs(axes_debug_dir, exist_ok=True)
+                axes_images = eye_in_hand_calibrator.draw_axes_on_undistorted_images()
+                
+                for filename, debug_img in axes_images:
+                    output_path = os.path.join(axes_debug_dir, f"{filename}.jpg")
+                    cv2.imwrite(output_path, debug_img)
+                
+                print(f"   ✅ Undistorted axes images: {len(axes_images)} images saved to {axes_debug_dir}")
+                
+                # Draw pattern point reprojections on original images
+                reprojection_debug_dir = os.path.join(debug_output_dir, "reprojection_analysis")
+                os.makedirs(reprojection_debug_dir, exist_ok=True)
+                reprojection_images = eye_in_hand_calibrator.draw_reprojection_on_images()
+                
+                for filename, debug_img in reprojection_images:
+                    output_path = os.path.join(reprojection_debug_dir, f"{filename}.jpg")
+                    cv2.imwrite(output_path, debug_img)
+                
+                print(f"   ✅ Reprojection analysis images: {len(reprojection_images)} images saved to {reprojection_debug_dir}")
+                print(f"   📁 All debug images saved to: {debug_output_dir}")
+                
+            except Exception as e:
+                print(f"   ⚠️ Warning: Debug image generation failed: {e}")
         else:
             print("❌ Eye-in-hand calibration failed")
-        
-        # Step 7: Save results
+
+        # Step 6: Save Results
         print("\n" + "="*60)
-        print("💾 Step 7: Save Results")
+        print("💾 Step 6: Save Results")
         print("="*60)
         
         try:
-            eye_in_hand_calibrator.save_eye_in_hand_results(results_dir)
+            eye_in_hand_calibrator.save_results(results_dir)
             print("✅ Eye-in-hand results saved successfully")
         except Exception as e:
             print(f"⚠️ Could not save results: {e}")

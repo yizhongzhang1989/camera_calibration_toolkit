@@ -287,6 +287,76 @@ class NewEyeInHandCalibrator(HandEyeBaseCalibrator):
             self.calibration_completed = False
             return None
 
+    def to_json(self) -> dict:
+        """
+        Serialize eye-in-hand calibrator state to JSON-compatible dictionary.
+        
+        Extends HandEyeBaseCalibrator.to_json() to include eye-in-hand specific data:
+        - cam2end_matrix: Camera to end-effector transformation matrix
+        - target2base_matrix: Target to base transformation matrix
+        
+        Returns:
+            dict: JSON-compatible dictionary containing complete calibrator state
+        """
+        # Get base class data (HandEyeBaseCalibrator -> BaseCalibrator)
+        data = super().to_json()
+        
+        # Add eye-in-hand specific data
+        if self.cam2end_matrix is not None:
+            data['cam2end_matrix'] = self.cam2end_matrix.tolist()
+            
+        if self.target2base_matrix is not None:
+            data['target2base_matrix'] = self.target2base_matrix.tolist()
+        
+        # Add calibration type identifier
+        data['calibration_type'] = 'eye_in_hand'
+        
+        return data
+
+    def from_json(self, data: dict) -> None:
+        """
+        Deserialize eye-in-hand calibrator state from JSON-compatible dictionary.
+        
+        Extends HandEyeBaseCalibrator.from_json() to load eye-in-hand specific data:
+        - cam2end_matrix: Camera to end-effector transformation matrix
+        - target2base_matrix: Target to base transformation matrix
+        
+        Args:
+            data: JSON-compatible dictionary containing calibrator state
+        """
+        # Load base class data first (HandEyeBaseCalibrator -> BaseCalibrator)
+        super().from_json(data)
+        
+        # Load eye-in-hand specific data
+        if 'cam2end_matrix' in data:
+            self.cam2end_matrix = np.array(data['cam2end_matrix'], dtype=np.float32)
+            
+        if 'target2base_matrix' in data:
+            self.target2base_matrix = np.array(data['target2base_matrix'], dtype=np.float32)
+
+    def save_results(self, save_directory: str) -> None:
+        """
+        Save eye-in-hand calibration results to files using JSON serialization.
+        
+        Args:
+            save_directory: Directory to save results
+        """
+        import os
+        import json
+        
+        # Create directory if it doesn't exist
+        os.makedirs(save_directory, exist_ok=True)
+        
+        # Get complete calibration state as JSON
+        calibration_data = self.to_json()
+        
+        # Save as JSON file
+        json_filepath = os.path.join(save_directory, 'eye_in_hand_calibration_results.json')
+        with open(json_filepath, 'w') as f:
+            json.dump(calibration_data, f, indent=4)
+        
+        print(f"✅ Eye-in-hand calibration results saved to: {json_filepath}")
+
     # ============================================================================
     # Eye-in-Hand Specific IO Methods
     # ============================================================================
@@ -363,54 +433,6 @@ class NewEyeInHandCalibrator(HandEyeBaseCalibrator):
         return self.cam2end_matrix
     
     # ============================================================================
-    # Eye-in-Hand Specific Result Access Methods
-    # ============================================================================
-    
-    def get_calibration_results(self) -> Dict[str, Any]:
-        """
-        Get eye-in-hand specific calibration results.
-        
-        Returns:
-            dict: Dictionary containing eye-in-hand calibration results
-        """
-        base_info = self.get_calibration_info()
-        
-        eye_in_hand_info = {
-            "calibration_type": "eye_in_hand",
-            "cam2end_matrix": self.cam2end_matrix.tolist() if self.cam2end_matrix is not None else None,
-            "target2base_matrix": self.target2base_matrix.tolist() if self.target2base_matrix is not None else None,
-            "has_cam2end": self.cam2end_matrix is not None,
-            "has_target2base": self.target2base_matrix is not None
-        }
-        
-        # Merge base info with eye-in-hand specific info
-        base_info.update(eye_in_hand_info)
-        return base_info
-    
-    def save_eye_in_hand_results(self, save_directory: str) -> None:
-        """
-        Save eye-in-hand calibration results to directory.
-        
-        Args:
-            save_directory: Directory to save results
-        """
-        try:
-            os.makedirs(save_directory, exist_ok=True)
-            
-            # Get all calibration results
-            results = self.get_calibration_results()
-            
-            # Save main results file
-            results_file = os.path.join(save_directory, "eye_in_hand_calibration_results.json")
-            with open(results_file, 'w') as f:
-                json.dump(results, f, indent=2)
-            
-            print(f"✅ Eye-in-hand calibration results saved to: {results_file}")
-            
-        except Exception as e:
-            print(f"❌ Failed to save eye-in-hand results: {e}")
-    
-    # ============================================================================
     # Validation Methods
     # ============================================================================
     
@@ -458,26 +480,6 @@ class NewEyeInHandCalibrator(HandEyeBaseCalibrator):
         """
         return (self.is_calibrated() and 
                 self.cam2end_matrix is not None)
-
-    def get_calibration_results(self) -> Dict[str, Any]:
-        """
-        Get complete eye-in-hand calibration results.
-        
-        Returns:
-            Dict containing all calibration data and results
-        """
-        # Return all eye-in-hand calibration data
-        return {
-            'images': self.images,
-            'image_paths': self.image_paths,
-            'end2base_matrices': self.end2base_matrices,
-            'cam2end_matrix': self.cam2end_matrix,
-            'target2base_matrix': self.target2base_matrix,
-            'camera_matrix': self.camera_matrix,
-            'distortion_coefficients': self.distortion_coefficients,
-            'calibration_pattern': self.calibration_pattern,
-            'rms_error': self.rms_error
-        }
 
     def _calculate_optimal_target2base_matrix(self, cam2end_4x4: np.ndarray, verbose: bool = False) -> np.ndarray:
         """
@@ -711,15 +713,6 @@ class NewEyeInHandCalibrator(HandEyeBaseCalibrator):
             if verbose:
                 print(f"   Calibration failed: {e}")
             return False, None, None, float('inf'), None
-
-    def save_results(self, save_directory: str) -> None:
-        """
-        Save eye-in-hand calibration results to directory.
-        
-        Args:
-            save_directory: Directory to save results to
-        """
-        self.save_eye_in_hand_results(save_directory)
 
     def optimize_calibration(self, ftol_rel: float = 1e-6, verbose: bool = False) -> Tuple[float, float]:
         """
