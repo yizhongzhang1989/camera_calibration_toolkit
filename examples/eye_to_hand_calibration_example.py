@@ -1,26 +1,27 @@
 #!/usr/bin/env python3
 """
-Eye-to-Hand Calibration Example
-===============================
+Eye-to-Hand Calibration Test Script
+===================================
 
-This example demonstrates how to use the EyeToHandCalibrator class for
+This test script validates the EyeToHandCalibrator class for
 eye-to-hand calibration (stationary camera looking at robot end-effector):
 
 1. Load robot pose images and corresponding end-effector poses from eye_to_hand_test_data
 2. Perform intrinsic calibration using intrinsic_calib_grid_test_images
 3. Initialize EyeToHandCalibrator with loaded data
-4. Perform complete eye-to-hand calibration with updated dictionary return format
+4. Perform complete eye-to-hand calibration with error validation
 5. Generate comprehensive debug images for calibration analysis
 6. Save results and test IO operations
 
-Features demonstrated:
+Test Features:
+- RMS error threshold validation (fails if > 1.0 pixel)
 - Updated calibrate() method with comprehensive dictionary return format
 - Complete eye-to-hand calibration workflow with JSON serialization
 - Debug image generation: pattern detection, axes visualization, reprojection analysis
 - Comprehensive calibration validation and error reporting
 
-Note: This example shows the complete workflow including visual debugging capabilities
-for analyzing calibration quality through generated test images.
+Note: This test script validates calibration quality through error threshold checking
+and raises exceptions for calibration failures to ensure robust validation.
 """
 
 import os
@@ -176,9 +177,10 @@ def load_data(data_dir: str) -> tuple:
         return None, None
 
 
-def main():
+def test_eye_to_hand_calibration():
     """
-    Main function demonstrating complete eye-to-hand calibration with updated dictionary return format.
+    Test function demonstrating complete eye-to-hand calibration with error validation.
+    Raises exception if RMS error > 1 pixel threshold.
     """
     print("=" * 80)
     print("🤖 Eye-to-Hand Calibration Example - Complete Calibration Workflow")
@@ -241,6 +243,13 @@ def main():
         calibration_result = eye_to_hand_calibrator.calibrate(method=None, verbose=True)
 
         if calibration_result is not None:
+            # Check RMS error threshold - consider calibration failed if > 1 pixel
+            rms_error = calibration_result['rms_error']
+            if rms_error > 1.0:
+                print(f"❌ Eye-to-hand calibration failed!")
+                print(f"   RMS Error: {rms_error:.4f} pixels (threshold: 1.0)")
+                raise ValueError(f"Eye-to-hand calibration RMS error {rms_error:.4f} exceeds threshold of 1.0 pixels")
+            
             print(f"✅ Eye-to-hand calibration completed successfully!")
             print(f"   • RMS error: {calibration_result['rms_error']:.4f} pixels")
             print(f"   • Valid images: {len([p for p in eye_to_hand_calibrator.image_points if p is not None])}/{len(eye_to_hand_calibrator.image_points)}")
@@ -297,6 +306,7 @@ def main():
                 print(f"   ⚠️ Warning: Debug image generation failed: {e}")
         else:
             print("❌ Eye-to-hand calibration failed")
+            raise ValueError("Eye-to-hand calibration failed")
 
         # Step 6: Save Results
         print("\n" + "="*60)
@@ -310,7 +320,7 @@ def main():
             print(f"⚠️ Could not save results: {e}")
 
         print("\n" + "="*80)
-        print("🎉 EYE-TO-HAND CALIBRATION EXAMPLE COMPLETED SUCCESSFULLY!")
+        print("🎉 EYE-TO-HAND CALIBRATION TEST COMPLETED SUCCESSFULLY!")
         print("="*80)
         print(f"📊 Summary:")
         print(f"   • Loaded {len(image_paths)} image-pose pairs")
@@ -325,8 +335,7 @@ def main():
         print(f"   • All data validation: ✅ PASSED")
         print(f"   • IO operations: ✅ TESTED")
         print(f"   • Results saved to: {results_dir}")
-        print("\nNote: This example demonstrates the complete eye-to-hand calibration workflow")
-        print("with the updated dictionary return format from the calibrate() method.")
+        print("\nNote: This test validates eye-to-hand calibration with RMS error threshold checking.")
 
         return True
 
@@ -336,6 +345,41 @@ def main():
         traceback.print_exc()
         return False
 
+
+def main():
+    """
+    Main function to run eye-to-hand calibration test with error handling.
+    """
+    print("Starting Eye-to-Hand Calibration Test...")
+    
+    success_count = 0
+    total_tests = 1
+    
+    try:
+        print("\n" + "="*60)
+        print("🤖 Testing Eye-to-Hand Calibration")
+        print("="*60)
+        
+        test_eye_to_hand_calibration()
+        success_count += 1
+        print("✅ Eye-to-hand calibration test: PASSED")
+        
+    except Exception as e:
+        print(f"❌ Eye-to-hand calibration test: FAILED - {e}")
+        import traceback
+        traceback.print_exc()
+    
+    print("\n" + "="*60)
+    print("📊 Test Summary")
+    print("="*60)
+    print(f"Tests passed: {success_count}/{total_tests}")
+    
+    if success_count == total_tests:
+        print("🎉 All tests passed!")
+        return True
+    else:
+        print(f"❌ {total_tests - success_count} test(s) failed!")
+        return False
 
 if __name__ == "__main__":
     main()
