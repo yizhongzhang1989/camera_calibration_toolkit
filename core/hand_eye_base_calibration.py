@@ -512,7 +512,7 @@ class HandEyeBaseCalibrator(BaseCalibrator):
         if valid_matrices < 3:
             raise ValueError(f"Need at least 3 valid target2cam matrices, got {valid_matrices}")
 
-    def calibrate(self, method: Optional[int] = None, verbose: bool = False) -> bool:
+    def calibrate(self, method: Optional[int] = None, verbose: bool = False) -> Optional[Dict[str, Any]]:
         """
         Perform hand-eye calibration using the specified method or find the best method.
         
@@ -530,7 +530,16 @@ class HandEyeBaseCalibrator(BaseCalibrator):
             verbose: Whether to print detailed calibration progress and results
             
         Returns:
-            bool: True if calibration succeeded, False otherwise
+            Optional[Dict[str, Any]]: Dictionary containing calibration results if successful, None if failed.
+            The result dictionary should contain at minimum:
+            - 'success': bool - True if calibration succeeded
+            - 'method': int - OpenCV method constant used
+            - 'method_name': str - Human-readable method name
+            - 'rms_error': float - Overall RMS reprojection error
+            - 'per_image_errors': List[float] - Per-image reprojection errors
+            - 'valid_images': int - Number of valid images used in calibration
+            - 'total_images': int - Total number of images processed
+            Additional keys specific to eye-in-hand or eye-to-hand should be included.
             
         Raises:
             NotImplementedError: This is an abstract method that must be implemented by subclasses

@@ -351,7 +351,7 @@ class NewEyeToHandCalibrator(HandEyeBaseCalibrator):
         
         return self._calculate_reprojection_errors(base2cam_matrix, target2end_matrix, verbose)
 
-    def calibrate(self, method: Optional[int] = None, verbose: bool = False) -> bool:
+    def calibrate(self, method: Optional[int] = None, verbose: bool = False) -> Optional[Dict[str, Any]]:
         """
         Perform eye-to-hand calibration using the specified method or find the best method.
         
@@ -370,7 +370,17 @@ class NewEyeToHandCalibrator(HandEyeBaseCalibrator):
             verbose: Whether to print detailed calibration progress and results
             
         Returns:
-            bool: True if calibration succeeded, False otherwise
+            Optional[Dict[str, Any]]: Dictionary containing calibration results if successful, None if failed.
+            Result dictionary contains:
+            - 'success': bool - True if calibration succeeded
+            - 'method': int - OpenCV method constant used
+            - 'method_name': str - Human-readable method name
+            - 'base2cam_matrix': np.ndarray - Base to camera transformation matrix
+            - 'target2end_matrix': np.ndarray - Target to end-effector transformation matrix
+            - 'rms_error': float - Overall RMS reprojection error
+            - 'per_image_errors': List[float] - Per-image reprojection errors
+            - 'valid_images': int - Number of valid images used in calibration
+            - 'total_images': int - Total number of images processed
             
         Note:
             Before calling this method, ensure that:
@@ -389,8 +399,11 @@ class NewEyeToHandCalibrator(HandEyeBaseCalibrator):
             # Validate prerequisites
             self._validate_calibration_prerequisites()
             
+            valid_images = len([p for p in self.image_points if p is not None])
+            total_images = len(self.image_points) if self.image_points else 0
+            
             if verbose:
-                print(f"🤖 Running eye-to-hand calibration with {len([p for p in self.image_points if p is not None])} image-pose pairs")
+                print(f"🤖 Running eye-to-hand calibration with {valid_images} image-pose pairs")
             
             # If no method specified, try all methods and find the best
             if method is None:
@@ -451,11 +464,22 @@ class NewEyeToHandCalibrator(HandEyeBaseCalibrator):
                         print(f"Base to camera transformation matrix:")
                         print(f"{best_base2cam}")
                     
-                    return True
+                    # Return calibration results as dictionary
+                    return {
+                        'success': True,
+                        'method': best_method,
+                        'method_name': best_method_name,
+                        'base2cam_matrix': best_base2cam,
+                        'target2end_matrix': best_target2end,
+                        'rms_error': best_rms_error,
+                        'per_image_errors': best_per_image_errors,
+                        'valid_images': valid_images,
+                        'total_images': total_images
+                    }
                 else:
                     if verbose:
                         print("❌ All calibration methods failed")
-                    return False
+                    return None
             
             else:
                 # Use the specified method
@@ -481,17 +505,28 @@ class NewEyeToHandCalibrator(HandEyeBaseCalibrator):
                         print(f"Base to camera transformation matrix:")
                         print(f"{base2cam_matrix}")
                     
-                    return True
+                    # Return calibration results as dictionary
+                    return {
+                        'success': True,
+                        'method': method,
+                        'method_name': method_name,
+                        'base2cam_matrix': base2cam_matrix,
+                        'target2end_matrix': target2end_matrix,
+                        'rms_error': rms_error,
+                        'per_image_errors': per_image_errors,
+                        'valid_images': valid_images,
+                        'total_images': total_images
+                    }
                 else:
                     if verbose:
                         print(f"❌ Eye-to-hand calibration failed with method {method_name}")
-                    return False
+                    return None
                     
         except Exception as e:
             if verbose:
                 print(f"❌ Eye-to-hand calibration failed: {e}")
             self.calibration_completed = False
-            return False
+            return None
 
     def _calculate_reprojection_errors(self, base2cam_matrix: np.ndarray, target2end_matrix: np.ndarray, verbose: bool = False) -> Tuple[float, List[float]]:
         """

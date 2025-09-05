@@ -231,22 +231,9 @@ def main():
         
         print("✅ NewEyeToHandCalibrator initialized successfully")
         
-        # Step 5: Test data validation
+        # Step 5: Calculate target-to-camera matrices
         print("\n" + "="*60)
-        print("✅ Step 5: Validate Eye-to-Hand Data")
-        print("="*60)
-        
-        is_valid = eye_to_hand_calibrator.validate_eye_to_hand_data()
-        
-        if is_valid:
-            print("✅ All eye-to-hand calibration data is valid!")
-        else:
-            print("❌ Eye-to-hand calibration data validation failed")
-            return False
-        
-        # Step 5.5: Calculate target-to-camera matrices
-        print("\n" + "="*60)
-        print("🎯 Step 5.5: Calculate Target-to-Camera Matrices")
+        print("🎯 Step 5: Calculate Target-to-Camera Matrices")
         print("="*60)
         
         try:
@@ -335,15 +322,18 @@ def main():
         print(f"\n� Performing complete eye-to-hand calibration (trying all methods)...")
         result = eye_to_hand_calibrator.calibrate(method=None, verbose=True)
         
-        if result:
+        if result is not None:
             print(f"✅ Eye-to-hand calibration successful!")
-            print(f"   RMS reprojection error: {eye_to_hand_calibrator.get_rms_error():.4f} pixels")
-            print(f"   Base to camera matrix shape: {eye_to_hand_calibrator.get_transformation_matrix().shape}")
+            print(f"   Method used: {result['method_name']} ({result['method']})")
+            print(f"   RMS reprojection error: {result['rms_error']:.4f} pixels")
+            print(f"   Valid images used: {result['valid_images']}/{result['total_images']}")
+            print(f"   Base to camera matrix shape: {result['base2cam_matrix'].shape}")
+            print(f"   Target to end matrix shape: {result['target2end_matrix'].shape}")
             
             # Show per-image errors
-            per_image_errors = eye_to_hand_calibrator.get_per_image_errors()
-            if per_image_errors:
-                print(f"   Per-image errors: {[f'{err:.4f}' for err in per_image_errors]}")
+            if result['per_image_errors']:
+                valid_errors = [f"{err:.4f}" for err in result['per_image_errors'] if err != float('inf')]
+                print(f"   Per-image errors: {valid_errors}")
                 
             # Save updated results including calibration
             eye_to_hand_calibrator.save_eye_to_hand_results(results_dir)

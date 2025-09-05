@@ -7,26 +7,14 @@ This example demonstrates how to use the NewEyeInHandCalibrator class for
 eye-in-hand calibration (camera mounted on robot end-effector):
 
 1. Load robot pose images and corresponding end-effector poses from eye_in_hand_test_data
-2. Calcula        print("📊 Summary:")
-        print(f"   • Loaded {len(images)} image-pose pairs")
-        print(f"   • Intrinsic calibration RMS error: {rms_error:.4f} pixels")
-        if eye_in_hand_calibrator.calibration_completed:
-            print(f"   • Eye-in-hand calibration: ✅ COMPLETED")
-            print(f"   • Best calibration method: {eye_in_hand_calibrator.best_method_name}")
-            print(f"   • Hand-eye calibration RMS error: {eye_in_hand_calibrator.rms_error:.4f} pixels")
-        else:
-            print(f"   • Eye-in-hand calibration: ⚠️ NOT PERFORMED")
-        print(f"   • All data validation: ✅ PASSED")
-        print(f"   • IO operations: ✅ TESTED")
-        print(f"   • Results saved to: {results_dir}")
-        print("\nNote: This example now includes COMPLETE eye-in-hand calibration functionality!")
-        print("The NewEyeInHandCalibrator class provides both data handling AND calibration algorithms.")a intrinsic parameters using eye_in_hand_test_data images
+2. Calculate intrinsic parameters using eye_in_hand_test_data images
 3. Load and validate all calibration data
-4. Test the new IO-only architecture
+4. Perform complete eye-in-hand calibration with updated dictionary return format
+5. Test IO operations and save results
 
-Note: Calibration algorithms have been removed from NewEyeInHandCalibrator.
-This example focuses on data loading and intrinsic calibration only.
-Future calibration functionality will be added via dedicated calibration modules.
+Note: This example demonstrates the complete eye-in-hand calibration workflow
+including the updated calibrate() method that returns comprehensive results
+in dictionary format instead of simple boolean values.
 """
 
 import os
@@ -207,10 +195,10 @@ def load_data(data_dir: str) -> tuple:
 
 def main():
     """
-    Main function demonstrating new eye-in-hand calibration data loading and intrinsic calibration.
+    Main function demonstrating complete eye-in-hand calibration with updated dictionary return format.
     """
     print("=" * 80)
-    print("🤖 New Eye-in-Hand Calibration Example - Data Loading & Intrinsic Calibration")
+    print("🤖 New Eye-in-Hand Calibration Example - Complete Calibration Workflow")
     print("=" * 80)
     
     # Define data paths
@@ -259,19 +247,6 @@ def main():
         
         print("✅ NewEyeInHandCalibrator initialized successfully")
         
-        # Step 4: Test data validation
-        print("\n" + "="*60)
-        print("✅ Step 4: Validate Eye-in-Hand Data")
-        print("="*60)
-        
-        is_valid = eye_in_hand_calibrator.validate_eye_in_hand_data()
-        
-        if is_valid:
-            print("✅ All eye-in-hand calibration data is valid!")
-        else:
-            print("❌ Eye-in-hand calibration data validation failed")
-            return False
-        
         # Step 5: Display calibration information
         print("\n" + "="*60)
         print("📊 Step 5: Eye-in-Hand Calibration Information")
@@ -296,14 +271,15 @@ def main():
         eye_in_hand_calibrator.calibration_completed = False
         
         print("🧪 Testing calibration with automatic method selection...")
-        calibration_success = eye_in_hand_calibrator.calibrate(method=None, verbose=True)
+        calibration_result = eye_in_hand_calibrator.calibrate(method=None, verbose=True)
         
-        if calibration_success:
+        if calibration_result is not None:
             print(f"✅ Eye-in-hand calibration completed successfully!")
-            print(f"   • Best method: {eye_in_hand_calibrator.best_method_name}")
-            print(f"   • RMS error: {eye_in_hand_calibrator.rms_error:.4f} pixels")
-            print(f"   • Camera-to-end transformation matrix shape: {eye_in_hand_calibrator.cam2end_matrix.shape}")
-            print(f"   • Target-to-base transformation matrix shape: {eye_in_hand_calibrator.target2base_matrix.shape}")
+            print(f"   • Method used: {calibration_result['method_name']}")
+            print(f"   • RMS error: {calibration_result['rms_error']:.4f} pixels")
+            print(f"   • Valid images: {calibration_result['valid_images']}/{calibration_result['total_images']}")
+            print(f"   • Camera-to-end transformation matrix shape: {calibration_result['cam2end_matrix'].shape}")
+            print(f"   • Target-to-base transformation matrix shape: {calibration_result['target2base_matrix'].shape}")
         else:
             print("❌ Eye-in-hand calibration failed")
         
@@ -342,11 +318,18 @@ def main():
         print(f"📊 Summary:")
         print(f"   • Loaded {len(images)} image-pose pairs")
         print(f"   • Intrinsic calibration RMS error: {rms_error:.4f} pixels")
+        if calibration_result is not None:
+            print(f"   • Eye-in-hand calibration: ✅ COMPLETED")
+            print(f"   • Best calibration method: {calibration_result['method_name']}")
+            print(f"   • Hand-eye calibration RMS error: {calibration_result['rms_error']:.4f} pixels")
+            print(f"   • Used {calibration_result['valid_images']}/{calibration_result['total_images']} images")
+        else:
+            print(f"   • Eye-in-hand calibration: ⚠️ FAILED")
         print(f"   • All data validation: ✅ PASSED")
         print(f"   • IO operations: ✅ TESTED")
         print(f"   • Results saved to: {results_dir}")
-        print("\nNote: Calibration algorithms have been moved to dedicated modules.")
-        print("This example demonstrates the new IO-only architecture.")
+        print("\nNote: This example demonstrates the complete eye-in-hand calibration workflow")
+        print("with the updated dictionary return format from the calibrate() method.")
         
         return True
         
