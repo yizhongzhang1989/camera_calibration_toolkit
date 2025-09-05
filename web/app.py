@@ -256,6 +256,130 @@ def upload_images():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/upload_paired_files', methods=['POST'])
+def upload_paired_files():
+    """Upload image and JSON files together, ensuring each image has a corresponding JSON file."""
+    try:
+        session_id = request.form.get('session_id', 'default')
+        calibration_type = request.form.get('calibration_type', 'eye_in_hand')
+        
+        if 'files' not in request.files:
+            return jsonify({'error': 'No files provided'}), 400
+        
+        files = request.files.getlist('files')
+        if not files or all(file.filename == '' for file in files):
+            return jsonify({'error': 'No files selected'}), 400
+        
+        session_folder = get_session_folder(session_id)
+        images_folder = os.path.join(session_folder, 'images')
+        poses_folder = os.path.join(session_folder, 'poses')
+        os.makedirs(images_folder, exist_ok=True)
+        os.makedirs(poses_folder, exist_ok=True)
+        
+        # Separate image and JSON files
+        image_files = []
+        json_files = []
+        
+        for file in files:
+            if file and allowed_file(file.filename):
+                image_files.append(file)
+            elif file and allowed_file(file.filename, ALLOWED_POSE_EXTENSIONS):
+                json_files.append(file)
+        
+        # Validate pairing - each image should have a corresponding JSON file
+        image_base_names = {os.path.splitext(secure_filename(f.filename))[0] for f in image_files}
+        json_base_names = {os.path.splitext(secure_filename(f.filename))[0] for f in json_files}
+        
+        missing_json = image_base_names - json_base_names
+        missing_images = json_base_names - image_base_names
+        
+        if missing_json:
+            return jsonify({
+                'error': f'Missing JSON files for images: {", ".join(missing_json)}.jpg (expected: {", ".join(missing_json)}.json)'
+            }), 400
+        
+        if missing_images:
+            return jsonify({
+                'error': f'Missing image files for JSON: {", ".join(missing_images)}.json (expected: {", ".join(missing_images)}.jpg)'
+            }), 400
+        
+        # Process paired files
+        uploaded_images = []
+        uploaded_poses = []
+        
+        for image_file in image_files:
+            image_filename = secure_filename(image_file.filename)
+            base_name = os.path.splitext(image_filename)[0]
+            
+            # Find corresponding JSON file
+            json_file = next((f for f in json_files if os.path.splitext(secure_filename(f.filename))[0] == base_name), None)
+            
+            if json_file:
+                # Save image
+                image_path = os.path.join(images_folder, image_filename)
+                image_file.save(image_path)
+                
+                # Save and validate JSON
+                json_filename = secure_filename(json_file.filename)
+                json_path = os.path.join(poses_folder, json_filename)
+                json_file.save(json_path)
+                
+                # Validate JSON format
+                try:
+                    with open(json_path, 'r') as f:
+                        pose_data = json.load(f)
+                    
+                    # Check for required 'end2base' key
+                    if 'end2base' not in pose_data:
+                        os.remove(image_path)
+                        os.remove(json_path)
+                        return jsonify({'error': f'JSON file {json_filename} missing required "end2base" key'}), 400
+                    
+                    uploaded_images.append({
+                        'name': image_filename,
+                        'path': image_path,
+                        'url': url_for('get_image', session_id=session_id, filename=image_filename)
+                    })
+                    
+                    uploaded_poses.append({
+                        'name': json_filename,
+                        'path': json_path
+                    })
+                    
+                except json.JSONDecodeError:
+                    os.remove(image_path)
+                    os.remove(json_path)
+                    return jsonify({'error': f'Invalid JSON format in {json_filename}'}), 400
+        
+        # Update session data
+        if session_id not in session_data:
+            session_data[session_id] = {}
+        
+        # Append new files to existing ones (if any)
+        existing_images = session_data[session_id].get('images', [])
+        existing_poses = session_data[session_id].get('poses', [])
+        
+        all_images = existing_images + uploaded_images
+        all_poses = existing_poses + uploaded_poses
+        
+        session_data[session_id]['images'] = all_images
+        session_data[session_id]['poses'] = all_poses
+        session_data[session_id]['calibration_type'] = calibration_type
+        
+        print(f"📁 DEBUG: Upload completed for session {session_id}")
+        print(f"📁 DEBUG: Session now has {len(all_images)} images and {len(all_poses)} poses")
+        print(f"📁 DEBUG: Session keys after upload: {list(session_data[session_id].keys())}")
+        
+        return jsonify({
+            'message': f'Successfully uploaded {len(uploaded_images)} paired image-pose files. Total: {len(all_images)} images with poses',
+            'images': all_images,
+            'poses': all_poses
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/upload_poses', methods=['POST'])
 def upload_poses():
     """Upload robot pose files for eye-in-hand calibration."""
@@ -370,6 +494,10 @@ def set_parameters():
             session_data[session_id] = {}
         session_data[session_id]['parameters'] = parameters
         
+        print(f"⚙️ DEBUG: Parameters set for session {session_id}")
+        print(f"⚙️ DEBUG: Parameter keys: {list(parameters.keys())}")
+        print(f"⚙️ DEBUG: Session keys after parameters: {list(session_data[session_id].keys())}")
+        
         return jsonify({'message': 'Parameters set successfully'})
         
     except Exception as e:
@@ -399,6 +527,15 @@ def calibrate():
                 return jsonify({'error': 'No session data found'}), 400
             
             session_info = session_data[session_id]
+            
+            # Debug: Print current session data structure
+            print(f"�?DEBUG: Session data keys: {list(session_info.keys())}")
+            print(f"�?DEBUG: Has images: {'images' in session_info}")
+            print(f"�?DEBUG: Has parameters: {'parameters' in session_info}")
+            if 'images' in session_info:
+                print(f"�?DEBUG: Number of images: {len(session_info['images'])}")
+            if 'parameters' in session_info:
+                print(f"�?DEBUG: Parameters keys: {list(session_info['parameters'].keys())}")
             
             # Check required data
             if 'images' not in session_info or 'parameters' not in session_info:
@@ -698,9 +835,12 @@ def calibrate():
                         # Use the JSON pattern directly (always available since set_parameters requires it)
                         pattern_json = parameters['pattern_json']
                         pattern = create_pattern_from_json(pattern_json)
-                        print(f"�?Created pattern from JSON: {pattern_json['pattern_id']}")
+                        print(f"✅ Created pattern from JSON: {pattern_json['pattern_id']}")
+                        print(f"✅ Pattern parameters: {pattern_json.get('parameters', {})}")
+                        print(f"✅ Pattern info: {pattern.get_info()}")
                     except Exception as e:
-                        print(f"�?Error creating calibration pattern: {str(e)}")
+                        print(f"❌ Error creating calibration pattern: {str(e)}")
+                        print(f"❌ Pattern JSON: {parameters.get('pattern_json', 'NOT FOUND')}")
                         return jsonify({'error': f'Error creating calibration pattern: {str(e)}'}), 400
                     
                     intrinsic_cal = IntrinsicCalibrator(
@@ -722,135 +862,106 @@ def calibrate():
                     dist_coeffs = intrinsic_cal.get_distortion_coefficients()
                     rms_error = intrinsic_cal.get_rms_error()
                     
+                    # Ensure distortion coefficients are 1D array
+                    if dist_coeffs is not None:
+                        dist_coeffs = dist_coeffs.flatten()
+                    
                     # Check RMS error threshold - consider calibration failed if > 0.5
                     if rms_error > 0.5:
                         print(f"Intrinsic calibration failed - RMS error too high: {rms_error:.4f} pixels")
                         return jsonify({'error': f'Intrinsic calibration failed - RMS error too high: {rms_error:.4f} pixels (threshold: 0.5)'}), 500
                 
-                # Create eye-in-hand calibrator instance with modern API
-                # Reuse the same pattern that was used for intrinsic calibration
-                eye_in_hand_calibrator = EyeInHandCalibrator(
-                    camera_matrix=camera_matrix,
-                    distortion_coefficients=dist_coeffs,
-                    calibration_pattern=pattern  # Use same pattern from intrinsic calibration
-                )
+                # Create eye-in-hand calibrator instance with correct constructor approach
+                # Following the pattern from examples/eye_in_hand_calibration_example.py
                 
-                print(f"�?Eye-in-hand calibrator initialized with modern API")
+                # Add required import
+                from core.utils import xyz_rpy_to_matrix
                 
-                # Load pose data - manually handle separate images and poses folders
+                # Load images as cv2 image arrays
                 session_folder = get_session_folder(session_id)
+                images_folder = os.path.join(session_folder, 'images')
                 poses_folder = os.path.join(session_folder, 'poses')
                 
                 try:
-                    # Use the already loaded image paths (from the images we processed for intrinsic calibration)
-                    image_paths_sorted = image_paths
+                    # Load images as cv2 arrays (not paths)
+                    loaded_images = []
+                    end2base_matrices = []
                     
-                    # Load poses from poses folder
-                    pose_json_paths = []
+                    # Get sorted list of image files
                     import glob
+                    image_files = glob.glob(os.path.join(images_folder, "*.jpg"))
+                    image_files.extend(glob.glob(os.path.join(images_folder, "*.jpeg")))
+                    image_files.extend(glob.glob(os.path.join(images_folder, "*.png")))
+                    image_files = sorted(image_files, key=lambda x: int(os.path.split(x)[-1].split('.')[0])
+                                       if os.path.split(x)[-1].split('.')[0].isdigit() else 0)
+                    
                     pose_json_paths = glob.glob(os.path.join(poses_folder, "*.json"))
                     pose_json_paths = sorted(pose_json_paths, key=lambda x: int(os.path.split(x)[-1].split('.')[0])
                                            if os.path.split(x)[-1].split('.')[0].isdigit() else 0)
                     
-                    if len(image_paths_sorted) != len(pose_json_paths):
-                        print(f"�?ERROR: Number of images ({len(image_paths_sorted)}) does not match number of pose files ({len(pose_json_paths)})")
-                        return jsonify({'error': f'Number of images ({len(image_paths_sorted)}) does not match number of pose files ({len(pose_json_paths)})'}), 400
+                    if len(image_files) != len(pose_json_paths):
+                        print(f"❌ ERROR: Number of images ({len(image_files)}) does not match number of pose files ({len(pose_json_paths)})")
+                        return jsonify({'error': f'Number of images ({len(image_files)}) does not match number of pose files ({len(pose_json_paths)})'}), 400
                     
-                    # Load end-effector poses and convert to format expected by modern API
-                    from core.utils import xyz_rpy_to_matrix, inverse_transform_matrix
-                    robot_poses = []
-                    for pose_path in pose_json_paths:
+                    # Load images as cv2 arrays and poses as matrices (following example pattern)
+                    for i, (img_path, pose_path) in enumerate(zip(image_files, pose_json_paths)):
+                        # Load image as cv2 array
+                        image = cv2.imread(img_path)
+                        if image is None:
+                            print(f"❌ Failed to load image: {img_path}")
+                            continue
+                            
+                        # Load pose and convert to transformation matrix
                         with open(pose_path, 'r', encoding='utf-8') as f:
                             pose_data = json.load(f)
-                            # Modern API expects the full pose_data dict structure
-                            robot_poses.append(pose_data)
+                            
+                        # Use pre-computed end2base matrix if available, otherwise convert from xyz_rpy
+                        if 'end2base' in pose_data:
+                            end2base_matrix = np.array(pose_data['end2base'], dtype=np.float32)
+                        elif 'end_xyzrpy' in pose_data:
+                            pose_xyzrpy = pose_data['end_xyzrpy']
+                            end2base_matrix = xyz_rpy_to_matrix(
+                                pose_xyzrpy['x'], pose_xyzrpy['y'], pose_xyzrpy['z'],
+                                pose_xyzrpy['rx'], pose_xyzrpy['ry'], pose_xyzrpy['rz']
+                            )
+                        else:
+                            raise ValueError(f"Unknown pose format in {pose_path}")
+                            
+                        loaded_images.append(image)
+                        end2base_matrices.append(end2base_matrix)
+                        print(f"✅ Loaded image-pose pair {i+1}: {os.path.basename(img_path)}")
 
-                    print(f"Successfully loaded {len(image_paths_sorted)} calibration images and poses")
+                    print(f"Successfully loaded {len(loaded_images)} image-pose pairs for eye-in-hand calibration")
                     
-                    # Load data into calibrator using modern member-based API
-                    # Set images from paths
-                    eye_in_hand_calibrator.set_images_from_paths(image_paths_sorted)
-                    
-                    # Set robot poses using the original JSON data format
-                    eye_in_hand_calibrator.set_robot_poses(robot_poses)
-                    
-                    # Detect pattern points using member-based API
-                    print("🎯 Detecting calibration patterns...")
-                    if not eye_in_hand_calibrator.detect_pattern_points():
-                        print("�?Failed to detect calibration patterns")
-                        return jsonify({'error': 'Failed to detect calibration patterns in images'}), 500
-                    
-                    print(f"�?Pattern detection completed: {len(eye_in_hand_calibrator.image_points)} images")
-                    
-                    # Run eye-in-hand calibration using modern API with method comparison
-                    print("🔧 Performing hand-eye calibration with method comparison...")
-                    
-                    methods = [
-                        (cv2.CALIB_HAND_EYE_TSAI, "TSAI"),
-                        (cv2.CALIB_HAND_EYE_PARK, "PARK"), 
-                        (cv2.CALIB_HAND_EYE_HORAUD, "HORAUD"),
-                        (cv2.CALIB_HAND_EYE_ANDREFF, "ANDREFF"),
-                        (cv2.CALIB_HAND_EYE_DANIILIDIS, "DANIILIDIS")
-                    ]
-                    
-                    best_method = None
-                    best_error = float('inf')
-                    
-                    for method_const, method_name in methods:
-                        try:
-                            # Reset calibrator state for fair comparison
-                            eye_in_hand_calibrator.cam2end_matrix = None
-                            eye_in_hand_calibrator.calibration_completed = False
-                            eye_in_hand_calibrator.rms_error = None
-                            
-                            # Test this method
-                            rms_error = eye_in_hand_calibrator.calibrate(method=method_const, verbose=False)
-                            
-                            if rms_error > 0 and rms_error < best_error:
-                                best_error = rms_error
-                                best_method = method_name
-                                print(f"�?{method_name}: {rms_error:.4f} pixels")
-                            else:
-                                print(f"�?{method_name}: Failed or poor result")
-                                
-                        except Exception as e:
-                            print(f"�?{method_name}: Exception - {str(e)}")
-                    
-                    if best_method:
-                        print(f"🏆 Best method: {best_method} with {best_error:.4f} pixels RMS error")
-                        initial_mean_error = float(best_error)
-                    else:
-                        print("�?All hand-eye calibration methods failed")
-                        return jsonify({'error': 'All hand-eye calibration methods failed'}), 500
-                    
-                    # Add optimization step using modern API
-                    print("🔍 Starting calibration optimization...")
-                    optimized_error = eye_in_hand_calibrator.optimize_calibration(
-                        iterations=5,
-                        ftol_rel=1e-6,
-                        verbose=True
+                    # Initialize EyeInHandCalibrator using constructor approach (like the example)
+                    eye_in_hand_calibrator = EyeInHandCalibrator(
+                        images=loaded_images,
+                        end2base_matrices=end2base_matrices,
+                        image_paths=None,  # Set to None as we provide images directly
+                        calibration_pattern=pattern,
+                        camera_matrix=camera_matrix,
+                        distortion_coefficients=dist_coeffs.flatten()  # Flatten to 1D array
                     )
                     
-                    if optimized_error > 0:
-                        final_mean_error = float(optimized_error)
-                        improvement_percentage = float((initial_mean_error - final_mean_error) / initial_mean_error * 100)
-                        print(f"Optimized RMS reprojection error: {final_mean_error:.6f} pixels")
-                        print(f"Improvement: {improvement_percentage:.1f}%")
-                    else:
-                        final_mean_error = initial_mean_error
-                        improvement_percentage = 0.0
-                        print("⚠️ Optimization completed with no improvement")
+                    print(f"✅ EyeInHandCalibrator initialized with constructor approach")
                     
-                    # Save results
-                    results_folder = os.path.join(RESULTS_FOLDER, session_id)
-                    eye_in_hand_calibrator.save_results(results_folder)
+                    # Perform eye-in-hand calibration (following example pattern)
+                    print("🤖 Performing eye-in-hand calibration...")
+                    calibration_result = eye_in_hand_calibrator.calibrate(method=None, verbose=True)
                     
-                    try:
-                        # Generate visualization images using modern API
+                    if calibration_result is not None:
+                        rms_error = calibration_result['rms_error']
+                        print(f"✅ Eye-in-hand calibration completed successfully!")
+                        print(f"   • RMS error: {rms_error:.4f} pixels")
+                        print(f"   • Camera-to-end transformation matrix shape: {calibration_result['cam2end_matrix'].shape}")
+                        print(f"   • Target-to-base transformation matrix shape: {calibration_result['target2base_matrix'].shape}")
+                        
+                        # Generate visualization images
                         print("📸 Generating visualization images...")
                         
-                        # Save debug images to separate visualization folders
-                        viz_base_folder = os.path.join(RESULTS_FOLDER, session_id, 'visualizations')
+                        # Set up output directory for debug images
+                        results_folder = os.path.join(RESULTS_FOLDER, session_id)
+                        viz_base_folder = os.path.join(results_folder, 'visualizations')
                         corners_folder = os.path.join(viz_base_folder, 'corner_detection')
                         axes_folder = os.path.join(viz_base_folder, 'undistorted_axes')
                         reprojection_folder = os.path.join(viz_base_folder, 'reprojection')
@@ -859,82 +970,96 @@ def calibrate():
                         os.makedirs(axes_folder, exist_ok=True)
                         os.makedirs(reprojection_folder, exist_ok=True)
                         
-                        # Generate and save corner detection images
-                        corner_detection_images = eye_in_hand_calibrator.draw_pattern_on_images()
-                        corner_detection_paths = []
-                        for filename, debug_img in corner_detection_images:
-                            # Use original filename without extra suffix
-                            output_path = os.path.join(corners_folder, f"{filename}.jpg")
-                            cv2.imwrite(output_path, debug_img)
-                            corner_detection_paths.append(f"visualizations/corner_detection/{filename}.jpg")
-                        
-                        # Generate and save undistorted images with axes
-                        undistorted_images = eye_in_hand_calibrator.draw_axes_on_undistorted_images()
-                        undistorted_paths = []
-                        for filename, debug_img in undistorted_images:
-                            # Use original filename without extra suffix
-                            output_path = os.path.join(axes_folder, f"{filename}.jpg")
-                            cv2.imwrite(output_path, debug_img)
-                            undistorted_paths.append(f"visualizations/undistorted_axes/{filename}.jpg")
-                        
-                        # Generate and save reprojection images
-                        reprojection_images = eye_in_hand_calibrator.draw_reprojection_on_images()
-                        reprojection_paths = []
-                        for filename, debug_img in reprojection_images:
-                            # Use original filename without extra suffix
-                            output_path = os.path.join(reprojection_folder, f"{filename}.jpg")
-                            cv2.imwrite(output_path, debug_img)
-                            reprojection_paths.append(f"visualizations/reprojection/{filename}.jpg")
-                        
-                        print(f"�?Saved {len(corner_detection_paths)} corner detection images to {corners_folder}")
-                        print(f"�?Saved {len(undistorted_paths)} undistorted axes images to {axes_folder}") 
-                        print(f"�?Saved {len(reprojection_paths)} reprojection images to {reprojection_folder}")
-                        print(f"�?Saved {len(undistorted_paths)} undistorted axes images") 
-                        print(f"�?Saved {len(reprojection_paths)} reprojection images")
-                        
-                    except Exception as viz_error:
-                        print(f"⚠️ Warning: Visualization generation failed: {viz_error}")
-                        # Use empty lists if visualization fails
+                        # Generate visualization images
                         corner_detection_paths = []
                         undistorted_paths = []
                         reprojection_paths = []
+                        
+                        try:
+                            # Generate and save corner detection images
+                            print("🎨 Generating corner detection images...")
+                            corner_detection_images = eye_in_hand_calibrator.draw_pattern_on_images()
+                            print(f"📷 Generated {len(corner_detection_images)} corner detection images")
+                            for i, (filename, debug_img) in enumerate(corner_detection_images):
+                                output_path = os.path.join(corners_folder, f"{filename}.jpg")
+                                success = cv2.imwrite(output_path, debug_img)
+                                if success:
+                                    corner_detection_paths.append(f"visualizations/corner_detection/{filename}.jpg")
+                                    print(f"✅ Saved corner detection: {output_path}")
+                                else:
+                                    print(f"❌ Failed to save corner detection: {output_path}")
+                            
+                            print(f"✅ Generated {len(corner_detection_paths)} corner detection images")
+                            
+                            # Generate and save undistorted images with axes
+                            print("🎨 Generating undistorted axes images...")
+                            undistorted_images = eye_in_hand_calibrator.draw_axes_on_undistorted_images()
+                            print(f"📷 Generated {len(undistorted_images)} undistorted images")
+                            for i, (filename, debug_img) in enumerate(undistorted_images):
+                                output_path = os.path.join(axes_folder, f"{filename}.jpg")
+                                success = cv2.imwrite(output_path, debug_img)
+                                if success:
+                                    undistorted_paths.append(f"visualizations/undistorted_axes/{filename}.jpg")
+                                    print(f"✅ Saved undistorted axes: {output_path}")
+                                else:
+                                    print(f"❌ Failed to save undistorted axes: {output_path}")
+                            
+                            print(f"✅ Generated {len(undistorted_paths)} undistorted axes images")
+                            
+                            # Generate and save reprojection images
+                            print("🎨 Generating reprojection images...")
+                            reprojection_images = eye_in_hand_calibrator.draw_reprojection_on_images()
+                            print(f"📷 Generated {len(reprojection_images)} reprojection images")
+                            for i, (filename, debug_img) in enumerate(reprojection_images):
+                                output_path = os.path.join(reprojection_folder, f"{filename}.jpg")
+                                success = cv2.imwrite(output_path, debug_img)
+                                if success:
+                                    reprojection_paths.append(f"visualizations/reprojection/{filename}.jpg")
+                                    print(f"✅ Saved reprojection: {output_path}")
+                                else:
+                                    print(f"❌ Failed to save reprojection: {output_path}")
+                            
+                            print(f"✅ Generated {len(reprojection_paths)} reprojection images")
+                            
+                        except Exception as viz_error:
+                            print(f"⚠️ Warning: Visualization generation failed: {viz_error}")
+                            # Use empty lists if visualization fails
+                            corner_detection_paths = []
+                            undistorted_paths = []
+                            reprojection_paths = []
+                        
+                        # Return results in the expected format for the web interface
+                        results = {
+                            'message': f'Eye-in-hand calibration completed successfully! RMS error: {rms_error:.4f} pixels',
+                            'success': True,
+                            'calibration_type': 'eye_in_hand',
+                            'session_id': session_id,
+                            'rms_error': rms_error,
+                            'reprojection_error': rms_error,  # Frontend expects this name
+                            'handeye_transform': calibration_result['cam2end_matrix'].tolist(),  # Frontend expects this name
+                            'cam2end_matrix': calibration_result['cam2end_matrix'].tolist(),
+                            'target2base_matrix': calibration_result['target2base_matrix'].tolist(),
+                            'camera_matrix': camera_matrix.tolist(),
+                            'distortion_coefficients': dist_coeffs.flatten().tolist(),
+                            'corner_detection_images': corner_detection_paths,
+                            'undistorted_images': undistorted_paths,
+                            'reprojection_images': reprojection_paths
+                        }
+                        
+                        # Store results in session data for web interface
+                        session_data[session_id]['results'] = results
+                        
+                        return jsonify(results)
                     
-                    # Ensure all matrices are converted to lists for JSON serialization
-                    cam2end_matrix = eye_in_hand_calibrator.cam2end_matrix
-                    if cam2end_matrix is not None:
-                        cam2end_list = cam2end_matrix.tolist()
                     else:
-                        cam2end_list = None
-                        print("⚠️ Warning: cam2end_matrix is None")
-                    
-                    results = {
-                        'success': True,
-                        'calibration_type': 'eye_in_hand',
-                        'session_id': session_id,
-                        'camera_matrix': camera_matrix.tolist(),
-                        'distortion_coefficients': dist_coeffs.tolist(),
-                        'handeye_transform': cam2end_list,
-                        'cam2end_matrix': cam2end_list,
-                        'reprojection_error': float(final_mean_error),
-                        'initial_mean_error': float(initial_mean_error),
-                        'optimized_mean_error': float(final_mean_error),
-                        'improvement_percentage': float(improvement_percentage),
-                        'best_calibration_method': str(best_method) if best_method else "Unknown",
-                        'corner_detection_images': corner_detection_paths,
-                        'undistorted_images': undistorted_paths,
-                        'reprojection_images': reprojection_paths,
-                        'pattern_info': pattern.get_info() if pattern else {},
-                        'message': f'Eye-in-hand calibration completed successfully using {len(image_paths)} images. Improved error from {initial_mean_error:.4f} to {final_mean_error:.4f} pixels ({improvement_percentage:.1f}% improvement)'
-                    }
-                    
+                        print("❌ Eye-in-hand calibration failed")
+                        return jsonify({'error': 'Eye-in-hand calibration failed'}), 500
+                
                 except Exception as e:
-                    print(f"�?Eye-in-hand calibration failed: {str(e)}")
+                    print(f"❌ Eye-in-hand calibration failed: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
                     return jsonify({'error': f'Eye-in-hand calibration failed: {str(e)}'}), 500
-            
-            # Store results in session
-            session_data[session_id]['results'] = results
-            
-            return jsonify(results)
             
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -962,8 +1087,10 @@ def get_results(session_id):
         
         # Add corner detection images
         if 'corner_detection_images' in results:
+            print(f"🔍 Looking for {len(results['corner_detection_images'])} corner detection images")
             for img_path in results['corner_detection_images']:
                 full_path = os.path.join(RESULTS_FOLDER, session_id, img_path)
+                print(f"   Checking: {full_path}")
                 img_base64 = image_to_base64(full_path)
                 if img_base64:
                     visualization_images.append({
@@ -971,11 +1098,16 @@ def get_results(session_id):
                         'data': img_base64,
                         'type': 'corner_detection'
                     })
+                    print(f"   ✅ Added corner detection image: {os.path.basename(img_path)}")
+                else:
+                    print(f"   ❌ Failed to load corner detection image: {full_path}")
         
         # Add undistorted images with axes
         if 'undistorted_images' in results:
+            print(f"🔍 Looking for {len(results['undistorted_images'])} undistorted images")
             for img_path in results['undistorted_images']:
                 full_path = os.path.join(RESULTS_FOLDER, session_id, img_path)
+                print(f"   Checking: {full_path}")
                 img_base64 = image_to_base64(full_path)
                 if img_base64:
                     visualization_images.append({
@@ -983,11 +1115,16 @@ def get_results(session_id):
                         'data': img_base64,
                         'type': 'undistorted_axes'
                     })
+                    print(f"   ✅ Added undistorted image: {os.path.basename(img_path)}")
+                else:
+                    print(f"   ❌ Failed to load undistorted image: {full_path}")
         
         # Add reprojection images
         if 'reprojection_images' in results:
+            print(f"🔍 Looking for {len(results['reprojection_images'])} reprojection images")
             for img_path in results['reprojection_images']:
                 full_path = os.path.join(RESULTS_FOLDER, session_id, img_path)
+                print(f"   Checking: {full_path}")
                 img_base64 = image_to_base64(full_path)
                 if img_base64:
                     visualization_images.append({
@@ -995,6 +1132,13 @@ def get_results(session_id):
                         'data': img_base64,
                         'type': 'reprojection'
                     })
+                    print(f"   ✅ Added reprojection image: {os.path.basename(img_path)}")
+                else:
+                    print(f"   ❌ Failed to load reprojection image: {full_path}")
+        
+        print(f"📊 Final visualization images count: {len(visualization_images)}")
+        for i, img in enumerate(visualization_images):
+            print(f"   {i+1}. {img['name']} ({img['type']})")
         
         results['visualization_images'] = visualization_images
         print(f"�?Added {len(visualization_images)} visualization images to results")
