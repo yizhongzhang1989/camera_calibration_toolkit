@@ -1,8 +1,8 @@
 """
-New Eye-in-Hand Calibration Module
-==================================
+Eye-in-Hand Calibration Module
+==============================
 
-This module provides the NewEyeInHandCalibrator class that inherits from HandEyeBaseCalibrator.
+This module provides the EyeInHandCalibrator class that inherits from HandEyeBaseCalibrator.
 It contains only IO functionality for eye-in-hand calibration data handling.
 
 Key Features:
@@ -14,7 +14,7 @@ Key Features:
 Architecture:
     BaseCalibrator (images/patterns)
     -> HandEyeBaseCalibrator (robot poses/transformations/IO)
-       -> NewEyeInHandCalibrator (eye-in-hand specific IO)
+       -> EyeInHandCalibrator (eye-in-hand specific IO)
 """
 
 import sys
@@ -63,7 +63,7 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
                  camera_matrix: Optional[np.ndarray] = None,
                  distortion_coefficients: Optional[np.ndarray] = None):
         """
-        Initialize NewEyeInHandCalibrator for IO operations.
+        Initialize EyeInHandCalibrator for IO operations.
         
         Args:
             images: List of image arrays or None

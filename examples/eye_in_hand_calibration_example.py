@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-New Eye-in-Hand Calibration Example
-===================================
+Eye-in-Hand Calibration Example
+===============================
 
-This example demonstrates how to use the NewEyeInHandCalibrator class for 
+This example demonstrates how to use the EyeInHandCalibrator class for 
 eye-in-hand calibration (camera mounted on robot end-effector):
 
 1. Load robot pose images and corresponding end-effector poses from eye_in_hand_test_data
 2. Perform intrinsic calibration using eye_in_hand_test_data images
-3. Initialize NewEyeInHandCalibrator with loaded data
+3. Initialize EyeInHandCalibrator with loaded data
 4. Perform complete eye-in-hand calibration with updated dictionary return format
 5. Generate comprehensive debug images for calibration analysis
 6. Save results and test IO operations
@@ -204,13 +204,13 @@ def main():
     Main function demonstrating complete eye-in-hand calibration with updated dictionary return format.
     """
     print("=" * 80)
-    print("🤖 New Eye-in-Hand Calibration Example - Complete Calibration Workflow")
+    print("🤖 Eye-in-Hand Calibration Example - Complete Calibration Workflow")
     print("=" * 80)
     
     # Define data paths
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     eye_in_hand_data_dir = os.path.join(project_root, "sample_data", "eye_in_hand_test_data")
-    results_dir = os.path.join(project_root, "data", "results", "new_eye_in_hand_example")
+    results_dir = os.path.join(project_root, "data", "results", "eye_in_hand_example")
     
     print(f"📂 Eye-in-hand data directory: {eye_in_hand_data_dir}")
     print(f"💾 Results will be saved to: {results_dir}")
@@ -235,9 +235,9 @@ def main():
         print("❌ Failed to perform intrinsic calibration")
         return False
     
-    # Step 3: Initialize NewEyeInHandCalibrator with loaded data
+    # Step 3: Initialize EyeInHandCalibrator with loaded data
     print("\n" + "="*60)
-    print("🤖 Step 3: Initialize New Eye-in-Hand Calibrator")
+    print("🤖 Step 3: Initialize Eye-in-Hand Calibrator")
     print("="*60)
     
     try:
@@ -251,7 +251,7 @@ def main():
             distortion_coefficients=distortion_coefficients.flatten()  # Flatten to 1D array
         )
         
-        print("✅ NewEyeInHandCalibrator initialized successfully")
+        print("✅ EyeInHandCalibrator initialized successfully")
         
         # Step 4: Perform Eye-in-Hand Calibration
         print("\n" + "="*60)
@@ -331,7 +331,7 @@ def main():
             print(f"⚠️ Could not save results: {e}")
         
         print("\n" + "="*80)
-        print("🎉 NEW EYE-IN-HAND CALIBRATION EXAMPLE COMPLETED SUCCESSFULLY!")
+        print("🎉 EYE-IN-HAND CALIBRATION EXAMPLE COMPLETED SUCCESSFULLY!")
         print("="*80)
         print(f"📊 Summary:")
         print(f"   • Loaded {len(images)} image-pose pairs")

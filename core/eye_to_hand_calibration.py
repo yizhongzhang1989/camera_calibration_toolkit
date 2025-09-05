@@ -1,9 +1,9 @@
 """
-New Eye-to-Hand Calibration Module
-==================================
+Eye-to-Hand Calibration Module
+==============================
 
-This module provides the NewEyeToHandCalibrator class that inherits from HandEyeBaseCalibrator.
-It follows the same interface and structure as NewEyeInHandCalibrator but implements 
+This module provides the EyeToHandCalibrator class that inherits from HandEyeBaseCalibrator.
+It follows the same interface and structure as EyeInHandCalibrator but implements 
 eye-to-hand specific matrix calculations.
 
 Key Features:
@@ -15,7 +15,7 @@ Key Features:
 Architecture:
     BaseCalibrator (images/patterns)
     -> HandEyeBaseCalibrator (robot poses/transformations/IO)
-       -> NewEyeToHandCalibrator (eye-to-hand specific calibration)
+       -> EyeToHandCalibrator (eye-to-hand specific calibration)
 """
 
 import sys
@@ -67,7 +67,7 @@ class EyeToHandCalibrator(HandEyeBaseCalibrator):
                  camera_matrix: Optional[np.ndarray] = None,
                  distortion_coefficients: Optional[np.ndarray] = None):
         """
-        Initialize NewEyeToHandCalibrator.
+        Initialize EyeToHandCalibrator.
         
         Args:
             images: List of image arrays or None
