@@ -81,18 +81,20 @@ class BaseCalibrator(ABC):
             self.set_calibration_pattern(calibration_pattern)
     
     @abstractmethod
-    def calibrate(self, **kwargs) -> bool:
+    def calibrate(self, **kwargs) -> Optional[dict]:
         """
         Perform calibration using the specific algorithm.
         Must be implemented by subclasses.
         
         Returns:
-            bool: True if calibration succeeded, False if failed
+            Optional[dict]: Dictionary containing calibration results if successful, None if failed.
+            The dictionary should contain key results specific to the calibration type:
+            - For intrinsic calibration: camera_matrix, distortion_coefficients, rms_error, etc.
+            - For hand-eye calibration: cam2end_matrix, target2base_matrix, rms_error, etc.
             
         Note:
-            After successful calibration, use getter methods to access results:
-            - Calibration quality metrics (RMS errors, etc.)
-            - Calibrated parameters (camera matrix, transforms, etc.)
+            This new return pattern provides immediate access to results while maintaining
+            backward compatibility through class member variables for detailed results.
         """
         pass
 
