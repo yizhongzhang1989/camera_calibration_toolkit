@@ -71,44 +71,78 @@
                 </div>
 
                 <div class="panel-section">
-                    <h3>📁 Upload Images</h3>
-                    <div class="upload-area" id="image-upload-area">
-                        <input type="file" id="image-files" multiple accept="image/*">
-                        <div class="upload-text">
-                            <p>📸 Drop robot pose images here or click to select</p>
-                            <small>Supported: JPG, PNG, BMP, TIFF</small>
+                    <h3>📁 Upload Data</h3>
+                    
+                    <!-- Upload Mode Toggle -->
+                    <div class="form-group">
+                        <label>Upload Mode:</label>
+                        <select id="upload-mode-select">
+                            <option value="paired">📎 Paired Files (Images + JSON together)</option>
+                            <option value="separate">📂 Separate Files (Images and JSON separately)</option>
+                        </select>
+                        <small>Choose how to upload your calibration data</small>
+                    </div>
+                    
+                    <!-- Paired Upload Section -->
+                    <div id="paired-upload-section">
+                        <h4>📎 Upload Paired Image & JSON Files</h4>
+                        <div class="upload-area" id="paired-upload-area">
+                            <input type="file" id="paired-files" multiple accept="image/*,.json">
+                            <div class="upload-text">
+                                <p>📸📊 Drop paired image and JSON files here or click to select</p>
+                                <small>Select both image files (JPG, PNG, etc.) and corresponding JSON pose files</small>
+                                <small>Example: select both <code>image1.jpg</code> and <code>image1.json</code></small>
+                            </div>
+                        </div>
+                        <div class="paired-info" style="margin-top: 1rem; font-size: 0.9em; color: #666;">
+                            <p><strong>📋 Pairing Requirements:</strong></p>
+                            <ul style="margin: 0.5rem 0; padding-left: 1.5rem; font-size: 0.85em;">
+                                <li>Each image file must have a corresponding JSON file with the same base name</li>
+                                <li>Example: <code>pose1.jpg</code> pairs with <code>pose1.json</code></li>
+                                <li>JSON files must contain the <code>"end2base"</code> transformation matrix</li>
+                            </ul>
                         </div>
                     </div>
+                    
+                    <!-- Separate Upload Section -->
+                    <div id="separate-upload-section" style="display: none;">
+                        <h4>📸 Upload Images</h4>
+                        <div class="upload-area" id="image-upload-area">
+                            <input type="file" id="image-files" multiple accept="image/*">
+                            <div class="upload-text">
+                                <p>📸 Drop robot pose images here or click to select</p>
+                                <small>Supported: JPG, PNG, BMP, TIFF</small>
+                            </div>
+                        </div>
+                        
+                        <h4 style="margin-top: 1.5rem;">🦾 Upload Robot Poses</h4>
+                        <div class="upload-area" id="pose-upload-area">
+                            <input type="file" id="pose-files" multiple accept=".json">
+                            <div class="upload-text">
+                                <p>📊 Drop robot pose JSON files here or click to select</p>
+                                <small>Required: JSON files with robot end-effector poses</small>
+                            </div>
+                        </div>
+                        <div class="pose-info" style="margin-top: 1rem; font-size: 0.9em; color: #666;">
+                            <p><strong>📋 JSON Format Expected:</strong></p>
+                            <pre style="background: #f5f5f5; padding: 0.5rem; border-radius: 4px; font-size: 0.8em;">
+{
+  "end2base": [
+    [r11, r12, r13, tx],
+    [r21, r22, r23, ty], 
+    [r31, r32, r33, tz],
+    [0,   0,   0,   1 ]
+  ]
+}</pre>
+                            <p><small>4x4 transformation matrix from end-effector to robot base</small></p>
+                        </div>
+                    </div>
+                    
+                    <!-- Clear buttons -->
                     <button id="clear-all-images-btn" class="secondary-btn" style="display: none; margin-top: 1rem; width: 100%;">
                         🗑️ Clear All Images
                     </button>
-                </div>
-
-                <div class="panel-section">
-                    <h3>🦾 Upload Robot Poses</h3>
-                    <div class="upload-area" id="pose-upload-area">
-                        <input type="file" id="pose-files" multiple accept=".json">
-                        <div class="upload-text">
-                            <p>📊 Drop robot pose JSON files here or click to select</p>
-                            <small>Required: JSON files with robot end-effector poses</small>
-                        </div>
-                    </div>
-                    <div class="pose-info" style="margin-top: 1rem; font-size: 0.9em; color: #666;">
-                        <p><strong>📋 JSON Format Expected:</strong></p>
-                        <pre style="background: #f5f5f5; padding: 0.5rem; border-radius: 4px; font-size: 0.8em;">
-{
-  "end_xyzrpy": {
-    "x": 0.1234,
-    "y": 0.5678,
-    "z": 0.9012,
-    "rx": 0.345,
-    "ry": 0.678,
-    "rz": 0.901
-  }
-}</pre>
-                        <p><small>Each image needs a corresponding numbered pose file (0.json, 1.json, etc.)</small></p>
-                    </div>
-                    <button id="clear-all-poses-btn" class="secondary-btn" style="display: none; margin-top: 1rem; width: 100%;">
+                    <button id="clear-all-poses-btn" class="secondary-btn" style="display: none; margin-top: 0.5rem; width: 100%;">
                         🗑️ Clear All Poses
                     </button>
                 </div>

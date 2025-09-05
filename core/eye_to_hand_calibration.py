@@ -1,20 +1,21 @@
 """
-Eye-in-Hand Calibration Module
+Eye-to-Hand Calibration Module
 ==============================
 
-This module provides the EyeInHandCalibrator class that inherits from HandEyeBaseCalibrator.
-It contains only IO functionality for eye-in-hand calibration data handling.
+This module provides the EyeToHandCalibrator class that inherits from HandEyeBaseCalibrator.
+It follows the same interface and structure as EyeInHandCalibrator but implements 
+eye-to-hand specific matrix calculations.
 
 Key Features:
-- Inherits all common IO functionality from HandEyeBaseCalibrator
-- Provides eye-in-hand specific data structures
-- Maintains API compatibility for data handling
-- Separates IO from calibration logic
+- Inherits all common functionality from HandEyeBaseCalibrator
+- Provides eye-to-hand specific data structures
+- Complete calibration functionality with all OpenCV methods
+- Automatic method selection with error comparison
 
 Architecture:
     BaseCalibrator (images/patterns)
     -> HandEyeBaseCalibrator (robot poses/transformations/IO)
-       -> EyeInHandCalibrator (eye-in-hand specific IO)
+       -> EyeToHandCalibrator (eye-to-hand specific calibration)
 """
 
 import sys
@@ -41,29 +42,32 @@ from .utils import xyz_rpy_to_matrix, matrix_to_xyz_rpy
 from .calibration_patterns import CalibrationPattern
 
 
-class EyeInHandCalibrator(HandEyeBaseCalibrator):
+class EyeToHandCalibrator(HandEyeBaseCalibrator):
     """
-    Eye-in-Hand Calibration class for IO operations only.
+    Complete Eye-to-Hand Calibration implementation.
     
-    This class provides data handling for eye-in-hand calibration where the camera
-    is mounted on the robot end-effector. Contains only IO and data management functions.
+    This class provides full calibration functionality for eye-to-hand configurations where:
+    - Camera is stationary (fixed in workspace) 
+    - Target/calibration pattern is mounted on robot end-effector
+    - Calibrates base2cam_matrix (robot base to camera transformation)
     
     Key Data Structures:
-    - cam2end_matrix: Transformation from camera to end-effector
-    - target2base_matrix: Transformation from calibration target to robot base
+    - base2cam_matrix: Transformation from robot base to camera
+    - target2end_matrix: Transformation from calibration target to end-effector
     
-    The calibration logic is separated and should be implemented elsewhere.
+    Supports all OpenCV hand-eye calibration methods with automatic method selection.
     """
+    
     
     def __init__(self, 
                  images: Optional[List[np.ndarray]] = None,
                  end2base_matrices: Optional[List[np.ndarray]] = None,
-                 image_paths: Optional[List[str]] = None, 
+                 image_paths: Optional[List[str]] = None,
                  calibration_pattern: Optional[CalibrationPattern] = None,
                  camera_matrix: Optional[np.ndarray] = None,
                  distortion_coefficients: Optional[np.ndarray] = None):
         """
-        Initialize EyeInHandCalibrator for IO operations.
+        Initialize EyeToHandCalibrator.
         
         Args:
             images: List of image arrays or None
@@ -77,13 +81,13 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
         super().__init__(images, end2base_matrices, image_paths, calibration_pattern, 
                         camera_matrix, distortion_coefficients)
         
-        # Eye-in-hand specific transformation matrices
-        self.cam2end_matrix = None              # Camera to end-effector transformation (primary result)
-        self.target2base_matrix = None          # Target to robot base transformation (secondary result)
+        # Eye-to-hand specific transformation matrices
+        self.base2cam_matrix = None           # Robot base to camera transformation (primary result)
+        self.target2end_matrix = None         # Target to end-effector transformation (secondary result)
     
     def calibrate(self, method: Optional[int] = None, verbose: bool = False) -> Optional[Dict[str, Any]]:
         """
-        Perform eye-in-hand calibration using the specified method or find the best method.
+        Perform eye-to-hand calibration using the specified method or find the best method.
         
         This method uses the data stored in class members (images, robot poses, camera intrinsics)
         to perform hand-eye calibration. If method is None, all available methods will be tested
@@ -105,12 +109,13 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
             - 'success': bool - True if calibration succeeded
             - 'method': int - OpenCV method constant used
             - 'method_name': str - Human-readable method name
-            - 'cam2end_matrix': np.ndarray - Camera to end-effector transformation matrix
-            - 'target2base_matrix': np.ndarray - Target to base transformation matrix
+            - 'base2cam_matrix': np.ndarray - Base to camera transformation matrix
+            - 'target2end_matrix': np.ndarray - Target to end-effector transformation matrix
             - 'rms_error': float - Overall RMS reprojection error
             - 'per_image_errors': List[float] - Per-image reprojection errors
             - 'valid_images': int - Number of valid images used in calibration
             - 'total_images': int - Total number of images processed
+            - 'before_opt': Dict - Initial calibration results before optimization
             
         Note:
             Before calling this method, ensure that:
@@ -133,7 +138,7 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
             total_images = len(self.image_points) if self.image_points else 0
             
             if verbose:
-                print(f"🤖 Running eye-in-hand calibration with {valid_images} image-pose pairs")
+                print(f"🤖 Running eye-to-hand calibration with {valid_images} image-pose pairs")
             
             # Determine which methods to test
             available_methods = self.get_available_methods()
@@ -159,8 +164,8 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
             best_method = None
             best_method_name = None
             best_rms_error = float('inf')
-            best_cam2end = None
-            best_target2base = None
+            best_base2cam = None
+            best_target2end = None
             best_per_image_errors = None
             
             for test_method, method_name in methods_to_try.items():
@@ -169,14 +174,14 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
                 
                 try:
                     # Perform calibration with this method
-                    success, cam2end_matrix, target2base_matrix, rms_error, per_image_errors = self._perform_single_calibration(test_method, verbose=False)
+                    success, base2cam_matrix, target2end_matrix, rms_error, per_image_errors = self._perform_single_calibration(test_method, verbose=False)
                     
                     if success and rms_error < best_rms_error:
                         best_method = test_method
                         best_method_name = method_name
                         best_rms_error = rms_error
-                        best_cam2end = cam2end_matrix.copy()
-                        best_target2base = target2base_matrix.copy()
+                        best_base2cam = base2cam_matrix.copy()
+                        best_target2end = target2end_matrix.copy()
                         best_per_image_errors = per_image_errors.copy()
                         
                         if verbose and len(methods_to_try) > 1:
@@ -189,14 +194,14 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
                             if len(methods_to_try) > 1:
                                 print(f"   ❌ Method {method_name} failed")
                             else:
-                                print(f"❌ Eye-in-hand calibration failed with method {method_name}")
+                                print(f"❌ Eye-to-hand calibration failed with method {method_name}")
                             
                 except Exception as e:
                     if verbose:
                         if len(methods_to_try) > 1:
                             print(f"   ❌ Method {method_name} failed with error: {e}")
                         else:
-                            print(f"❌ Eye-in-hand calibration failed with method {method_name}: {e}")
+                            print(f"❌ Eye-to-hand calibration failed with method {method_name}: {e}")
                     continue
             
             # return none if best_method is not found
@@ -211,21 +216,21 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
                 if len(methods_to_try) > 1:
                     print(f"\n🎉 Best method selected: {best_method_name} with RMS error {best_rms_error:.4f}")
                 else:
-                    print(f"✅ Eye-in-hand calibration completed successfully!")
+                    print(f"✅ Eye-to-hand calibration completed successfully!")
                     print(f"RMS reprojection error: {best_rms_error:.4f} pixels")
-                print(f"Camera to end-effector transformation matrix:")
-                print(f"{best_cam2end}")
+                print(f"Base to camera transformation matrix:")
+                print(f"{best_base2cam}")
 
             # Store the best results
-            self.cam2end_matrix = best_cam2end
-            self.target2base_matrix = best_target2base
+            self.base2cam_matrix = best_base2cam
+            self.target2end_matrix = best_target2end
             self.rms_error = best_rms_error
             self.per_image_errors = best_per_image_errors
 
             # Store initial calibration results for optimization comparison
             initial_results = {
-                'cam2end_matrix': self.cam2end_matrix.copy(),
-                'target2base_matrix': self.target2base_matrix.copy(),
+                'base2cam_matrix': self.base2cam_matrix.copy(),
+                'target2end_matrix': self.target2end_matrix.copy(),
                 'rms_error': self.rms_error,
             }
             
@@ -246,8 +251,8 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
                     if optimized_rms < initial_error:
                         # Optimization improved - store optimized results
                         optimized_results.update({
-                            'cam2end_matrix': self.cam2end_matrix.copy(),
-                            'target2base_matrix': self.target2base_matrix.copy(),
+                            'base2cam_matrix': self.base2cam_matrix.copy(),
+                            'target2end_matrix': self.target2end_matrix.copy(),
                             'rms_error': optimized_rms,
                         })
                         
@@ -283,17 +288,17 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
                 
         except Exception as e:
             if verbose:
-                print(f"❌ Eye-in-hand calibration failed: {e}")
+                print(f"❌ Eye-to-hand calibration failed: {e}")
             self.calibration_completed = False
             return None
 
     def to_json(self) -> dict:
         """
-        Serialize eye-in-hand calibrator state to JSON-compatible dictionary.
+        Serialize eye-to-hand calibrator state to JSON-compatible dictionary.
         
-        Extends HandEyeBaseCalibrator.to_json() to include eye-in-hand specific data:
-        - cam2end_matrix: Camera to end-effector transformation matrix
-        - target2base_matrix: Target to base transformation matrix
+        Extends HandEyeBaseCalibrator.to_json() to include eye-to-hand specific data:
+        - base2cam_matrix: Robot base to camera transformation matrix
+        - target2end_matrix: Target to end-effector transformation matrix
         
         Returns:
             dict: JSON-compatible dictionary containing complete calibrator state
@@ -301,25 +306,25 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
         # Get base class data (HandEyeBaseCalibrator -> BaseCalibrator)
         data = super().to_json()
         
-        # Add eye-in-hand specific data
-        if self.cam2end_matrix is not None:
-            data['cam2end_matrix'] = self.cam2end_matrix.tolist()
+        # Add eye-to-hand specific data
+        if self.base2cam_matrix is not None:
+            data['base2cam_matrix'] = self.base2cam_matrix.tolist()
             
-        if self.target2base_matrix is not None:
-            data['target2base_matrix'] = self.target2base_matrix.tolist()
+        if self.target2end_matrix is not None:
+            data['target2end_matrix'] = self.target2end_matrix.tolist()
         
         # Add calibration type identifier
-        data['calibration_type'] = 'eye_in_hand'
+        data['calibration_type'] = 'eye_to_hand'
         
         return data
 
     def from_json(self, data: dict) -> None:
         """
-        Deserialize eye-in-hand calibrator state from JSON-compatible dictionary.
+        Deserialize eye-to-hand calibrator state from JSON-compatible dictionary.
         
-        Extends HandEyeBaseCalibrator.from_json() to load eye-in-hand specific data:
-        - cam2end_matrix: Camera to end-effector transformation matrix
-        - target2base_matrix: Target to base transformation matrix
+        Extends HandEyeBaseCalibrator.from_json() to load eye-to-hand specific data:
+        - base2cam_matrix: Robot base to camera transformation matrix
+        - target2end_matrix: Target to end-effector transformation matrix
         
         Args:
             data: JSON-compatible dictionary containing calibrator state
@@ -327,16 +332,16 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
         # Load base class data first (HandEyeBaseCalibrator -> BaseCalibrator)
         super().from_json(data)
         
-        # Load eye-in-hand specific data
-        if 'cam2end_matrix' in data:
-            self.cam2end_matrix = np.array(data['cam2end_matrix'], dtype=np.float32)
+        # Load eye-to-hand specific data
+        if 'base2cam_matrix' in data:
+            self.base2cam_matrix = np.array(data['base2cam_matrix'], dtype=np.float32)
             
-        if 'target2base_matrix' in data:
-            self.target2base_matrix = np.array(data['target2base_matrix'], dtype=np.float32)
+        if 'target2end_matrix' in data:
+            self.target2end_matrix = np.array(data['target2end_matrix'], dtype=np.float32)
 
     def save_results(self, save_directory: str) -> None:
         """
-        Save eye-in-hand calibration results to files using JSON serialization.
+        Save eye-to-hand calibration results to files using JSON serialization.
         
         Args:
             save_directory: Directory to save results
@@ -351,94 +356,94 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
         calibration_data = self.to_json()
         
         # Save as JSON file
-        json_filepath = os.path.join(save_directory, 'eye_in_hand_calibration_results.json')
+        json_filepath = os.path.join(save_directory, 'eye_to_hand_calibration_results.json')
         with open(json_filepath, 'w') as f:
             json.dump(calibration_data, f, indent=4)
         
-        print(f"✅ Eye-in-hand calibration results saved to: {json_filepath}")
+        print(f"✅ Eye-to-hand calibration results saved to: {json_filepath}")
 
     # ============================================================================
-    # Eye-in-Hand Specific IO Methods
+    # Eye-to-Hand Specific IO Methods
     # ============================================================================
     
-    def set_cam2end_matrix(self, matrix: np.ndarray) -> None:
+    def set_base2cam_matrix(self, matrix: np.ndarray) -> None:
         """
-        Set the camera to end-effector transformation matrix.
+        Set the robot base to camera transformation matrix.
         
         Args:
-            matrix: 4x4 transformation matrix from camera to end-effector
+            matrix: 4x4 transformation matrix from robot base to camera
             
         Raises:
             ValueError: If matrix has invalid format
         """
         if matrix is None:
-            self.cam2end_matrix = None
+            self.base2cam_matrix = None
             return
             
         if not isinstance(matrix, np.ndarray):
-            raise ValueError("cam2end_matrix must be a numpy array")
+            raise ValueError("base2cam_matrix must be a numpy array")
         
         if matrix.shape != (4, 4):
-            raise ValueError(f"cam2end_matrix must be 4x4, got shape {matrix.shape}")
+            raise ValueError(f"base2cam_matrix must be 4x4, got shape {matrix.shape}")
             
-        self.cam2end_matrix = matrix.copy()
+        self.base2cam_matrix = matrix.copy()
     
-    def set_target2base_matrix(self, matrix: np.ndarray) -> None:
+    def set_target2end_matrix(self, matrix: np.ndarray) -> None:
         """
-        Set the target to base transformation matrix.
+        Set the target to end-effector transformation matrix.
         
         Args:
-            matrix: 4x4 transformation matrix from target to base
+            matrix: 4x4 transformation matrix from target to end-effector
             
         Raises:
             ValueError: If matrix has invalid format
         """
         if matrix is None:
-            self.target2base_matrix = None
+            self.target2end_matrix = None
             return
             
         if not isinstance(matrix, np.ndarray):
-            raise ValueError("target2base_matrix must be a numpy array")
+            raise ValueError("target2end_matrix must be a numpy array")
         
         if matrix.shape != (4, 4):
-            raise ValueError(f"target2base_matrix must be 4x4, got shape {matrix.shape}")
+            raise ValueError(f"target2end_matrix must be 4x4, got shape {matrix.shape}")
             
-        self.target2base_matrix = matrix.copy()
+        self.target2end_matrix = matrix.copy()
     
-    def get_cam2end_matrix(self) -> Optional[np.ndarray]:
+    def get_base2cam_matrix(self) -> Optional[np.ndarray]:
         """
-        Get the camera to end-effector transformation matrix.
+        Get the robot base to camera transformation matrix.
         
         Returns:
             np.ndarray or None: 4x4 transformation matrix if available
         """
-        return self.cam2end_matrix
+        return self.base2cam_matrix
     
-    def get_target2base_matrix(self) -> Optional[np.ndarray]:
+    def get_target2end_matrix(self) -> Optional[np.ndarray]:
         """
-        Get the target to base transformation matrix.
+        Get the target to end-effector transformation matrix.
         
         Returns:
             np.ndarray or None: 4x4 transformation matrix if available
         """
-        return self.target2base_matrix
+        return self.target2end_matrix
     
     def get_transformation_matrix(self) -> Optional[np.ndarray]:
         """
-        Get the main transformation matrix (cam2end_matrix for eye-in-hand).
+        Get the main transformation matrix (base2cam_matrix for eye-to-hand).
         
         Returns:
-            np.ndarray or None: Camera to end-effector transformation matrix
+            np.ndarray or None: Robot base to camera transformation matrix
         """
-        return self.cam2end_matrix
+        return self.base2cam_matrix
     
     # ============================================================================
     # Validation Methods
     # ============================================================================
     
-    def validate_eye_in_hand_data(self) -> bool:
+    def validate_eye_to_hand_data(self) -> bool:
         """
-        Validate that all required data for eye-in-hand calibration is available.
+        Validate that all required data for eye-to-hand calibration is available.
         
         Returns:
             bool: True if all required data is present and valid
@@ -468,76 +473,79 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
             print("❌ Calibration pattern not set")
             return False
             
-        print("✅ All required data for eye-in-hand calibration is available")
+        print("✅ All required data for eye-to-hand calibration is available")
         return True
     
-    def is_eye_in_hand_calibrated(self) -> bool:
+    def is_eye_to_hand_calibrated(self) -> bool:
         """
-        Check if eye-in-hand calibration has been completed successfully.
+        Check if eye-to-hand calibration has been completed successfully.
         
         Returns:
-            bool: True if eye-in-hand calibration is complete
+            bool: True if eye-to-hand calibration is complete
         """
         return (self.is_calibrated() and 
-                self.cam2end_matrix is not None)
+                self.base2cam_matrix is not None)
 
-    def _calculate_optimal_target2base_matrix(self, cam2end_4x4: np.ndarray, verbose: bool = False) -> np.ndarray:
+    def _calculate_optimal_target2end_matrix(self, base2cam_4x4: np.ndarray, verbose: bool = False) -> np.ndarray:
         """
-        Calculate the single target2base matrix that minimizes overall reprojection error.
+        Calculate the single target2end matrix that minimizes overall reprojection error.
         
-        This method finds the target2base transformation that best explains all the
+        This method finds the target2end transformation that best explains all the
         observed target positions across all images, rather than calculating a
-        separate target2base for each image which would result in zero error.
+        separate target2end for each image which would result in zero error.
         
         Args:
-            cam2end_4x4: The camera to end-effector transformation matrix from calibration
+            base2cam_4x4: The base to camera transformation matrix from calibration
             verbose: Whether to print detailed information
             
         Returns:
-            np.ndarray: 4x4 target to base transformation matrix
+            np.ndarray: 4x4 target to end-effector transformation matrix
         """
         if verbose:
-            print("Calculating optimal target2base matrix...")
+            print("Calculating optimal target2end matrix...")
         
         best_error = float('inf')
-        best_target2base = None
+        best_target2end = None
         
-        # Try using each image's target2cam transformation to estimate target2base
+        # Try using each image's target2cam transformation to estimate target2end
         # Then find the one that gives the smallest overall reprojection error
-        candidate_target2base_matrices = []
+        candidate_target2end_matrices = []
         
         for i in range(len(self.target2cam_matrices)):
             if self.target2cam_matrices[i] is not None:
-                # Calculate target2base using this image's measurements
-                candidate_target2base = self.end2base_matrices[i] @ cam2end_4x4 @ self.target2cam_matrices[i]
-                candidate_target2base_matrices.append(candidate_target2base)
+                # For eye-to-hand: target2cam = base2cam * end2base * target2end
+                # So: target2end = inv(end2base) * inv(base2cam) * target2cam
+                cam2base_matrix = np.linalg.inv(base2cam_4x4)
+                base2end_matrix = np.linalg.inv(self.end2base_matrices[i])
+                candidate_target2end = base2end_matrix @ cam2base_matrix @ self.target2cam_matrices[i]
+                candidate_target2end_matrices.append(candidate_target2end)
         
         # Test each candidate to find the one with minimum overall reprojection error
-        for candidate_idx, candidate_target2base in enumerate(candidate_target2base_matrices):
+        for candidate_idx, candidate_target2end in enumerate(candidate_target2end_matrices):
             # Use the separate reprojection error function for each candidate
-            rms_error, _ = self._calculate_reprojection_errors(cam2end_4x4, candidate_target2base, verbose=False)
+            rms_error, _ = self._calculate_reprojection_errors(base2cam_4x4, candidate_target2end, verbose=False)
             
             if rms_error < best_error:
                 best_error = rms_error
-                best_target2base = candidate_target2base.copy()
+                best_target2end = candidate_target2end.copy()
                 if verbose:
                     print(f"  Candidate {candidate_idx}: RMS error = {rms_error:.4f} (best so far)")
             elif verbose:
                 print(f"  Candidate {candidate_idx}: RMS error = {rms_error:.4f}")
         
-        if best_target2base is not None:
+        if best_target2end is not None:
             if verbose:
-                print(f"✅ Optimal target2base matrix found with RMS error: {best_error:.4f}")
-                print("Target2base transformation matrix:")
-                print(best_target2base)
+                print(f"✅ Optimal target2end matrix found with RMS error: {best_error:.4f}")
+                print("Target2end transformation matrix:")
+                print(best_target2end)
         else:
             if verbose:
-                print("⚠️ Could not find optimal target2base matrix, using first candidate")
-            best_target2base = candidate_target2base_matrices[0] if candidate_target2base_matrices else np.eye(4)
+                print("⚠️ Could not find optimal target2end matrix, using first candidate")
+            best_target2end = candidate_target2end_matrices[0] if candidate_target2end_matrices else np.eye(4)
         
-        return best_target2base
+        return best_target2end
 
-    def calculate_reprojection_errors(self, cam2end_matrix: Optional[np.ndarray] = None, target2base_matrix: Optional[np.ndarray] = None, verbose: bool = False) -> Tuple[float, List[float]]:
+    def calculate_reprojection_errors(self, base2cam_matrix: Optional[np.ndarray] = None, target2end_matrix: Optional[np.ndarray] = None, verbose: bool = False) -> Tuple[float, List[float]]:
         """
         Calculate reprojection errors using hand-eye calibration results.
         
@@ -545,10 +553,10 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
         for given transformation matrices or the stored calibration results.
         
         Args:
-            cam2end_matrix: 4x4 camera-to-end-effector transformation matrix. 
-                          If None, uses self.cam2end_matrix
-            target2base_matrix: 4x4 target-to-base transformation matrix.
-                              If None, uses self.target2base_matrix
+            base2cam_matrix: 4x4 base-to-camera transformation matrix. 
+                           If None, uses self.base2cam_matrix
+            target2end_matrix: 4x4 target-to-end-effector transformation matrix.
+                             If None, uses self.target2end_matrix
             verbose: Whether to print detailed error information
             
         Returns:
@@ -560,15 +568,15 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
             ValueError: If required matrices or data are not available
         """
         # Use provided matrices or stored calibration results
-        if cam2end_matrix is None:
-            if self.cam2end_matrix is None:
-                raise ValueError("No cam2end_matrix provided and no calibration results stored")
-            cam2end_matrix = self.cam2end_matrix
+        if base2cam_matrix is None:
+            if self.base2cam_matrix is None:
+                raise ValueError("No base2cam_matrix provided and no calibration results stored")
+            base2cam_matrix = self.base2cam_matrix
             
-        if target2base_matrix is None:
-            if self.target2base_matrix is None:
-                raise ValueError("No target2base_matrix provided and no calibration results stored")
-            target2base_matrix = self.target2base_matrix
+        if target2end_matrix is None:
+            if self.target2end_matrix is None:
+                raise ValueError("No target2end_matrix provided and no calibration results stored")
+            target2end_matrix = self.target2end_matrix
         
         # Validate prerequisites for reprojection error calculation
         if self.image_points is None or self.object_points is None:
@@ -580,9 +588,9 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
         if self.camera_matrix is None or self.distortion_coefficients is None:
             raise ValueError("Camera intrinsic parameters not available")
         
-        return self._calculate_reprojection_errors(cam2end_matrix, target2base_matrix, verbose)
+        return self._calculate_reprojection_errors(base2cam_matrix, target2end_matrix, verbose)
 
-    def _calculate_reprojection_errors(self, cam2end_matrix: np.ndarray, target2base_matrix: np.ndarray, verbose: bool = False) -> Tuple[float, List[float]]:
+    def _calculate_reprojection_errors(self, base2cam_matrix: np.ndarray, target2end_matrix: np.ndarray, verbose: bool = False) -> Tuple[float, List[float]]:
         """
         Calculate reprojection errors using hand-eye calibration results.
         
@@ -591,8 +599,8 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
         reprojection errors.
         
         Args:
-            cam2end_matrix: 4x4 camera-to-end-effector transformation matrix
-            target2base_matrix: 4x4 target-to-base transformation matrix
+            base2cam_matrix: 4x4 base-to-camera transformation matrix
+            target2end_matrix: 4x4 target-to-end-effector transformation matrix
             verbose: Whether to print detailed error information
             
         Returns:
@@ -610,17 +618,14 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
                 self.end2base_matrices[i] is not None):
                 try:
                     # Calculate reprojected points using hand-eye calibration result
-                    end2cam_matrix = np.linalg.inv(cam2end_matrix)
-                    base2end_matrix = np.linalg.inv(self.end2base_matrices[i])
-                    
-                    # Target to camera using hand-eye calibration and the target2base matrix
-                    eyeinhand_target2cam = end2cam_matrix @ base2end_matrix @ target2base_matrix
+                    # For eye-to-hand: target2cam = base2cam * end2base * target2end
+                    eyetohand_target2cam = base2cam_matrix @ self.end2base_matrices[i] @ target2end_matrix
                     
                     # Project 3D points to image
                     projected_points, _ = cv2.projectPoints(
                         self.object_points[i], 
-                        eyeinhand_target2cam[:3, :3], 
-                        eyeinhand_target2cam[:3, 3], 
+                        eyetohand_target2cam[:3, :3], 
+                        eyetohand_target2cam[:3, 3], 
                         self.camera_matrix, 
                         self.distortion_coefficients)
                     
@@ -663,7 +668,7 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
             verbose: Whether to print detailed information
             
         Returns:
-            Tuple of (success, cam2end_matrix, target2base_matrix, rms_error, per_image_errors)
+            Tuple of (success, base2cam_matrix, target2end_matrix, rms_error, per_image_errors)
         """
         try:
             # Filter valid data points
@@ -681,8 +686,18 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
                 return False, None, None, float('inf'), None
             
             # Prepare data for OpenCV calibration
-            end2base_Rs = np.array([self.end2base_matrices[i][:3, :3] for i in valid_indices])
-            end2base_ts = np.array([self.end2base_matrices[i][:3, 3] for i in valid_indices])
+            # For eye-to-hand, we need base2end transformations (inverses of end2base)
+            base2end_Rs = []
+            base2end_ts = []
+            
+            for i in valid_indices:
+                # Convert end2base to base2end by taking the inverse
+                base2end_matrix = np.linalg.inv(self.end2base_matrices[i])
+                base2end_Rs.append(base2end_matrix[:3, :3])
+                base2end_ts.append(base2end_matrix[:3, 3])
+            
+            base2end_Rs = np.array(base2end_Rs)
+            base2end_ts = np.array(base2end_ts)
             
             # Use rvecs and tvecs from target2cam matrices
             target2cam_Rs = np.array([self.target2cam_matrices[i][:3, :3] for i in valid_indices])
@@ -692,22 +707,27 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
             rvecs_array = np.array([cv2.Rodrigues(R)[0] for R in target2cam_Rs])
             tvecs_array = target2cam_ts.reshape(-1, 3, 1)
             
-            # Perform eye-in-hand calibration using OpenCV
-            cam2end_R, cam2end_t = cv2.calibrateHandEye(
-                end2base_Rs, end2base_ts, rvecs_array, tvecs_array, method)
+            # Perform eye-to-hand calibration using OpenCV
+            # For eye-to-hand: cv2.calibrateHandEye(base2end_Rs, base2end_ts, target2cam_Rs, target2cam_ts)
+            # Returns cam2base_R, cam2base_t (camera to base transformation)
+            cam2base_R, cam2base_t = cv2.calibrateHandEye(
+                base2end_Rs, base2end_ts, rvecs_array, tvecs_array, method)
             
-            # Create 4x4 transformation matrix
-            cam2end_4x4 = np.eye(4)
-            cam2end_4x4[:3, :3] = cam2end_R
-            cam2end_4x4[:3, 3] = cam2end_t[:, 0]
+            # Create cam2base 4x4 transformation matrix
+            cam2base_4x4 = np.eye(4)
+            cam2base_4x4[:3, :3] = cam2base_R
+            cam2base_4x4[:3, 3] = cam2base_t[:, 0]
             
-            # Calculate the optimal target2base matrix
-            target2base_matrix = self._calculate_optimal_target2base_matrix(cam2end_4x4, verbose)
+            # For eye-to-hand, we need base2cam matrix, so invert the result
+            base2cam_4x4 = np.linalg.inv(cam2base_4x4)
+            
+            # Calculate the optimal target2end matrix
+            target2end_matrix = self._calculate_optimal_target2end_matrix(base2cam_4x4, verbose)
             
             # Calculate reprojection errors using the separate function
-            rms_error, per_image_errors = self._calculate_reprojection_errors(cam2end_4x4, target2base_matrix, verbose)
+            rms_error, per_image_errors = self._calculate_reprojection_errors(base2cam_4x4, target2end_matrix, verbose)
             
-            return True, cam2end_4x4, target2base_matrix, rms_error, per_image_errors
+            return True, base2cam_4x4, target2end_matrix, rms_error, per_image_errors
             
         except Exception as e:
             if verbose:
@@ -716,11 +736,11 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
 
     def optimize_calibration(self, ftol_rel: float = 1e-6, verbose: bool = False) -> Tuple[float, float]:
         """
-        Optimize calibration results by jointly refining cam2end and target2base matrices.
+        Optimize calibration results by jointly refining base2cam and target2end matrices.
         
         This method uses nonlinear optimization to minimize reprojection error by
-        simultaneously optimizing both the camera-to-end-effector transformation
-        and the target-to-base transformation.
+        simultaneously optimizing both the robot-base-to-camera transformation
+        and the target-to-end-effector transformation.
         
         Args:
             ftol_rel: Relative tolerance for convergence
@@ -733,79 +753,75 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
             ValueError: If calibration has not been completed
             ImportError: If nlopt optimization library is not available
         """
-        if not hasattr(self, 'cam2end_matrix') or self.cam2end_matrix is None:
+        if not hasattr(self, 'base2cam_matrix') or self.base2cam_matrix is None:
             raise ValueError("Initial calibration must be completed before optimization. Call calibrate() first.")
             
         if not HAS_NLOPT:
-            raise ImportError("nlopt library is required for optimization but not available")
+            if verbose:
+                print("⚠️ nlopt library not available, skipping optimization")
+            return self.rms_error, self.rms_error
             
         if verbose:
-            print(f"Starting optimization...")
-            print(f"Initial RMS error: {self.rms_error:.4f} pixels")
+            print(f"🔧 Starting eye-to-hand optimization...")
+            print(f"   Initial RMS error: {self.rms_error:.4f} pixels")
             
         # Store initial values
-        initial_cam2end = self.cam2end_matrix.copy()
-        initial_target2base = self.target2base_matrix.copy()
+        initial_base2cam = self.base2cam_matrix.copy()
+        initial_target2end = self.target2end_matrix.copy()
         initial_error = self.rms_error
         
         try:
             # Perform joint optimization
-            optimized_cam2end, optimized_target2base, initial_opt_error, final_opt_error = self._optimize_matrices_jointly(
-                initial_cam2end, initial_target2base, ftol_rel, verbose
+            optimized_base2cam, optimized_target2end = self._optimize_matrices_jointly(
+                initial_base2cam, initial_target2end, ftol_rel, verbose
             )
-
-            # record the optimization if improved
-            if initial_opt_error > final_opt_error:
-                # Update matrices with optimized results
-                self.cam2end_matrix = optimized_cam2end
-                self.target2base_matrix = optimized_target2base
-                                
-                # Recalculate errors with optimized matrices
-                self.rms_error, self.per_image_errors = self.calculate_reprojection_errors(
-                    self.cam2end_matrix, self.target2base_matrix, verbose=False
-                )
+            
+            # Update matrices with optimized results
+            self.base2cam_matrix = optimized_base2cam
+            self.target2end_matrix = optimized_target2end
+            
+            # Recalculate errors with optimized matrices
+            final_error, _ = self._calculate_reprojection_errors(optimized_base2cam, optimized_target2end, verbose=False)
+            self.rms_error = final_error
+            
+            if verbose:
+                improvement = initial_error - final_error
+                improvement_pct = (improvement / initial_error) * 100 if initial_error > 0 else 0
+                print(f"   Final RMS error: {final_error:.4f} pixels")
+                print(f"   Improvement: {improvement:.4f} pixels ({improvement_pct:.1f}%)")
                 
-                if verbose:
-                    improvement = initial_error - self.rms_error
-                    improvement_pct = (improvement / initial_error) * 100 if initial_error > 0 else 0
-                    print(f"Optimization completed!")
-                    print(f"Final RMS error: {self.rms_error:.4f} pixels")
-                    print(f"Improvement: {improvement:.4f} pixels ({improvement_pct:.1f}%)")
-                
-            return initial_error, self.rms_error
+            return initial_error, final_error
             
         except Exception as e:
             if verbose:
-                print(f"Optimization failed: {e}")
+                print(f"⚠️ Eye-to-hand optimization failed: {e}")
             # Restore original matrices
-            self.cam2end_matrix = initial_cam2end
-            self.target2base_matrix = initial_target2base
+            self.base2cam_matrix = initial_base2cam
+            self.target2end_matrix = initial_target2end
             self.rms_error = initial_error
             return initial_error, initial_error
 
-    def _optimize_matrices_jointly(self, initial_cam2end, initial_target2base, ftol_rel, verbose):
+    def _optimize_matrices_jointly(self, initial_base2cam, initial_target2end, ftol_rel, verbose):
         """
-        Optimize both cam2end and target2base matrices simultaneously.
+        Optimize both base2cam and target2end matrices simultaneously.
         This should converge faster than iterative optimization.
         
         Args:
-            initial_cam2end: Initial camera-to-end-effector transformation matrix
-            initial_target2base: Initial target-to-base transformation matrix  
+            initial_base2cam: Initial base-to-camera transformation matrix
+            initial_target2end: Initial target-to-end-effector transformation matrix  
             ftol_rel: Relative tolerance for optimization
             verbose: Whether to print optimization progress
             
         Returns:
-            tuple: (optimized_cam2end, optimized_target2base, initial_error, final_error)
+            tuple: (optimized_base2cam, optimized_target2end) matrices
         """
         try:
-            import nlopt
-            
             # Convert initial matrices to parameter vectors
-            cam2end_params = matrix_to_xyz_rpy(initial_cam2end)  # [x, y, z, roll, pitch, yaw]
-            target2base_params = matrix_to_xyz_rpy(initial_target2base)  # [x, y, z, roll, pitch, yaw]
+            base2cam_params = matrix_to_xyz_rpy(initial_base2cam)  # [x, y, z, roll, pitch, yaw]
+            target2end_params = matrix_to_xyz_rpy(initial_target2end)  # [x, y, z, roll, pitch, yaw]
             
-            # Combined parameter vector: [cam2end_params, target2base_params] (12 total)
-            initial_params = np.concatenate([cam2end_params, target2base_params])
+            # Combined parameter vector: [base2cam_params, target2end_params] (12 total)
+            initial_params = np.concatenate([base2cam_params, target2end_params])
             
             # Setup joint optimization
             opt = nlopt.opt(nlopt.LN_NELDERMEAD, 12)  # 12 parameters total
@@ -813,15 +829,15 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
             def joint_objective(params, grad):
                 """Objective function that optimizes both matrices simultaneously."""
                 # Split parameters back into two matrices
-                cam2end_params = params[:6]  # First 6 parameters for cam2end
-                target2base_params = params[6:]  # Last 6 parameters for target2base
+                base2cam_params = params[:6]  # First 6 parameters for base2cam
+                target2end_params = params[6:]  # Last 6 parameters for target2end
                 
                 # Convert to matrices
-                cam2end_matrix = xyz_rpy_to_matrix(cam2end_params)
-                target2base_matrix = xyz_rpy_to_matrix(target2base_params)
+                base2cam_matrix = xyz_rpy_to_matrix(base2cam_params)
+                target2end_matrix = xyz_rpy_to_matrix(target2end_params)
                 
                 # Calculate error using both matrices
-                rms_error, _ = self.calculate_reprojection_errors(cam2end_matrix, target2base_matrix, verbose=False)
+                rms_error, _ = self.calculate_reprojection_errors(base2cam_matrix, target2end_matrix, verbose=False)
                 return rms_error
             
             opt.set_min_objective(joint_objective)
@@ -832,40 +848,24 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
                 optimized_params = opt.optimize(initial_params)
                 
                 # Split optimized parameters back into matrices
-                optimized_cam2end = xyz_rpy_to_matrix(optimized_params[:6])
-                optimized_target2base = xyz_rpy_to_matrix(optimized_params[6:])
+                optimized_base2cam = xyz_rpy_to_matrix(optimized_params[:6])
+                optimized_target2end = xyz_rpy_to_matrix(optimized_params[6:])
                 
-                # Check if optimization actually improved the result
-                initial_error = joint_objective(initial_params, None)
-                final_error = joint_objective(optimized_params, None)
+                if verbose:
+                    initial_error = joint_objective(initial_params, None)
+                    final_error = joint_objective(optimized_params, None)
+                    print(f"   Joint optimization: {initial_error:.4f} -> {final_error:.4f} pixels")
+                    improvement = (initial_error - final_error) / initial_error * 100 if initial_error > 0 else 0
+                    print(f"   Improvement: {improvement:.1f}%")
                 
-                if final_error < initial_error:
-                    # Optimization improved - return optimized matrices
-                    if verbose:
-                        print(f"   Joint optimization: {initial_error:.4f} -> {final_error:.4f} pixels")
-                        improvement = (initial_error - final_error) / initial_error * 100
-                        print(f"   Improvement: {improvement:.1f}%")
-                    return optimized_cam2end, optimized_target2base, initial_error, final_error
-                else:
-                    # Optimization didn't improve or made it worse - return initial matrices
-                    if verbose:
-                        print(f"   Joint optimization did not improve: {initial_error:.4f} -> {final_error:.4f} pixels")
-                        print(f"   Keeping initial matrices")
-                    return initial_cam2end, initial_target2base, initial_error, initial_error  # final_error = initial_error
+                return optimized_base2cam, optimized_target2end
                 
             except Exception as opt_e:
                 if verbose:
                     print(f"   Joint optimization failed: {opt_e}")
-                # Calculate initial error for return value
-                initial_error = joint_objective(initial_params, None)
-                return initial_cam2end, initial_target2base, initial_error, initial_error
+                return initial_base2cam, initial_target2end
                 
         except ImportError:
             if verbose:
                 print("   nlopt not available, skipping joint optimization")
-            # Calculate initial error for return value (need to handle case where calculate_reprojection_errors might not work)
-            try:
-                initial_error, _ = self.calculate_reprojection_errors(initial_cam2end, initial_target2base, verbose=False)
-            except:
-                initial_error = float('inf')  # Fallback if calculation fails
-            return initial_cam2end, initial_target2base, initial_error, initial_error
+            return initial_base2cam, initial_target2end

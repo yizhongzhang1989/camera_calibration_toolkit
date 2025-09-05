@@ -168,16 +168,38 @@ def calibration_workflow_example():
 
 
 def main():
-    """Run all examples."""
+    """Run all examples with proper error handling."""
     
     print("Calibration Pattern JSON Serialization Examples")
     print("=" * 50)
     print()
     
-    # Run examples
-    saved_patterns = save_patterns_example()
-    load_patterns_example()
-    calibration_workflow_example()
+    success_count = 0
+    total_tests = 3
+    
+    try:
+        print("Testing pattern saving...")
+        saved_patterns = save_patterns_example()
+        success_count += 1
+        print("✅ Pattern saving completed successfully")
+    except Exception as e:
+        print(f"❌ Pattern saving failed: {e}")
+    
+    try:
+        print("\nTesting pattern loading...")
+        load_patterns_example()
+        success_count += 1
+        print("✅ Pattern loading completed successfully")
+    except Exception as e:
+        print(f"❌ Pattern loading failed: {e}")
+    
+    try:
+        print("\nTesting calibration workflow...")
+        calibration_workflow_example()
+        success_count += 1
+        print("✅ Calibration workflow completed successfully")
+    except Exception as e:
+        print(f"❌ Calibration workflow failed: {e}")
     
     print("\n" + "=" * 50)
     print("Summary:")
@@ -187,7 +209,19 @@ def main():
     print("- load_pattern_from_json(): Convenience function")
     print("- Perfect for storing pattern info in calibration results")
     print("- Enables exact pattern recovery for later analysis")
+    
+    print(f"\n📊 Results: {success_count}/{total_tests} tests successful")
+    
+    if success_count == total_tests:
+        return 0
+    elif success_count > 0:
+        print(f"⚠️  Some tests failed. Check error messages above.")
+        return 1
+    else:
+        print(f"❌ All tests failed!")
+        return 2
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    sys.exit(main())

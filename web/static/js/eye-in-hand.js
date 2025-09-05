@@ -90,7 +90,39 @@ class EyeInHandCalibration extends BaseCalibration {
     // ========================================
     
     initializeEventListeners() {
-        // File upload - Images
+        // Upload mode toggle
+        const uploadModeSelect = document.getElementById('upload-mode-select');
+        if (uploadModeSelect) {
+            uploadModeSelect.addEventListener('change', (e) => this.handleUploadModeChange(e.target.value));
+        }
+        
+        // Paired file upload
+        const pairedFiles = document.getElementById('paired-files');
+        const pairedUploadArea = document.getElementById('paired-upload-area');
+        
+        if (pairedFiles) {
+            pairedFiles.addEventListener('change', (e) => this.handlePairedUpload(e.target.files));
+        }
+        
+        // Drag and drop - Paired files
+        if (pairedUploadArea) {
+            pairedUploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                pairedUploadArea.classList.add('dragover');
+            });
+            
+            pairedUploadArea.addEventListener('dragleave', () => {
+                pairedUploadArea.classList.remove('dragover');
+            });
+            
+            pairedUploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                pairedUploadArea.classList.remove('dragover');
+                this.handlePairedUpload(e.dataTransfer.files);
+            });
+        }
+        
+        // File upload - Images (for separate mode)
         const imageFiles = document.getElementById('image-files');
         const uploadArea = document.getElementById('image-upload-area');
         
@@ -180,6 +212,77 @@ class EyeInHandCalibration extends BaseCalibration {
         if (downloadBtn) downloadBtn.addEventListener('click', () => this.downloadResults());
         if (clearImagesBtn) clearImagesBtn.addEventListener('click', () => this.clearAllImages());
         if (clearPosesBtn) clearPosesBtn.addEventListener('click', () => this.clearAllPoses());
+    }
+    
+    // ========================================
+    // Upload Mode Handling
+    // ========================================
+    
+    handleUploadModeChange(mode) {
+        const pairedSection = document.getElementById('paired-upload-section');
+        const separateSection = document.getElementById('separate-upload-section');
+        
+        if (mode === 'paired') {
+            pairedSection.style.display = 'block';
+            separateSection.style.display = 'none';
+        } else {
+            pairedSection.style.display = 'none';
+            separateSection.style.display = 'block';
+        }
+    }
+    
+    async handlePairedUpload(files) {
+        const formData = new FormData();
+        formData.append('session_id', this.sessionId);
+        formData.append('calibration_type', this.calibrationType);
+        
+        // Filter and add files
+        const imageFiles = [];
+        const jsonFiles = [];
+        
+        for (let file of files) {
+            if (file.type.startsWith('image/') || file.name.match(/\.(jpg|jpeg|png|bmp|tiff|tif)$/i)) {
+                imageFiles.push(file);
+                formData.append('files', file);
+            } else if (file.name.endsWith('.json')) {
+                jsonFiles.push(file);
+                formData.append('files', file);
+            }
+        }
+        
+        if (imageFiles.length === 0 || jsonFiles.length === 0) {
+            this.showStatus('Please select both image files and JSON files', 'error');
+            return;
+        }
+        
+        try {
+            this.showStatus(`Uploading ${imageFiles.length} images and ${jsonFiles.length} JSON files...`, 'info');
+            
+            const response = await fetch('/api/upload_paired_files', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.error) {
+                this.showStatus(`Error: ${result.error}`, 'error');
+                return;
+            }
+            
+            // Update both images and poses data
+            this.uploadedImages = result.images || [];
+            this.uploadedPoses = result.poses || [];
+            
+            this.showStatus(result.message, 'success');
+            this.onImagesUploaded();
+            this.updateUI();
+            this.updatePosesStatus();
+            this.displayUploadedImages();
+            
+        } catch (error) {
+            this.showStatus(`Paired upload failed: ${error.message}`, 'error');
+        }
     }
     
     // ========================================
@@ -530,7 +633,7 @@ class EyeInHandCalibration extends BaseCalibration {
             const visualizationImages = detailResults.visualization_images || [];
             console.log(`📊 Received ${visualizationImages.length} visualization images`);
             
-            // Create lookup maps by image name and type
+            // Create lookup maps by image index and type
             const imagesByType = {
                 'corner_detection': {},
                 'undistorted_axes': {},
@@ -541,10 +644,13 @@ class EyeInHandCalibration extends BaseCalibration {
                 if (!imagesByType[img.type]) {
                     imagesByType[img.type] = {};
                 }
-                // Extract the original filename from the image name
-                const filename = img.name.split(' - ')[1] || img.name;
-                imagesByType[img.type][filename] = img;
-                console.log(`📷 Mapped ${img.type}: ${filename}`);
+                // Extract the index from the image name (e.g., "image_000.jpg" -> "000")
+                const match = img.name.match(/image_(\d+)\.jpg/);
+                if (match) {
+                    const imageIndex = parseInt(match[1], 10); // Convert "000" to 0, "001" to 1, etc.
+                    imagesByType[img.type][imageIndex] = img;
+                    console.log(`📷 Mapped ${img.type}: index ${imageIndex} -> ${img.name}`);
+                }
             });
             
             this.uploadedImages.forEach((file, index) => {
@@ -554,36 +660,36 @@ class EyeInHandCalibration extends BaseCalibration {
                 // Update corner detection column
                 const cornerCell = document.getElementById(`corner-cell-${index}`);
                 if (cornerCell) {
-                    const cornerImage = imagesByType.corner_detection[originalName];
+                    const cornerImage = imagesByType.corner_detection[index]; // Use index instead of filename
                     if (cornerImage && cornerImage.data) {
                         cornerCell.innerHTML = `
                             <div class="comparison-image-container">
                                 <img src="${cornerImage.data}" alt="Corners ${index + 1}" class="comparison-image" loading="lazy" onclick="eyeInHandCalib.openModal('${cornerImage.data}', 'Corner Detection ${index + 1}')">
                             </div>
                         `;
-                        console.log(`✅ Updated corner detection for ${originalName}`);
+                        console.log(`✅ Updated corner detection for ${originalName} at index ${index}`);
                     } else {
                         cornerCell.innerHTML = `
                             <div style="color: #dc3545; padding: 2rem;">
                                 <div style="font-size: 2rem;">❌</div>
-                                <div>No corners detected</div>
+                                <div>No corner detection image</div>
                             </div>
                         `;
-                        console.log(`❌ No corner detection image for ${originalName}`);
+                        console.log(`❌ No corner detection image for index ${index} (${originalName})`);
                     }
                 }
                 
                 // Update undistorted column
                 const undistortedCell = document.getElementById(`undistorted-cell-${index}`);
                 if (undistortedCell) {
-                    const undistortedImage = imagesByType.undistorted_axes[originalName];
+                    const undistortedImage = imagesByType.undistorted_axes[index]; // Use index instead of filename
                     if (undistortedImage && undistortedImage.data) {
                         undistortedCell.innerHTML = `
                             <div class="comparison-image-container">
                                 <img src="${undistortedImage.data}" alt="Undistorted ${index + 1}" class="comparison-image" loading="lazy" onclick="eyeInHandCalib.openModal('${undistortedImage.data}', 'Undistorted Axes ${index + 1}')">
                             </div>
                         `;
-                        console.log(`✅ Updated undistorted axes for ${originalName}`);
+                        console.log(`✅ Updated undistorted axes for ${originalName} at index ${index}`);
                     } else {
                         undistortedCell.innerHTML = `
                             <div style="color: #666; padding: 2rem;">
@@ -591,21 +697,21 @@ class EyeInHandCalibration extends BaseCalibration {
                                 <div>Undistortion failed</div>
                             </div>
                         `;
-                        console.log(`❌ No undistorted axes image for ${originalName}`);
+                        console.log(`❌ No undistorted axes image for index ${index} (${originalName})`);
                     }
                 }
                 
                 // Update reprojected column
                 const reprojectedCell = document.getElementById(`reprojected-cell-${index}`);
                 if (reprojectedCell) {
-                    const reprojectedImage = imagesByType.reprojection[originalName];
+                    const reprojectedImage = imagesByType.reprojection[index]; // Use index instead of filename
                     if (reprojectedImage && reprojectedImage.data) {
                         reprojectedCell.innerHTML = `
                             <div class="comparison-image-container">
                                 <img src="${reprojectedImage.data}" alt="Reprojected ${index + 1}" class="comparison-image" loading="lazy" onclick="eyeInHandCalib.openModal('${reprojectedImage.data}', 'Reprojection Error ${index + 1}')">
                             </div>
                         `;
-                        console.log(`✅ Updated reprojection for ${originalName}`);
+                        console.log(`✅ Updated reprojection for ${originalName} at index ${index}`);
                     } else {
                         reprojectedCell.innerHTML = `
                             <div style="color: #666; padding: 2rem;">
@@ -613,7 +719,7 @@ class EyeInHandCalibration extends BaseCalibration {
                                 <div>Reprojection failed</div>
                             </div>
                         `;
-                        console.log(`❌ No reprojection image for ${originalName}`);
+                        console.log(`❌ No reprojection image for index ${index} (${originalName})`);
                     }
                 }
             });

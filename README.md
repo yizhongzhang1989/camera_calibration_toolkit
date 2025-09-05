@@ -22,10 +22,21 @@ pip install -r requirements.txt
 
 ```python
 from core.calibration_factory import CalibrationFactory
-from core.calibration_patterns import create_chessboard_pattern
+from core.calibration_patterns import load_pattern_from_json
 
-# Create pattern and calibrator
-pattern = create_chessboard_pattern('standard', width=11, height=8, square_size=0.02)
+# Create pattern configuration and load pattern
+pattern_config = {
+    "pattern_id": "standard_chessboard",
+    "name": "Standard Chessboard",
+    "description": "Traditional black and white checkerboard pattern",
+    "is_planar": True,
+    "parameters": {
+        "width": 11,
+        "height": 8,
+        "square_size": 0.02
+    }
+}
+pattern = load_pattern_from_json(pattern_config)
 calibrator = CalibrationFactory.create_calibrator(
     'intrinsic',
     image_paths=['img1.jpg', 'img2.jpg', 'img3.jpg'],
@@ -78,14 +89,24 @@ python main.py --mode web
 ```python
 import glob
 from core.calibration_factory import CalibrationFactory
-from core.calibration_patterns import create_chessboard_pattern
+from core.calibration_patterns import load_pattern_from_json
 
 # Get all calibration images
 image_paths = glob.glob("calibration_images/*.jpg")
 
-# Create 11x8 chessboard pattern with 20mm squares
-pattern = create_chessboard_pattern('standard', 
-    width=11, height=8, square_size=0.020)
+# Create 11x8 chessboard pattern with 20mm squares  
+pattern_config = {
+    "pattern_id": "standard_chessboard",
+    "name": "Standard Chessboard",
+    "description": "Traditional black and white checkerboard pattern",
+    "is_planar": True,
+    "parameters": {
+        "width": 11,
+        "height": 8,
+        "square_size": 0.020
+    }
+}
+pattern = load_pattern_from_json(pattern_config)
 
 # Create and run calibrator
 calibrator = CalibrationFactory.create_calibrator('intrinsic',
@@ -110,7 +131,7 @@ if success:
 
 ```python
 from core.calibration_factory import CalibrationFactory
-from core.calibration_patterns import create_chessboard_pattern
+from core.calibration_patterns import load_pattern_from_json
 import json
 
 # Load robot poses from JSON files
@@ -149,12 +170,34 @@ calibrator.save_results("./eye_in_hand_results")
 
 ```python
 # Standard chessboard
-chessboard = create_chessboard_pattern('standard', 
-    width=9, height=6, square_size=0.025)
+chessboard_config = {
+    "pattern_id": "standard_chessboard",
+    "name": "Standard Chessboard",
+    "description": "Traditional black and white checkerboard pattern",
+    "is_planar": True,
+    "parameters": {
+        "width": 9,
+        "height": 6,
+        "square_size": 0.025
+    }
+}
+chessboard = load_pattern_from_json(chessboard_config)
 
 # ChArUco board (more robust detection)
-charuco = create_chessboard_pattern('charuco',
-    width=8, height=6, square_size=0.04, marker_size=0.02)
+charuco_config = {
+    "pattern_id": "charuco_board",
+    "name": "ChArUco Board",
+    "description": "Chessboard pattern with ArUco markers for robust detection",
+    "is_planar": True,
+    "parameters": {
+        "width": 8,
+        "height": 6,
+        "square_size": 0.04,
+        "marker_size": 0.02,
+        "dictionary_id": 1
+    }
+}
+charuco = load_pattern_from_json(charuco_config)
 
 # Use either pattern the same way
 calibrator = CalibrationFactory.create_calibrator('intrinsic',

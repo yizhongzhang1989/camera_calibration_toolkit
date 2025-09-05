@@ -60,17 +60,37 @@ def generate_object_points(self, point_ids=None) -> np.ndarray:
 ### Creating Patterns
 
 ```python
+from core.calibration_patterns import load_pattern_from_json
+
 # Standard 2D chessboard
-standard_pattern = create_chessboard_pattern(
-    "standard", width=11, height=8, square_size=0.020
-)
+standard_config = {
+    "pattern_id": "standard_chessboard",
+    "name": "Standard Chessboard",
+    "description": "Traditional black and white checkerboard pattern",
+    "is_planar": True,
+    "parameters": {
+        "width": 11,
+        "height": 8,
+        "square_size": 0.020
+    }
+}
+standard_pattern = load_pattern_from_json(standard_config)
 
 # ChArUco board (can be 2D or 3D)
-charuco_pattern = create_chessboard_pattern(
-    "charuco", width=5, height=7, 
-    square_size=0.040, marker_size=0.020,
-    is_planar=True  # or False for 3D
-)
+charuco_config = {
+    "pattern_id": "charuco_board", 
+    "name": "ChArUco Board",
+    "description": "Chessboard pattern with ArUco markers for robust detection",
+    "is_planar": True,  # or False for 3D
+    "parameters": {
+        "width": 5,
+        "height": 7,
+        "square_size": 0.040,
+        "marker_size": 0.020,
+        "dictionary_id": 1
+    }
+}
+charuco_pattern = load_pattern_from_json(charuco_config)
 
 # Custom 3D calibration object
 def my_detector(image, **kwargs):
@@ -184,9 +204,18 @@ success, mtx, dist = calibrator.calibrate_from_images(
 )
 
 # New way - current API
-pattern = create_chessboard_pattern(
-    "standard", width=11, height=8, square_size=0.02
-)
+pattern_config = {
+    "pattern_id": "standard_chessboard",
+    "name": "Standard Chessboard", 
+    "description": "Traditional black and white checkerboard pattern",
+    "is_planar": True,
+    "parameters": {
+        "width": 11,
+        "height": 8,
+        "square_size": 0.02
+    }
+}
+pattern = load_pattern_from_json(pattern_config)
 
 calibrator = IntrinsicCalibrator(
     image_paths=images,

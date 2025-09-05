@@ -31,7 +31,7 @@ from datetime import datetime
 # Add the project root to the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from core.calibration_patterns import create_chessboard_pattern
+from core.calibration_patterns import load_pattern_from_json
 
 
 def ensure_output_directory():
@@ -51,108 +51,138 @@ def generate_patterns():
     
     output_dir = ensure_output_directory()
     print(f"📁 Output directory: {output_dir}")
+    
+    # Initialize pattern system once to avoid repeated discovery messages
+    print("\n🔍 Initializing pattern system...")
+    from core.calibration_patterns import load_pattern_from_json
+    _ = load_pattern_from_json({
+        "pattern_id": "standard_chessboard",
+        "name": "Test",
+        "description": "Test",
+        "is_planar": True,
+        "parameters": {"width": 8, "height": 6, "square_size": 0.02}
+    })
+    print("✅ Pattern system ready")
     print()
     
     # Define the specific patterns to generate
     patterns = [
         {
-            'type': 'standard',
             'name': 'chessboard_11x8_default',
-            'width': 11, 
-            'height': 8, 
-            'square_size': 0.025,
             'description': 'Standard 11×8 chessboard with default settings',
-            'generate_params': {}  # Use defaults: 100px squares, 0px border
+            'generate_params': {},  # Use defaults: 100px squares, 0px border
+            'pattern_config': {
+                "pattern_id": "standard_chessboard",
+                "name": "Standard Chessboard",
+                "description": "Traditional black and white checkerboard pattern",
+                "is_planar": True,
+                "parameters": {
+                    "width": 11,
+                    "height": 8,
+                    "square_size": 0.025
+                }
+            }
         },
         {
-            'type': 'standard',
             'name': 'chessboard_9x6_200px_border200',
-            'width': 9, 
-            'height': 6, 
-            'square_size': 0.025,
             'description': 'Standard 9×6 chessboard with 200px squares and 200px border',
-            'generate_params': {'pixel_per_square': 200, 'border_pixels': 200}
+            'generate_params': {'pixel_per_square': 200, 'border_pixels': 200},
+            'pattern_config': {
+                "pattern_id": "standard_chessboard",
+                "name": "Standard Chessboard",
+                "description": "Traditional black and white checkerboard pattern",
+                "is_planar": True,
+                "parameters": {
+                    "width": 9,
+                    "height": 6,
+                    "square_size": 0.025
+                }
+            }
         },
         {
-            'type': 'charuco',
             'name': 'charuco_8x6_4x4_100',
-            'width': 8, 
-            'height': 6, 
-            'square_size': 0.02, 
-            'marker_size': 0.015,
-            'dictionary_id': cv2.aruco.DICT_4X4_100,
             'description': 'ChArUco 8×6 with DICT_4X4_100, 20mm squares, 15mm markers',
-            'generate_params': {}  # Use defaults: 100px squares, 0px border
+            'generate_params': {},  # Use defaults: 100px squares, 0px border
+            'pattern_config': {
+                "pattern_id": "charuco_board",
+                "name": "ChArUco Board",
+                "description": "Chessboard pattern with ArUco markers for robust detection",
+                "is_planar": True,
+                "parameters": {
+                    "width": 8,
+                    "height": 6,
+                    "square_size": 0.02,
+                    "marker_size": 0.015,
+                    "dictionary_id": cv2.aruco.DICT_4X4_100
+                }
+            }
         },
         {
-            'type': 'charuco',
             'name': 'charuco_12x9_6x6_250_border50',
-            'width': 12, 
-            'height': 9, 
-            'square_size': 0.02, 
-            'marker_size': 0.01,
-            'dictionary_id': cv2.aruco.DICT_6X6_250,
             'description': 'ChArUco 12×9 with DICT_6X6_250, 20mm squares, 10mm markers, 50px border',
-            'generate_params': {'border_pixels': 50}  # Use default 100px squares, add 50px border
+            'generate_params': {'border_pixels': 50},  # Use default 100px squares, add 50px border
+            'pattern_config': {
+                "pattern_id": "charuco_board",
+                "name": "ChArUco Board",
+                "description": "Chessboard pattern with ArUco markers for robust detection",
+                "is_planar": True,
+                "parameters": {
+                    "width": 12,
+                    "height": 9,
+                    "square_size": 0.02,
+                    "marker_size": 0.01,
+                    "dictionary_id": cv2.aruco.DICT_6X6_250
+                }
+            }
         },
         {
-            'type': 'grid',
             'name': 'gridboard_1x1_dict10',
-            'markers_x': 1, 
-            'markers_y': 1, 
-            'marker_size': 0.04, 
-            'marker_separation': 0.01,
-            'dictionary_id': cv2.aruco.DICT_4X4_50,
             'description': 'ArUco Grid Board 1×1 with DICT_4X4_50, 40mm markers, 10mm separation',
-            'generate_params': {'pixel_per_square': 150, 'border_pixels': 100}
+            'generate_params': {'pixel_per_square': 150, 'border_pixels': 100},
+            'pattern_config': {
+                "pattern_id": "grid_board",
+                "name": "Grid Board",
+                "description": "ArUco marker grid board pattern",
+                "is_planar": True,
+                "parameters": {
+                    "markers_x": 1,
+                    "markers_y": 1,
+                    "marker_size": 0.04,
+                    "marker_separation": 0.01,
+                    "dictionary_id": cv2.aruco.DICT_4X4_50
+                }
+            }
         },
         {
-            'type': 'grid',
             'name': 'gridboard_5x4_dict10',
-            'markers_x': 5, 
-            'markers_y': 4, 
-            'marker_size': 0.04, 
-            'marker_separation': 0.01,
-            'dictionary_id': cv2.aruco.DICT_4X4_50,
             'description': 'ArUco Grid Board 5×4 with DICT_4X4_50, 40mm markers, 10mm separation',
-            'generate_params': {'pixel_per_square': 80, 'border_pixels': 50}
+            'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
+            'pattern_config': {
+                "pattern_id": "grid_board",
+                "name": "Grid Board",
+                "description": "ArUco marker grid board pattern",
+                "is_planar": True,
+                "parameters": {
+                    "markers_x": 5,
+                    "markers_y": 4,
+                    "marker_size": 0.04,
+                    "marker_separation": 0.01,
+                    "dictionary_id": cv2.aruco.DICT_4X4_50
+                }
+            }
         }
     ]
     
     generated_files = []
+    failed_patterns = []
     
     for i, config in enumerate(patterns, 1):
         print(f"🔲 Pattern {i}/{len(patterns)}: {config['name']}")
         print(f"   📄 {config['description']}")
         
         try:
-            # Create pattern
-            if config['type'] == 'standard':
-                pattern = create_chessboard_pattern(
-                    'standard',
-                    width=config['width'],
-                    height=config['height'],
-                    square_size=config['square_size']
-                )
-            elif config['type'] == 'charuco':
-                pattern = create_chessboard_pattern(
-                    'charuco',
-                    width=config['width'],
-                    height=config['height'],
-                    square_size=config['square_size'],
-                    marker_size=config['marker_size'],
-                    dictionary_id=config['dictionary_id']
-                )
-            elif config['type'] == 'grid':
-                # Import Grid Board pattern directly
-                from core.calibration_patterns import GridBoard
-                pattern = GridBoard(
-                    markers_x=config['markers_x'],
-                    markers_y=config['markers_y'],
-                    marker_size=config['marker_size'],
-                    marker_separation=config['marker_separation'],
-                    dictionary_id=config['dictionary_id']
-                )
+            # Create pattern using JSON configuration - load_pattern_from_json handles all types
+            pattern = load_pattern_from_json(config['pattern_config'])
             
             # Generate image with specified parameters
             if config['generate_params']:
@@ -165,38 +195,45 @@ def generate_patterns():
             filepath = os.path.join(output_dir, filename)
             cv2.imwrite(filepath, image)
             
+            # Verify the image was actually saved
+            if not os.path.exists(filepath):
+                raise Exception(f"Failed to save image file: {filepath}")
+            
             # Get file size
             file_size = os.path.getsize(filepath)
             file_size_kb = file_size / 1024
             
-            print(f"   💾 Saved: {filename} ({image.shape[1]}×{image.shape[0]}) - {file_size_kb:.1f} KB")
+            print(f"   💾 Generated: {filename} ({image.shape[1]}×{image.shape[0]}) - {file_size_kb:.1f} KB")
             
             # Generate info file
             info_filename = f"{config['name']}_info.txt"
             info_filepath = os.path.join(output_dir, info_filename)
+            
+            pattern_params = config['pattern_config']['parameters']
+            pattern_id = config['pattern_config']['pattern_id']
             
             with open(info_filepath, 'w') as f:
                 f.write(f"Pattern Information\n")
                 f.write(f"==================\n\n")
                 f.write(f"Name: {config['name']}\n")
                 f.write(f"Description: {config['description']}\n")
-                f.write(f"Type: {config['type'].title()}\n")
+                f.write(f"Type: {pattern_id.replace('_', ' ').title()}\n")
                 
-                if config['type'] == 'grid':
-                    f.write(f"Grid Size: {config['markers_x']}×{config['markers_y']} markers\n")
-                    f.write(f"Marker Size: {config['marker_size']*1000:.1f}mm\n")
-                    f.write(f"Marker Separation: {config['marker_separation']*1000:.1f}mm\n")
+                if pattern_id == 'grid_board':
+                    f.write(f"Grid Size: {pattern_params['markers_x']}×{pattern_params['markers_y']} markers\n")
+                    f.write(f"Marker Size: {pattern_params['marker_size']*1000:.1f}mm\n")
+                    f.write(f"Marker Separation: {pattern_params['marker_separation']*1000:.1f}mm\n")
                     dict_name = [name for name, val in vars(cv2.aruco).items() 
-                               if name.startswith('DICT_') and val == config['dictionary_id']][0]
+                               if name.startswith('DICT_') and val == pattern_params['dictionary_id']][0]
                     f.write(f"Dictionary: {dict_name}\n")
                 else:
-                    f.write(f"Dimensions: {config['width']}×{config['height']}\n")
-                    f.write(f"Square Size: {config['square_size']*1000:.1f}mm\n")
+                    f.write(f"Dimensions: {pattern_params['width']}×{pattern_params['height']}\n")
+                    f.write(f"Square Size: {pattern_params['square_size']*1000:.1f}mm\n")
                     
-                    if config['type'] == 'charuco':
-                        f.write(f"Marker Size: {config['marker_size']*1000:.1f}mm\n")
+                    if pattern_id == 'charuco_board':
+                        f.write(f"Marker Size: {pattern_params['marker_size']*1000:.1f}mm\n")
                         dict_name = [name for name, val in vars(cv2.aruco).items() 
-                                   if name.startswith('DICT_') and val == config['dictionary_id']][0]
+                                   if name.startswith('DICT_') and val == pattern_params['dictionary_id']][0]
                         f.write(f"Dictionary: {dict_name}\n")
                 
                 f.write(f"\nImage Information:\n")
@@ -213,35 +250,54 @@ def generate_patterns():
                 f.write(f"\nGenerated: {start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
             
             generated_files.extend([filename, info_filename])
-            print(f"   📝 Info saved: {info_filename}")
             
         except Exception as e:
             print(f"   ❌ Error creating {config['name']}: {e}")
+            failed_patterns.append(config['name'])
         
         print()
     
     # Summary
     end_time = datetime.now()
-    print("✅ Pattern generation complete!")
-    print(f"📂 All images saved to: {output_dir}")
-    print(f"⏰ Completed at: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    success_count = len(patterns) - len(failed_patterns)
     
-    if generated_files:
-        print(f"\n📋 Generated Files ({len(generated_files)} files):")
-        for i, filename in enumerate(generated_files, 1):
-            filepath = os.path.join(output_dir, filename)
-            if os.path.exists(filepath):
-                file_size = os.path.getsize(filepath)
-                file_type = "🖼️" if filename.endswith('.png') else "📝"
-                print(f"    {i:2d}. {file_type} {filename:<45} ({file_size:,} bytes)")
+    if failed_patterns:
+        print(f"⚠️  Generation completed with {len(failed_patterns)} failures")
+        print(f"   Failed patterns: {', '.join(failed_patterns)}")
+    else:
+        print("✅ All patterns generated successfully!")
+    
+    print(f"📂 Output directory: {output_dir}")
+    print(f"📊 Generated {len(generated_files)} files ({success_count} patterns)")
+    print(f"⏰ Completed in {(end_time - start_time).total_seconds():.1f}s")
     
     print("\n🎯 Usage Tips:")
-    print("   • Use these patterns for camera calibration")
     print("   • Print at 'Actual Size' for accurate physical dimensions")  
     print("   • Mount patterns on rigid, flat surfaces")
     print("   • Ensure good lighting and avoid reflections")
-    print("   • Check pattern info files for detailed specifications")
+    print("   • Check .txt files for detailed specifications")
+    
+    # Return success/failure indication
+    if failed_patterns:
+        return len(failed_patterns)  # Return number of failures
+    else:
+        return 0  # Success
+
+
+def main():
+    """Main function with proper error handling."""
+    try:
+        result = generate_patterns()
+        return result  # 0 for success, >0 for number of failures
+            
+    except Exception as e:
+        print(f"\n❌ CRITICAL ERROR: Pattern generation failed:")
+        print(f"   Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return 2
 
 
 if __name__ == "__main__":
-    generate_patterns()
+    import sys
+    sys.exit(main())

@@ -27,7 +27,7 @@ import numpy as np
 import cv2
 from typing import Tuple, List, Optional, Union
 from .base_calibrator import BaseCalibrator
-from .calibration_patterns import CalibrationPattern, create_chessboard_pattern
+from .calibration_patterns import CalibrationPattern
 
 
 class IntrinsicCalibrator(BaseCalibrator):
@@ -43,7 +43,7 @@ class IntrinsicCalibrator(BaseCalibrator):
     - distortion_model: Distortion model used for calibration
     """
     
-    def __init__(self, images=None, image_paths=None, calibration_pattern=None, pattern_type=None):
+    def __init__(self, images=None, image_paths=None, calibration_pattern=None):
         """
         Initialize IntrinsicCalibrator with smart constructor arguments.
         
@@ -51,22 +51,50 @@ class IntrinsicCalibrator(BaseCalibrator):
             images: List of image arrays (numpy arrays) or None
             image_paths: List of image file paths or None
             calibration_pattern: CalibrationPattern instance or None
-            pattern_type: Pattern type string for backwards compatibility or None
         """
         # Initialize base class with common functionality
-        super().__init__(images, image_paths, calibration_pattern, pattern_type)
+        super().__init__(images, image_paths, calibration_pattern)
+            
+    # Abstract method implementations
+    def calibrate(self, **kwargs) -> bool:
+        """
+        Perform intrinsic camera calibration (wrapper for calibrate_camera).
         
-        # Intrinsic-specific attributes
-        self.camera_matrix = None            # Calibrated camera matrix
-        self.distortion_coefficients = None  # Calibrated distortion coefficients
-        self.distortion_model = None         # Distortion model used for calibration
-    
+        Args:
+            **kwargs: Arguments passed to calibrate_camera
+            
+        Returns:
+            bool: True if calibration succeeded, False if failed
+            
+        Note:
+            After successful calibration, use getter methods to access results:
+            - get_rms_error(): Overall RMS reprojection error
+            - get_camera_matrix(): Calibrated camera matrix
+            - get_distortion_coefficients(): Distortion coefficients
+        """
+        return self.calibrate_camera(**kwargs)
+
+    def save_results(self, save_directory: str) -> None:
+        """
+        Save calibration results (wrapper for save_calibration).
+        
+        Args:
+            save_directory: Directory to save results
+        """
+        if not self.is_calibrated():
+            raise ValueError("No calibration results to save. Run calibration first.")
+        
+        import os
+        os.makedirs(save_directory, exist_ok=True)
+        filepath = os.path.join(save_directory, "intrinsic_calibration_results.json")
+        self.save_calibration(filepath)
+
     def calibrate_camera(self, 
                         cameraMatrix: Optional[np.ndarray] = None,
                         distCoeffs: Optional[np.ndarray] = None, 
                         flags: int = 0,
                         criteria: Optional[Tuple] = None,
-                        verbose: bool = False) -> float:
+                        verbose: bool = False) -> bool:
         """
         Calibrate camera following OpenCV's calibrateCamera interface.
         
@@ -81,13 +109,19 @@ class IntrinsicCalibrator(BaseCalibrator):
             verbose: Whether to print detailed progress
             
         Returns:
-            float: RMS reprojection error (0.0 if calibration failed)
+            bool: True if calibration succeeded, False if failed
             
         Note:
             Before calling this method, you must:
             1. Set images: set_images_from_paths() or set_images_from_arrays()
             2. Set pattern: set_calibration_pattern()  
-            3. Detect points: detect_pattern_points()
+            3. Detect points: detect_pattern_points() (or let this method do it automatically)
+            
+            After successful calibration, use these getters to access results:
+            - get_rms_error(): Overall RMS reprojection error (lower is better)
+            - get_camera_matrix(): Calibrated camera intrinsic matrix
+            - get_distortion_coefficients(): Calibrated distortion coefficients
+            - get_per_image_errors(): Per-image reprojection errors
             
         Distortion Model Flags:
             Use cv2.CALIB_* flags to control distortion models:
@@ -97,7 +131,12 @@ class IntrinsicCalibrator(BaseCalibrator):
             - Tilted (14 coeff): cv2.CALIB_RATIONAL_MODEL | cv2.CALIB_THIN_PRISM_MODEL | cv2.CALIB_TILTED_MODEL
         """
         if self.image_points is None or self.object_points is None:
-            raise ValueError("Point correspondences not available. Call detect_pattern_points() first.")
+            if verbose:
+                print("Image and object points not calculated yet. Running pattern detection...")
+            
+            # Automatically detect pattern points if not done yet
+            if not self.detect_pattern_points(verbose=verbose):
+                raise ValueError("Pattern detection failed. Cannot proceed with calibration.")
         
         # Count successful detections (non-None entries)
         successful_count = sum(1 for pts in self.image_points if pts is not None)
@@ -208,35 +247,17 @@ class IntrinsicCalibrator(BaseCalibrator):
                     successful_errors = [f'{err:.4f}' for err in self.per_image_errors if err is not None]
                     print(f"Per-image errors: {successful_errors}")
                 
-                return ret
+                return True
             else:
                 if verbose:
                     print("❌ Calibration failed - OpenCV returned invalid results")
-                return 0.0
+                return False
                 
         except Exception as e:
             if verbose:
                 print(f"❌ Calibration failed with exception: {e}")
-            return 0.0
+            return False
     
-    # Getter methods for results
-    def get_camera_matrix(self) -> Optional[np.ndarray]:
-        """Get calibrated camera matrix."""
-        return self.camera_matrix
-    
-    def get_distortion_coefficients(self) -> Optional[np.ndarray]:
-        """Get calibrated distortion coefficients."""
-        return self.distortion_coefficients
-    
-    def get_extrinsics(self) -> Tuple[Optional[List[np.ndarray]], Optional[List[np.ndarray]]]:
-        """Get rotation and translation vectors for each image."""
-        return self.rvecs, self.tvecs
-    
-    def get_reprojection_error(self) -> Tuple[Optional[float], Optional[List[float]]]:
-        """Get overall and per-image reprojection errors."""
-        return self.rms_error, self.per_image_errors
-    
-    # I/O methods for saving and loading calibration data
     def save_calibration(self, filepath: str, include_extrinsics: bool = True) -> None:
         """
         Save calibration results to JSON file.
@@ -253,7 +274,7 @@ class IntrinsicCalibrator(BaseCalibrator):
             "calibration_info": {
                 "timestamp": __import__('datetime').datetime.now().isoformat(),
                 "image_count": len([pts for pts in self.image_points if pts is not None]) if self.image_points else 0,
-                "pattern_type": self.pattern_type,
+                "pattern_type": self.calibration_pattern.pattern_id if self.calibration_pattern else "unknown",
                 "distortion_model": self.distortion_model,
                 "rms_error": float(self.rms_error)
             },
@@ -292,7 +313,31 @@ class IntrinsicCalibrator(BaseCalibrator):
             json.dump(calibration_data, f, indent=2, ensure_ascii=False)
         
         print(f"✅ Calibration data saved to: {filepath}")
+
+    def get_rms_error(self) -> Optional[float]:
+        """Get overall RMS reprojection error (lower is better)."""
+        return self.rms_error
     
+    def get_camera_matrix(self) -> Optional[np.ndarray]:
+        """Get calibrated camera matrix."""
+        return self.camera_matrix
+    
+    def get_distortion_coefficients(self) -> Optional[np.ndarray]:
+        """Get calibrated distortion coefficients."""
+        return self.distortion_coefficients
+    
+    def get_extrinsics(self) -> Tuple[Optional[List[np.ndarray]], Optional[List[np.ndarray]]]:
+        """Get rotation and translation vectors for each image."""
+        return self.rvecs, self.tvecs
+    
+    def get_reprojection_error(self) -> Tuple[Optional[float], Optional[List[float]]]:
+        """Get overall and per-image reprojection errors."""
+        return self.rms_error, self.per_image_errors
+    
+    def get_per_image_errors(self) -> Optional[List[float]]:
+        """Get per-image reprojection errors (None entries for failed detections)."""
+        return self.per_image_errors
+        
     def load_calibration(self, filepath: str) -> bool:
         """
         Load calibration results from JSON file.
@@ -323,9 +368,6 @@ class IntrinsicCalibrator(BaseCalibrator):
             if "per_image_errors" in calibration_data and calibration_data["per_image_errors"]:
                 self.per_image_errors = calibration_data["per_image_errors"]
             
-            if "pattern_info" in calibration_data:
-                self.pattern_type = calibration_data["pattern_info"]["name"]
-            
             # Load extrinsics if available
             if "extrinsics" in calibration_data:
                 extrinsics = calibration_data["extrinsics"]
@@ -346,69 +388,4 @@ class IntrinsicCalibrator(BaseCalibrator):
         except Exception as e:
             print(f"❌ Failed to load calibration data: {e}")
             return False
-    
-    def export_opencv_yaml(self, filepath: str) -> None:
-        """
-        Export calibration data in OpenCV YAML format for compatibility.
-        
-        Args:
-            filepath: Path to save the YAML file (should end with .yml or .yaml)
-        """
-        if not self.calibration_completed:
-            raise ValueError("No calibration data to export. Run calibration first.")
-        
-        import yaml
-        
-        # Create OpenCV-compatible data structure
-        opencv_data = {
-            "image_width": int(self.image_size[0]) if self.image_size else 0,
-            "image_height": int(self.image_size[1]) if self.image_size else 0,
-            "camera_matrix": {
-                "rows": 3,
-                "cols": 3,
-                "dt": "d",
-                "data": self.camera_matrix.flatten().tolist()
-            },
-            "distortion_coefficients": {
-                "rows": 1,
-                "cols": len(self.distortion_coefficients),
-                "dt": "d", 
-                "data": self.distortion_coefficients.flatten().tolist()
-            },
-            "avg_reprojection_error": float(self.rms_error)
-        }
-        
-        # Save to YAML file
-        os.makedirs(os.path.dirname(filepath) if os.path.dirname(filepath) else '.', exist_ok=True)
-        with open(filepath, 'w', encoding='utf-8') as f:
-            yaml.dump(opencv_data, f, default_flow_style=False)
-        
-        print(f"✅ OpenCV YAML data exported to: {filepath}")
-    
-    # Abstract method implementations
-    def calibrate(self, **kwargs) -> float:
-        """
-        Perform intrinsic camera calibration (wrapper for calibrate_camera).
-        
-        Args:
-            **kwargs: Arguments passed to calibrate_camera
             
-        Returns:
-            float: RMS calibration error
-        """
-        return self.calibrate_camera(**kwargs)
-    
-    def save_results(self, save_directory: str) -> None:
-        """
-        Save calibration results (wrapper for save_calibration).
-        
-        Args:
-            save_directory: Directory to save results
-        """
-        if not self.is_calibrated():
-            raise ValueError("No calibration results to save. Run calibration first.")
-        
-        import os
-        os.makedirs(save_directory, exist_ok=True)
-        filepath = os.path.join(save_directory, "intrinsic_calibration_results.json")
-        self.save_calibration(filepath)
