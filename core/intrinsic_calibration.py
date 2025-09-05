@@ -187,7 +187,7 @@ class IntrinsicCalibrator(BaseCalibrator):
                 
                 # Store results in class members
                 self.camera_matrix = mtx
-                self.distortion_coefficients = dist
+                self.distortion_coefficients = dist.flatten()  # Flatten to 1D array
                 self.distortion_model = distortion_model
                 self.rms_error = ret
                 self.calibration_completed = True
@@ -222,7 +222,7 @@ class IntrinsicCalibrator(BaseCalibrator):
                 # Return simplified result dictionary
                 return {
                     'camera_matrix': mtx.copy(),
-                    'distortion_coefficients': dist.copy(),
+                    'distortion_coefficients': dist.flatten(),  # Flatten to 1D array
                     'rms_error': float(ret)
                 }
             else:
