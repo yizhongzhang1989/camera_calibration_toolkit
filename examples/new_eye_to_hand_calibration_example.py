@@ -324,21 +324,10 @@ def main():
         
         if result is not None:
             print(f"✅ Eye-to-hand calibration successful!")
-            print(f"   Method used: {result['method_name']} ({result['method']})")
             print(f"   RMS reprojection error: {result['rms_error']:.4f} pixels")
-            print(f"   Valid images used: {result['valid_images']}/{result['total_images']}")
             print(f"   Base to camera matrix shape: {result['base2cam_matrix'].shape}")
             print(f"   Target to end matrix shape: {result['target2end_matrix'].shape}")
-            
-            # Show per-image errors
-            if result['per_image_errors']:
-                valid_errors = [f"{err:.4f}" for err in result['per_image_errors'] if err != float('inf')]
-                print(f"   Per-image errors: {valid_errors}")
-                
-            # Save updated results including calibration
-            eye_to_hand_calibrator.save_eye_to_hand_results(results_dir)
-            print("✅ Updated results saved with calibration data")
-            
+                                        
         else:
             print(f"❌ Eye-to-hand calibration failed")
         
