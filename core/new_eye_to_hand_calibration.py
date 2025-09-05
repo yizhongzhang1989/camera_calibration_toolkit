@@ -75,6 +75,183 @@ class NewEyeToHandCalibrator(HandEyeBaseCalibrator):
         self.base2cam_matrix = None           # Robot base to camera transformation (primary result)
         self.target2end_matrix = None         # Target to end-effector transformation (secondary result)
     
+    def calibrate(self, method: Optional[int] = None, verbose: bool = False) -> Optional[Dict[str, Any]]:
+        """
+        Perform eye-to-hand calibration using the specified method or find the best method.
+        
+        This method uses the data stored in class members (images, robot poses, camera intrinsics)
+        to perform hand-eye calibration. If method is None, all available methods will be tested
+        and the one with the lowest reprojection error will be selected.
+        
+        Args:
+            method: Optional OpenCV calibration method constant. If None, all methods will be 
+                   tested and the best one selected. Available options:
+                   - cv2.CALIB_HAND_EYE_TSAI
+                   - cv2.CALIB_HAND_EYE_PARK
+                   - cv2.CALIB_HAND_EYE_HORAUD
+                   - cv2.CALIB_HAND_EYE_ANDREFF
+                   - cv2.CALIB_HAND_EYE_DANIILIDIS
+            verbose: Whether to print detailed calibration progress and results
+            
+        Returns:
+            Optional[Dict[str, Any]]: Dictionary containing calibration results if successful, None if failed.
+            Result dictionary contains:
+            - 'success': bool - True if calibration succeeded
+            - 'method': int - OpenCV method constant used
+            - 'method_name': str - Human-readable method name
+            - 'base2cam_matrix': np.ndarray - Base to camera transformation matrix
+            - 'target2end_matrix': np.ndarray - Target to end-effector transformation matrix
+            - 'rms_error': float - Overall RMS reprojection error
+            - 'per_image_errors': List[float] - Per-image reprojection errors
+            - 'valid_images': int - Number of valid images used in calibration
+            - 'total_images': int - Total number of images processed
+            
+        Note:
+            Before calling this method, ensure that:
+            1. Images and robot poses are loaded
+            2. Camera intrinsic parameters are available
+            3. Calibration patterns are detected (call detect_pattern_points())
+            4. Target-to-camera matrices are calculated (call _calculate_target2cam_matrices())
+        """
+        try:
+            # detect pattern points
+            self.detect_pattern_points()
+
+            # Calculate target2cam matrices
+            self._calculate_target2cam_matrices()
+
+            # Validate prerequisites
+            self._validate_calibration_prerequisites()
+            
+            valid_images = len([p for p in self.image_points if p is not None])
+            total_images = len(self.image_points) if self.image_points else 0
+            
+            if verbose:
+                print(f"🤖 Running eye-to-hand calibration with {valid_images} image-pose pairs")
+            
+            # If no method specified, try all methods and find the best
+            if method is None:
+                if verbose:
+                    print("🔍 No method specified, testing all available methods...")
+                
+                best_method = None
+                best_method_name = None
+                best_rms_error = float('inf')
+                best_base2cam = None
+                best_target2end = None
+                best_per_image_errors = None
+                
+                methods_to_try = self.get_available_methods()
+                
+                for test_method, method_name in methods_to_try.items():
+                    if verbose:
+                        print(f"\n🧪 Testing method: {method_name} ({test_method})")
+                    
+                    try:
+                        # Perform calibration with this method
+                        success, base2cam_matrix, target2end_matrix, rms_error, per_image_errors = self._perform_single_calibration(test_method, verbose)
+                        
+                        if success and rms_error < best_rms_error:
+                            best_method = test_method
+                            best_method_name = method_name
+                            best_rms_error = rms_error
+                            best_base2cam = base2cam_matrix.copy()
+                            best_target2end = target2end_matrix.copy()
+                            best_per_image_errors = per_image_errors.copy()
+                            
+                            if verbose:
+                                print(f"   ✅ New best method: {method_name} with RMS error {rms_error:.4f}")
+                        elif success:
+                            if verbose:
+                                print(f"   ✅ Method {method_name} succeeded with RMS error {rms_error:.4f}")
+                        else:
+                            if verbose:
+                                print(f"   ❌ Method {method_name} failed")
+                                
+                    except Exception as e:
+                        if verbose:
+                            print(f"   ❌ Method {method_name} failed with error: {e}")
+                        continue
+                
+                if best_method is not None:
+                    # Store the best results
+                    self.base2cam_matrix = best_base2cam
+                    self.target2end_matrix = best_target2end
+                    self.rms_error = best_rms_error
+                    self.per_image_errors = best_per_image_errors
+                    self.best_method = best_method
+                    self.best_method_name = best_method_name
+                    self.calibration_completed = True
+                    
+                    if verbose:
+                        print(f"\n🎉 Best method selected: {best_method_name} with RMS error {best_rms_error:.4f}")
+                        print(f"Base to camera transformation matrix:")
+                        print(f"{best_base2cam}")
+                    
+                    # Return calibration results as dictionary
+                    return {
+                        'success': True,
+                        'method': best_method,
+                        'method_name': best_method_name,
+                        'base2cam_matrix': best_base2cam,
+                        'target2end_matrix': best_target2end,
+                        'rms_error': best_rms_error,
+                        'per_image_errors': best_per_image_errors,
+                        'valid_images': valid_images,
+                        'total_images': total_images
+                    }
+                else:
+                    if verbose:
+                        print("❌ All calibration methods failed")
+                    return None
+            
+            else:
+                # Use the specified method
+                method_name = self.get_method_name(method)
+                if verbose:
+                    print(f"🎯 Using specified method: {method_name} ({method})")
+                
+                success, base2cam_matrix, target2end_matrix, rms_error, per_image_errors = self._perform_single_calibration(method, verbose)
+                
+                if success:
+                    # Store results
+                    self.base2cam_matrix = base2cam_matrix
+                    self.target2end_matrix = target2end_matrix
+                    self.rms_error = rms_error
+                    self.per_image_errors = per_image_errors
+                    self.best_method = method
+                    self.best_method_name = method_name
+                    self.calibration_completed = True
+                    
+                    if verbose:
+                        print(f"✅ Eye-to-hand calibration completed successfully!")
+                        print(f"RMS reprojection error: {rms_error:.4f} pixels")
+                        print(f"Base to camera transformation matrix:")
+                        print(f"{base2cam_matrix}")
+                    
+                    # Return calibration results as dictionary
+                    return {
+                        'success': True,
+                        'method': method,
+                        'method_name': method_name,
+                        'base2cam_matrix': base2cam_matrix,
+                        'target2end_matrix': target2end_matrix,
+                        'rms_error': rms_error,
+                        'per_image_errors': per_image_errors,
+                        'valid_images': valid_images,
+                        'total_images': total_images
+                    }
+                else:
+                    if verbose:
+                        print(f"❌ Eye-to-hand calibration failed with method {method_name}")
+                    return None
+                    
+        except Exception as e:
+            if verbose:
+                print(f"❌ Eye-to-hand calibration failed: {e}")
+            self.calibration_completed = False
+            return None
+
     # ============================================================================
     # Eye-to-Hand Specific IO Methods
     # ============================================================================
@@ -350,183 +527,6 @@ class NewEyeToHandCalibrator(HandEyeBaseCalibrator):
             raise ValueError("Camera intrinsic parameters not available")
         
         return self._calculate_reprojection_errors(base2cam_matrix, target2end_matrix, verbose)
-
-    def calibrate(self, method: Optional[int] = None, verbose: bool = False) -> Optional[Dict[str, Any]]:
-        """
-        Perform eye-to-hand calibration using the specified method or find the best method.
-        
-        This method uses the data stored in class members (images, robot poses, camera intrinsics)
-        to perform hand-eye calibration. If method is None, all available methods will be tested
-        and the one with the lowest reprojection error will be selected.
-        
-        Args:
-            method: Optional OpenCV calibration method constant. If None, all methods will be 
-                   tested and the best one selected. Available options:
-                   - cv2.CALIB_HAND_EYE_TSAI
-                   - cv2.CALIB_HAND_EYE_PARK
-                   - cv2.CALIB_HAND_EYE_HORAUD
-                   - cv2.CALIB_HAND_EYE_ANDREFF
-                   - cv2.CALIB_HAND_EYE_DANIILIDIS
-            verbose: Whether to print detailed calibration progress and results
-            
-        Returns:
-            Optional[Dict[str, Any]]: Dictionary containing calibration results if successful, None if failed.
-            Result dictionary contains:
-            - 'success': bool - True if calibration succeeded
-            - 'method': int - OpenCV method constant used
-            - 'method_name': str - Human-readable method name
-            - 'base2cam_matrix': np.ndarray - Base to camera transformation matrix
-            - 'target2end_matrix': np.ndarray - Target to end-effector transformation matrix
-            - 'rms_error': float - Overall RMS reprojection error
-            - 'per_image_errors': List[float] - Per-image reprojection errors
-            - 'valid_images': int - Number of valid images used in calibration
-            - 'total_images': int - Total number of images processed
-            
-        Note:
-            Before calling this method, ensure that:
-            1. Images and robot poses are loaded
-            2. Camera intrinsic parameters are available
-            3. Calibration patterns are detected (call detect_pattern_points())
-            4. Target-to-camera matrices are calculated (call _calculate_target2cam_matrices())
-        """
-        try:
-            # detect pattern points
-            self.detect_pattern_points()
-
-            # Calculate target2cam matrices
-            self._calculate_target2cam_matrices()
-
-            # Validate prerequisites
-            self._validate_calibration_prerequisites()
-            
-            valid_images = len([p for p in self.image_points if p is not None])
-            total_images = len(self.image_points) if self.image_points else 0
-            
-            if verbose:
-                print(f"🤖 Running eye-to-hand calibration with {valid_images} image-pose pairs")
-            
-            # If no method specified, try all methods and find the best
-            if method is None:
-                if verbose:
-                    print("🔍 No method specified, testing all available methods...")
-                
-                best_method = None
-                best_method_name = None
-                best_rms_error = float('inf')
-                best_base2cam = None
-                best_target2end = None
-                best_per_image_errors = None
-                
-                methods_to_try = self.get_available_methods()
-                
-                for test_method, method_name in methods_to_try.items():
-                    if verbose:
-                        print(f"\n🧪 Testing method: {method_name} ({test_method})")
-                    
-                    try:
-                        # Perform calibration with this method
-                        success, base2cam_matrix, target2end_matrix, rms_error, per_image_errors = self._perform_single_calibration(test_method, verbose)
-                        
-                        if success and rms_error < best_rms_error:
-                            best_method = test_method
-                            best_method_name = method_name
-                            best_rms_error = rms_error
-                            best_base2cam = base2cam_matrix.copy()
-                            best_target2end = target2end_matrix.copy()
-                            best_per_image_errors = per_image_errors.copy()
-                            
-                            if verbose:
-                                print(f"   ✅ New best method: {method_name} with RMS error {rms_error:.4f}")
-                        elif success:
-                            if verbose:
-                                print(f"   ✅ Method {method_name} succeeded with RMS error {rms_error:.4f}")
-                        else:
-                            if verbose:
-                                print(f"   ❌ Method {method_name} failed")
-                                
-                    except Exception as e:
-                        if verbose:
-                            print(f"   ❌ Method {method_name} failed with error: {e}")
-                        continue
-                
-                if best_method is not None:
-                    # Store the best results
-                    self.base2cam_matrix = best_base2cam
-                    self.target2end_matrix = best_target2end
-                    self.rms_error = best_rms_error
-                    self.per_image_errors = best_per_image_errors
-                    self.best_method = best_method
-                    self.best_method_name = best_method_name
-                    self.calibration_completed = True
-                    
-                    if verbose:
-                        print(f"\n🎉 Best method selected: {best_method_name} with RMS error {best_rms_error:.4f}")
-                        print(f"Base to camera transformation matrix:")
-                        print(f"{best_base2cam}")
-                    
-                    # Return calibration results as dictionary
-                    return {
-                        'success': True,
-                        'method': best_method,
-                        'method_name': best_method_name,
-                        'base2cam_matrix': best_base2cam,
-                        'target2end_matrix': best_target2end,
-                        'rms_error': best_rms_error,
-                        'per_image_errors': best_per_image_errors,
-                        'valid_images': valid_images,
-                        'total_images': total_images
-                    }
-                else:
-                    if verbose:
-                        print("❌ All calibration methods failed")
-                    return None
-            
-            else:
-                # Use the specified method
-                method_name = self.get_method_name(method)
-                if verbose:
-                    print(f"🎯 Using specified method: {method_name} ({method})")
-                
-                success, base2cam_matrix, target2end_matrix, rms_error, per_image_errors = self._perform_single_calibration(method, verbose)
-                
-                if success:
-                    # Store results
-                    self.base2cam_matrix = base2cam_matrix
-                    self.target2end_matrix = target2end_matrix
-                    self.rms_error = rms_error
-                    self.per_image_errors = per_image_errors
-                    self.best_method = method
-                    self.best_method_name = method_name
-                    self.calibration_completed = True
-                    
-                    if verbose:
-                        print(f"✅ Eye-to-hand calibration completed successfully!")
-                        print(f"RMS reprojection error: {rms_error:.4f} pixels")
-                        print(f"Base to camera transformation matrix:")
-                        print(f"{base2cam_matrix}")
-                    
-                    # Return calibration results as dictionary
-                    return {
-                        'success': True,
-                        'method': method,
-                        'method_name': method_name,
-                        'base2cam_matrix': base2cam_matrix,
-                        'target2end_matrix': target2end_matrix,
-                        'rms_error': rms_error,
-                        'per_image_errors': per_image_errors,
-                        'valid_images': valid_images,
-                        'total_images': total_images
-                    }
-                else:
-                    if verbose:
-                        print(f"❌ Eye-to-hand calibration failed with method {method_name}")
-                    return None
-                    
-        except Exception as e:
-            if verbose:
-                print(f"❌ Eye-to-hand calibration failed: {e}")
-            self.calibration_completed = False
-            return None
 
     def _calculate_reprojection_errors(self, base2cam_matrix: np.ndarray, target2end_matrix: np.ndarray, verbose: bool = False) -> Tuple[float, List[float]]:
         """
