@@ -80,9 +80,6 @@ class NewEyeInHandCalibrator(HandEyeBaseCalibrator):
         # Eye-in-hand specific transformation matrices
         self.cam2end_matrix = None              # Camera to end-effector transformation (primary result)
         self.target2base_matrix = None          # Target to robot base transformation (secondary result)
-        
-        # Optimization tracking
-        self.optimization_completed = False     # Flag to track if optimization has been completed
     
     def calibrate(self, method: Optional[int] = None, verbose: bool = False) -> Optional[Dict[str, Any]]:
         """
@@ -138,318 +135,157 @@ class NewEyeInHandCalibrator(HandEyeBaseCalibrator):
             if verbose:
                 print(f"🤖 Running eye-in-hand calibration with {valid_images} image-pose pairs")
             
-            # If no method specified, try all methods and find the best
-            if method is None:
-                if verbose:
-                    print("🔍 No method specified, testing all available methods...")
-                
-                best_method = None
-                best_method_name = None
-                best_rms_error = float('inf')
-                best_cam2end = None
-                best_target2base = None
-                best_per_image_errors = None
-                
-                methods_to_try = self.get_available_methods()
-                
-                for test_method, method_name in methods_to_try.items():
-                    if verbose:
-                        print(f"\n🧪 Testing method: {method_name} ({test_method})")
-                    
-                    try:
-                        # Perform calibration with this method
-                        success, cam2end_matrix, target2base_matrix, rms_error, per_image_errors = self._perform_single_calibration(test_method, verbose)
-                        
-                        if success and rms_error < best_rms_error:
-                            best_method = test_method
-                            best_method_name = method_name
-                            best_rms_error = rms_error
-                            best_cam2end = cam2end_matrix.copy()
-                            best_target2base = target2base_matrix.copy()
-                            best_per_image_errors = per_image_errors.copy()
-                            
-                            if verbose:
-                                print(f"   ✅ New best method: {method_name} with RMS error {rms_error:.4f}")
-                        elif success:
-                            if verbose:
-                                print(f"   ✅ Method {method_name} succeeded with RMS error {rms_error:.4f}")
-                        else:
-                            if verbose:
-                                print(f"   ❌ Method {method_name} failed")
-                                
-                    except Exception as e:
-                        if verbose:
-                            print(f"   ❌ Method {method_name} failed with error: {e}")
-                        continue
-                
-                if best_method is not None:
-                    # Store the best results
-                    self.cam2end_matrix = best_cam2end
-                    self.target2base_matrix = best_target2base
-                    self.rms_error = best_rms_error
-                    self.per_image_errors = best_per_image_errors
-                    self.best_method = best_method
-                    self.best_method_name = best_method_name
-                    # Note: calibration_completed will be set after optimization
-                    
-                    if verbose:
-                        print(f"\n🎉 Best method selected: {best_method_name} with RMS error {best_rms_error:.4f}")
-                        print(f"Camera to end-effector transformation matrix:")
-                        print(f"{best_cam2end}")
-                else:
-                    if verbose:
-                        print("❌ All calibration methods failed")
-                    return None
+            # Determine which methods to test
+            available_methods = self.get_available_methods()
             
+            if method is None or method not in available_methods:
+                # No method provided or invalid method - try all available methods
+                methods_to_try = available_methods
+                if verbose:
+                    if method is None:
+                        print("🔍 No method specified, testing all available methods...")
+                    else:
+                        print(f"⚠️ Invalid method specified: {method}")
+                        print(f"🔍 Valid methods are: {list(available_methods.keys())}")
+                        print(f"🔍 Falling back to testing all available methods...")
             else:
-                # Use the specified method
-                method_name = self.get_method_name(method)
+                # Valid method provided - use only that method
+                method_name = available_methods[method]
+                methods_to_try = {method: method_name}
                 if verbose:
                     print(f"🎯 Using specified method: {method_name} ({method})")
-                
-                success, cam2end_matrix, target2base_matrix, rms_error, per_image_errors = self._perform_single_calibration(method, verbose)
-                
-                if success:
-                    # Store results
-                    self.cam2end_matrix = cam2end_matrix
-                    self.target2base_matrix = target2base_matrix
-                    self.rms_error = rms_error
-                    self.per_image_errors = per_image_errors
-                    self.best_method = method
-                    self.best_method_name = method_name
-                    # Note: calibration_completed will be set after optimization
-                    
-                    if verbose:
-                        print(f"✅ Eye-in-hand calibration completed successfully!")
-                        print(f"RMS reprojection error: {rms_error:.4f} pixels")
-                        print(f"Camera to end-effector transformation matrix:")
-                        print(f"{cam2end_matrix}")
-                else:
-                    if verbose:
-                        print(f"❌ Eye-in-hand calibration failed with method {method_name}")
-                    return None
             
-            # Common optimization logic (executed if initial calibration succeeded)
-            if hasattr(self, 'best_method') and self.best_method is not None:
-                # Store initial calibration results for optimization comparison
-                initial_results = {
-                    'success': True,
-                    'method': self.best_method,
-                    'method_name': self.best_method_name,
-                    'cam2end_matrix': self.cam2end_matrix.copy(),
-                    'target2base_matrix': self.target2base_matrix.copy(),
-                    'rms_error': self.rms_error,
-                    'per_image_errors': self.per_image_errors.copy(),
-                    'valid_images': valid_images,
-                    'total_images': total_images
-                }
+            # Try methods and find the best result
+            best_method = None
+            best_method_name = None
+            best_rms_error = float('inf')
+            best_cam2end = None
+            best_target2base = None
+            best_per_image_errors = None
+            
+            for test_method, method_name in methods_to_try.items():
+                if verbose and len(methods_to_try) > 1:
+                    print(f"\n🧪 Testing method: {method_name} ({test_method})")
                 
-                # Attempt optimization if nlopt is available
-                optimized_results = initial_results.copy()
-                if HAS_NLOPT:
-                    if verbose:
-                        print(f"\n🔧 Attempting optimization...")
+                try:
+                    # Perform calibration with this method
+                    success, cam2end_matrix, target2base_matrix, rms_error, per_image_errors = self._perform_single_calibration(test_method, verbose=False)
                     
-                    try:
-                        # Initialize optimization_completed flag
-                        self.optimization_completed = False
+                    if success and rms_error < best_rms_error:
+                        best_method = test_method
+                        best_method_name = method_name
+                        best_rms_error = rms_error
+                        best_cam2end = cam2end_matrix.copy()
+                        best_target2base = target2base_matrix.copy()
+                        best_per_image_errors = per_image_errors.copy()
                         
-                        # Perform optimization
-                        optimized_rms = self.optimize_calibration(ftol_rel=1e-6, verbose=verbose)
-                        
-                        # Check if optimization actually improved the error
-                        improvement = initial_results['rms_error'] - optimized_rms
-                        improvement_pct = (improvement / initial_results['rms_error']) * 100 if initial_results['rms_error'] > 0 else 0
-                        
-                        if optimized_rms < initial_results['rms_error']:
-                            # Optimization improved - store optimized results
-                            optimized_results.update({
-                                'cam2end_matrix': self.cam2end_matrix.copy(),
-                                'target2base_matrix': self.target2base_matrix.copy(),
-                                'rms_error': optimized_rms,
-                                'per_image_errors': self.per_image_errors.copy(),
-                                'optimization_completed': self.optimization_completed
-                            })
-                            
-                            if verbose:
-                                print(f"✅ Optimization completed!")
-                                print(f"   Initial RMS error: {initial_results['rms_error']:.4f} pixels")
-                                print(f"   Optimized RMS error: {optimized_rms:.4f} pixels") 
-                                print(f"   Improvement: {improvement:.4f} pixels ({improvement_pct:.1f}%)")
-                        else:
-                            # Optimization didn't improve or made it worse - keep initial results
-                            optimized_results['optimization_completed'] = False
-                            if verbose:
-                                print(f"⚠️ Optimization did not improve results")
-                                print(f"   Initial RMS error: {initial_results['rms_error']:.4f} pixels")
-                                print(f"   Optimized RMS error: {optimized_rms:.4f} pixels")
-                                print(f"   Keeping initial calibration results")
-                            
-                    except Exception as e:
+                        if verbose and len(methods_to_try) > 1:
+                            print(f"   ✅ New best method: {method_name} with RMS error {rms_error:.4f}")
+                    elif success:
+                        if verbose and len(methods_to_try) > 1:
+                            print(f"   ✅ Method {method_name} succeeded with RMS error {rms_error:.4f}")
+                    else:
                         if verbose:
-                            print(f"⚠️ Optimization failed: {e}")
-                            print(f"   Returning initial calibration results")
-                        optimized_results['optimization_completed'] = False
-                else:
+                            if len(methods_to_try) > 1:
+                                print(f"   ❌ Method {method_name} failed")
+                            else:
+                                print(f"❌ Eye-in-hand calibration failed with method {method_name}")
+                            
+                except Exception as e:
                     if verbose:
-                        print(f"⚠️ nlopt not available, skipping optimization")
-                    optimized_results['optimization_completed'] = False
+                        if len(methods_to_try) > 1:
+                            print(f"   ❌ Method {method_name} failed with error: {e}")
+                        else:
+                            print(f"❌ Eye-in-hand calibration failed with method {method_name}: {e}")
+                    continue
+            
+            # return none if best_method is not found
+            if best_method is None:
+                if verbose:
+                    if len(methods_to_try) > 1:
+                        print("❌ All calibration methods failed")
+                    # Single method failure message already printed above
+                return None
+
+            if verbose:
+                if len(methods_to_try) > 1:
+                    print(f"\n🎉 Best method selected: {best_method_name} with RMS error {best_rms_error:.4f}")
+                else:
+                    print(f"✅ Eye-in-hand calibration completed successfully!")
+                    print(f"RMS reprojection error: {best_rms_error:.4f} pixels")
+                print(f"Camera to end-effector transformation matrix:")
+                print(f"{best_cam2end}")
+
+            # Store the best results
+            self.cam2end_matrix = best_cam2end
+            self.target2base_matrix = best_target2base
+            self.rms_error = best_rms_error
+            self.per_image_errors = best_per_image_errors
+
+            # Store initial calibration results for optimization comparison
+            initial_results = {
+                'cam2end_matrix': self.cam2end_matrix.copy(),
+                'target2base_matrix': self.target2base_matrix.copy(),
+                'rms_error': self.rms_error,
+            }
+            
+            # Attempt optimization if nlopt is available
+            optimized_results = initial_results.copy()
+            if HAS_NLOPT:
+                if verbose:
+                    print(f"\n🔧 Attempting optimization...")
                 
-                # Add both initial and optimized results to the return dictionary
-                optimized_results['initial_calibration'] = initial_results
-                
-                # Set calibration completed flag only after optimization is complete
-                self.calibration_completed = True
-                
-                # Return optimized calibration results as dictionary
-                return optimized_results
+                try:
+                    # Perform optimization
+                    initial_error, optimized_rms = self.optimize_calibration(ftol_rel=1e-6, verbose=verbose)
                     
+                    # Check if optimization actually improved the error
+                    improvement = initial_error - optimized_rms
+                    improvement_pct = (improvement / initial_error) * 100 if initial_error > 0 else 0
+                    
+                    if optimized_rms < initial_error:
+                        # Optimization improved - store optimized results
+                        optimized_results.update({
+                            'cam2end_matrix': self.cam2end_matrix.copy(),
+                            'target2base_matrix': self.target2base_matrix.copy(),
+                            'rms_error': optimized_rms,
+                        })
+                        
+                        if verbose:
+                            print(f"✅ Optimization completed!")
+                            print(f"   Initial RMS error: {initial_error:.4f} pixels")
+                            print(f"   Optimized RMS error: {optimized_rms:.4f} pixels") 
+                            print(f"   Improvement: {improvement:.4f} pixels ({improvement_pct:.1f}%)")
+                    else:
+                        # Optimization didn't improve or made it worse - keep initial results
+                        if verbose:
+                            print(f"⚠️ Optimization did not improve results")
+                            print(f"   Initial RMS error: {initial_results['rms_error']:.4f} pixels")
+                            print(f"   Optimized RMS error: {optimized_rms:.4f} pixels")
+                            print(f"   Keeping initial calibration results")
+                        
+                except Exception as e:
+                    if verbose:
+                        print(f"⚠️ Optimization failed: {e}")
+                        print(f"   Returning initial calibration results")
+            else:
+                if verbose:
+                    print(f"⚠️ nlopt not available, skipping optimization")
+            
+            # Add both initial and optimized results to the return dictionary
+            optimized_results['before_opt'] = initial_results
+            
+            # Set calibration completed flag only after optimization is complete
+            self.calibration_completed = True
+            
+            # Return optimized calibration results as dictionary
+            return optimized_results
+                
         except Exception as e:
             if verbose:
                 print(f"❌ Eye-in-hand calibration failed: {e}")
             self.calibration_completed = False
             return None
-
-    def optimize_calibration(self, ftol_rel: float = 1e-6, verbose: bool = False) -> float:
-        """
-        Optimize calibration results by jointly refining cam2end and target2base matrices.
-        
-        This method uses nonlinear optimization to minimize reprojection error by
-        simultaneously optimizing both the camera-to-end-effector transformation
-        and the target-to-base transformation.
-        
-        Args:
-            ftol_rel: Relative tolerance for convergence
-            verbose: Whether to print optimization progress
-            
-        Returns:
-            float: Final RMS reprojection error after optimization
-            
-        Raises:
-            ValueError: If calibration has not been completed
-            ImportError: If nlopt optimization library is not available
-        """
-        if not hasattr(self, 'cam2end_matrix') or self.cam2end_matrix is None:
-            raise ValueError("Initial calibration must be completed before optimization. Call calibrate() first.")
-            
-        if not HAS_NLOPT:
-            raise ImportError("nlopt library is required for optimization but not available")
-            
-        if verbose:
-            print(f"Starting optimization...")
-            print(f"Initial RMS error: {self.rms_error:.4f} pixels")
-            
-        # Store initial values
-        initial_cam2end = self.cam2end_matrix.copy()
-        initial_target2base = self.target2base_matrix.copy()
-        initial_error = self.rms_error
-        
-        try:
-            # Perform joint optimization
-            optimized_cam2end, optimized_target2base = self._optimize_matrices_jointly(
-                initial_cam2end, initial_target2base, ftol_rel, verbose
-            )
-            
-            # Update matrices with optimized results
-            self.cam2end_matrix = optimized_cam2end
-            self.target2base_matrix = optimized_target2base
-            
-            # Recalculate errors with optimized matrices
-            self.rms_error, self.per_image_errors = self.calculate_reprojection_errors(
-                self.cam2end_matrix, self.target2base_matrix, verbose=False
-            )
-            
-            # Mark optimization as completed
-            self.optimization_completed = True
-            
-            if verbose:
-                improvement = initial_error - self.rms_error
-                improvement_pct = (improvement / initial_error) * 100 if initial_error > 0 else 0
-                print(f"Optimization completed!")
-                print(f"Final RMS error: {self.rms_error:.4f} pixels")
-                print(f"Improvement: {improvement:.4f} pixels ({improvement_pct:.1f}%)")
-                
-            return self.rms_error
-            
-        except Exception as e:
-            if verbose:
-                print(f"Optimization failed: {e}")
-            # Restore original matrices
-            self.cam2end_matrix = initial_cam2end
-            self.target2base_matrix = initial_target2base
-            self.rms_error = initial_error
-            return initial_error
-
-    def _optimize_matrices_jointly(self, initial_cam2end, initial_target2base, ftol_rel, verbose):
-        """
-        Optimize both cam2end and target2base matrices simultaneously.
-        This should converge faster than iterative optimization.
-        
-        Args:
-            initial_cam2end: Initial camera-to-end-effector transformation matrix
-            initial_target2base: Initial target-to-base transformation matrix  
-            ftol_rel: Relative tolerance for optimization
-            verbose: Whether to print optimization progress
-            
-        Returns:
-            tuple: (optimized_cam2end, optimized_target2base) matrices
-        """
-        try:
-            import nlopt
-            
-            # Convert initial matrices to parameter vectors
-            cam2end_params = matrix_to_xyz_rpy(initial_cam2end)  # [x, y, z, roll, pitch, yaw]
-            target2base_params = matrix_to_xyz_rpy(initial_target2base)  # [x, y, z, roll, pitch, yaw]
-            
-            # Combined parameter vector: [cam2end_params, target2base_params] (12 total)
-            initial_params = np.concatenate([cam2end_params, target2base_params])
-            
-            # Setup joint optimization
-            opt = nlopt.opt(nlopt.LN_NELDERMEAD, 12)  # 12 parameters total
-            
-            def joint_objective(params, grad):
-                """Objective function that optimizes both matrices simultaneously."""
-                # Split parameters back into two matrices
-                cam2end_params = params[:6]  # First 6 parameters for cam2end
-                target2base_params = params[6:]  # Last 6 parameters for target2base
-                
-                # Convert to matrices
-                cam2end_matrix = xyz_rpy_to_matrix(cam2end_params)
-                target2base_matrix = xyz_rpy_to_matrix(target2base_params)
-                
-                # Calculate error using both matrices
-                rms_error, _ = self.calculate_reprojection_errors(cam2end_matrix, target2base_matrix, verbose=False)
-                return rms_error
-            
-            opt.set_min_objective(joint_objective)
-            opt.set_ftol_rel(ftol_rel)
-            
-            # Optimize both matrices jointly
-            try:
-                optimized_params = opt.optimize(initial_params)
-                
-                # Split optimized parameters back into matrices
-                optimized_cam2end = xyz_rpy_to_matrix(optimized_params[:6])
-                optimized_target2base = xyz_rpy_to_matrix(optimized_params[6:])
-                
-                if verbose:
-                    initial_error = joint_objective(initial_params, None)
-                    final_error = joint_objective(optimized_params, None)
-                    print(f"   Joint optimization: {initial_error:.4f} -> {final_error:.4f} pixels")
-                    improvement = (initial_error - final_error) / initial_error * 100
-                    print(f"   Improvement: {improvement:.1f}%")
-                
-                return optimized_cam2end, optimized_target2base
-                
-            except Exception as opt_e:
-                if verbose:
-                    print(f"   Joint optimization failed: {opt_e}")
-                return initial_cam2end, initial_target2base
-                
-        except ImportError:
-            if verbose:
-                print("   nlopt not available, skipping joint optimization")
-            return initial_cam2end, initial_target2base
 
     # ============================================================================
     # Eye-in-Hand Specific IO Methods
@@ -884,3 +720,159 @@ class NewEyeInHandCalibrator(HandEyeBaseCalibrator):
             save_directory: Directory to save results to
         """
         self.save_eye_in_hand_results(save_directory)
+
+    def optimize_calibration(self, ftol_rel: float = 1e-6, verbose: bool = False) -> Tuple[float, float]:
+        """
+        Optimize calibration results by jointly refining cam2end and target2base matrices.
+        
+        This method uses nonlinear optimization to minimize reprojection error by
+        simultaneously optimizing both the camera-to-end-effector transformation
+        and the target-to-base transformation.
+        
+        Args:
+            ftol_rel: Relative tolerance for convergence
+            verbose: Whether to print optimization progress
+            
+        Returns:
+            Tuple[float, float]: (initial_error, final_error) - RMS reprojection errors before and after optimization
+            
+        Raises:
+            ValueError: If calibration has not been completed
+            ImportError: If nlopt optimization library is not available
+        """
+        if not hasattr(self, 'cam2end_matrix') or self.cam2end_matrix is None:
+            raise ValueError("Initial calibration must be completed before optimization. Call calibrate() first.")
+            
+        if not HAS_NLOPT:
+            raise ImportError("nlopt library is required for optimization but not available")
+            
+        if verbose:
+            print(f"Starting optimization...")
+            print(f"Initial RMS error: {self.rms_error:.4f} pixels")
+            
+        # Store initial values
+        initial_cam2end = self.cam2end_matrix.copy()
+        initial_target2base = self.target2base_matrix.copy()
+        initial_error = self.rms_error
+        
+        try:
+            # Perform joint optimization
+            optimized_cam2end, optimized_target2base, initial_opt_error, final_opt_error = self._optimize_matrices_jointly(
+                initial_cam2end, initial_target2base, ftol_rel, verbose
+            )
+
+            # record the optimization if improved
+            if initial_opt_error > final_opt_error:
+                # Update matrices with optimized results
+                self.cam2end_matrix = optimized_cam2end
+                self.target2base_matrix = optimized_target2base
+                                
+                # Recalculate errors with optimized matrices
+                self.rms_error, self.per_image_errors = self.calculate_reprojection_errors(
+                    self.cam2end_matrix, self.target2base_matrix, verbose=False
+                )
+                
+                if verbose:
+                    improvement = initial_error - self.rms_error
+                    improvement_pct = (improvement / initial_error) * 100 if initial_error > 0 else 0
+                    print(f"Optimization completed!")
+                    print(f"Final RMS error: {self.rms_error:.4f} pixels")
+                    print(f"Improvement: {improvement:.4f} pixels ({improvement_pct:.1f}%)")
+                
+            return initial_error, self.rms_error
+            
+        except Exception as e:
+            if verbose:
+                print(f"Optimization failed: {e}")
+            # Restore original matrices
+            self.cam2end_matrix = initial_cam2end
+            self.target2base_matrix = initial_target2base
+            self.rms_error = initial_error
+            return initial_error, initial_error
+
+    def _optimize_matrices_jointly(self, initial_cam2end, initial_target2base, ftol_rel, verbose):
+        """
+        Optimize both cam2end and target2base matrices simultaneously.
+        This should converge faster than iterative optimization.
+        
+        Args:
+            initial_cam2end: Initial camera-to-end-effector transformation matrix
+            initial_target2base: Initial target-to-base transformation matrix  
+            ftol_rel: Relative tolerance for optimization
+            verbose: Whether to print optimization progress
+            
+        Returns:
+            tuple: (optimized_cam2end, optimized_target2base, initial_error, final_error)
+        """
+        try:
+            import nlopt
+            
+            # Convert initial matrices to parameter vectors
+            cam2end_params = matrix_to_xyz_rpy(initial_cam2end)  # [x, y, z, roll, pitch, yaw]
+            target2base_params = matrix_to_xyz_rpy(initial_target2base)  # [x, y, z, roll, pitch, yaw]
+            
+            # Combined parameter vector: [cam2end_params, target2base_params] (12 total)
+            initial_params = np.concatenate([cam2end_params, target2base_params])
+            
+            # Setup joint optimization
+            opt = nlopt.opt(nlopt.LN_NELDERMEAD, 12)  # 12 parameters total
+            
+            def joint_objective(params, grad):
+                """Objective function that optimizes both matrices simultaneously."""
+                # Split parameters back into two matrices
+                cam2end_params = params[:6]  # First 6 parameters for cam2end
+                target2base_params = params[6:]  # Last 6 parameters for target2base
+                
+                # Convert to matrices
+                cam2end_matrix = xyz_rpy_to_matrix(cam2end_params)
+                target2base_matrix = xyz_rpy_to_matrix(target2base_params)
+                
+                # Calculate error using both matrices
+                rms_error, _ = self.calculate_reprojection_errors(cam2end_matrix, target2base_matrix, verbose=False)
+                return rms_error
+            
+            opt.set_min_objective(joint_objective)
+            opt.set_ftol_rel(ftol_rel)
+            
+            # Optimize both matrices jointly
+            try:
+                optimized_params = opt.optimize(initial_params)
+                
+                # Split optimized parameters back into matrices
+                optimized_cam2end = xyz_rpy_to_matrix(optimized_params[:6])
+                optimized_target2base = xyz_rpy_to_matrix(optimized_params[6:])
+                
+                # Check if optimization actually improved the result
+                initial_error = joint_objective(initial_params, None)
+                final_error = joint_objective(optimized_params, None)
+                
+                if final_error < initial_error:
+                    # Optimization improved - return optimized matrices
+                    if verbose:
+                        print(f"   Joint optimization: {initial_error:.4f} -> {final_error:.4f} pixels")
+                        improvement = (initial_error - final_error) / initial_error * 100
+                        print(f"   Improvement: {improvement:.1f}%")
+                    return optimized_cam2end, optimized_target2base, initial_error, final_error
+                else:
+                    # Optimization didn't improve or made it worse - return initial matrices
+                    if verbose:
+                        print(f"   Joint optimization did not improve: {initial_error:.4f} -> {final_error:.4f} pixels")
+                        print(f"   Keeping initial matrices")
+                    return initial_cam2end, initial_target2base, initial_error, initial_error  # final_error = initial_error
+                
+            except Exception as opt_e:
+                if verbose:
+                    print(f"   Joint optimization failed: {opt_e}")
+                # Calculate initial error for return value
+                initial_error = joint_objective(initial_params, None)
+                return initial_cam2end, initial_target2base, initial_error, initial_error
+                
+        except ImportError:
+            if verbose:
+                print("   nlopt not available, skipping joint optimization")
+            # Calculate initial error for return value (need to handle case where calculate_reprojection_errors might not work)
+            try:
+                initial_error, _ = self.calculate_reprojection_errors(initial_cam2end, initial_target2base, verbose=False)
+            except:
+                initial_error = float('inf')  # Fallback if calculation fails
+            return initial_cam2end, initial_target2base, initial_error, initial_error

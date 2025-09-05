@@ -247,59 +247,22 @@ def main():
         
         print("✅ NewEyeInHandCalibrator initialized successfully")
         
-        # Step 5: Display calibration information
-        print("\n" + "="*60)
-        print("📊 Step 5: Eye-in-Hand Calibration Information")
-        print("="*60)
-        
-        calib_info = eye_in_hand_calibrator.get_calibration_info()
-        print(f"📋 Calibration Info:")
-        print(f"   • Images loaded: {calib_info['image_count']}")
-        print(f"   • Robot poses: {calib_info['transform_count']}")
-        print(f"   • Pattern: {calib_info['pattern_type']}")
-        print(f"   • Has intrinsics: {calib_info['has_intrinsics']}")
-        print(f"   • Has extrinsics: {calib_info['has_extrinsics']}")
-        print(f"   • Calibration completed: {calib_info['calibration_completed']}")
-        
         # Step 5.5: Test Eye-in-Hand Calibration
         print("\n" + "="*60)
         print("🤖 Step 5.5: Test Eye-in-Hand Calibration")
         print("="*60)
-        
-        # Reset the dummy cam2end matrix that might have been set
-        eye_in_hand_calibrator.cam2end_matrix = None
-        eye_in_hand_calibrator.calibration_completed = False
-        
+                
         print("🧪 Testing calibration with automatic method selection...")
         calibration_result = eye_in_hand_calibrator.calibrate(method=None, verbose=True)
         
         if calibration_result is not None:
             print(f"✅ Eye-in-hand calibration completed successfully!")
-            print(f"   • Method used: {calibration_result['method_name']}")
             print(f"   • RMS error: {calibration_result['rms_error']:.4f} pixels")
-            print(f"   • Valid images: {calibration_result['valid_images']}/{calibration_result['total_images']}")
+            print(f"   • Valid images: {len([p for p in eye_in_hand_calibrator.image_points if p is not None])}/{len(eye_in_hand_calibrator.image_points)}")
             print(f"   • Camera-to-end transformation matrix shape: {calibration_result['cam2end_matrix'].shape}")
             print(f"   • Target-to-base transformation matrix shape: {calibration_result['target2base_matrix'].shape}")
         else:
             print("❌ Eye-in-hand calibration failed")
-        
-        # Step 6: Test IO methods
-        print("\n" + "="*60)
-        print("💾 Step 6: Test IO Methods")
-        print("="*60)
-        
-        # Test cam2end matrix operations (should be calibrated now)
-        print(f"📄 Current cam2end_matrix shape: {eye_in_hand_calibrator.get_cam2end_matrix().shape if eye_in_hand_calibrator.get_cam2end_matrix() is not None else 'None'}")
-        
-        # Test setting a dummy cam2end matrix (this will overwrite the calibrated one)
-        dummy_cam2end = np.eye(4)
-        eye_in_hand_calibrator.set_cam2end_matrix(dummy_cam2end)
-        print(f"✅ Set dummy cam2end_matrix")
-        print(f"📄 Retrieved cam2end_matrix shape: {eye_in_hand_calibrator.get_cam2end_matrix().shape}")
-        
-        # Test getting calibration results
-        results = eye_in_hand_calibrator.get_calibration_results()
-        print(f"📊 Calibration results keys: {list(results.keys())}")
         
         # Step 7: Save results
         print("\n" + "="*60)
@@ -320,9 +283,9 @@ def main():
         print(f"   • Intrinsic calibration RMS error: {rms_error:.4f} pixels")
         if calibration_result is not None:
             print(f"   • Eye-in-hand calibration: ✅ COMPLETED")
-            print(f"   • Best calibration method: {calibration_result['method_name']}")
+            print(f"   • Best calibration method: {eye_in_hand_calibrator.best_method_name}")
             print(f"   • Hand-eye calibration RMS error: {calibration_result['rms_error']:.4f} pixels")
-            print(f"   • Used {calibration_result['valid_images']}/{calibration_result['total_images']} images")
+            print(f"   • Used {len([p for p in eye_in_hand_calibrator.image_points if p is not None])}/{len(eye_in_hand_calibrator.image_points)} images")
         else:
             print(f"   • Eye-in-hand calibration: ⚠️ FAILED")
         print(f"   • All data validation: ✅ PASSED")
