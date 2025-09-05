@@ -1,4 +1,4 @@
-name: Camera Calibration Examples Validation
+name: Camera Calibration Toolkit Tests
 
 on:
   push:
@@ -73,6 +73,13 @@ jobs:
       run: |
         python test_runner.py --check
     
+    # Run unit tests for core functionality
+    - name: Run unit tests
+      timeout-minutes: 15
+      run: |
+        python test_runner.py --tests
+    
+    # Validate example scripts work correctly
     - name: Run examples validation
       timeout-minutes: 30
       run: |

@@ -183,26 +183,108 @@ def check_environment():
             print(f"   - Failed core imports: {', '.join(core_failed)}")
         return False
 
+def run_unit_tests():
+    """Run unit tests."""
+    print("\n" + "="*60)
+    print("Unit Tests")
+    print("="*60)
+    
+    # Discover unit tests in tests directory and root
+    test_patterns = [
+        "test_*.py",           # Root level tests (for backward compatibility)
+        "tests/unit/test_*.py", # New unit tests location
+        "tests/**/test_*.py"   # Any tests in tests subdirectories
+    ]
+    
+    test_files = set()  # Use set to avoid duplicates
+    for pattern in test_patterns:
+        found_files = glob.glob(pattern, recursive=True)
+        # Normalize paths to avoid duplicates with different separators
+        for f in found_files:
+            normalized_path = os.path.normpath(f)
+            test_files.add(normalized_path)
+    
+    # Exclude test_runner.py itself
+    test_files = [f for f in test_files if not os.path.basename(f) == "test_runner.py"]
+    test_files = sorted(list(test_files))  # Convert to sorted list
+    
+    if not test_files:
+        print("No unit test files found")
+        return False
+    
+    print(f"Found {len(test_files)} test files:")
+    for test_file in test_files:
+        print(f"  - {test_file}")
+    print("")
+    
+    success_count = 0
+    total_count = len(test_files)
+    
+    for test_file in test_files:
+        print(f"\nRunning {test_file}...")
+        
+        try:
+            # Run the test file
+            result = subprocess.run(
+                [sys.executable, test_file], 
+                capture_output=True, 
+                text=True, 
+                timeout=300,  # 5 minute timeout
+                encoding='utf-8',
+                errors='replace',
+                env={**os.environ, 'PYTHONIOENCODING': 'utf-8:replace'}
+            )
+            
+            if result.returncode == 0:
+                print(f"PASS - {test_file} - SUCCESS")
+                success_count += 1
+                
+                # Show test summary if available
+                output_lines = result.stdout.strip().split('\n')
+                for line in output_lines[-3:]:  # Show last few lines (usually contains summary)
+                    if 'OK' in line or 'PASSED' in line or 'FAILED' in line or 'ERROR' in line:
+                        print(f"   {line}")
+            else:
+                print(f"FAIL - {test_file} - FAILED")
+                print(f"   Return code: {result.returncode}")
+                if result.stderr:
+                    # Show first few lines of error
+                    error_lines = result.stderr.strip().split('\n')[:3]
+                    for line in error_lines:
+                        print(f"   Error: {line}")
+                        
+        except subprocess.TimeoutExpired:
+            print(f"TIMEOUT - {test_file} - TIMEOUT (5 minutes)")
+            
+        except Exception as e:
+            print(f"ERROR - {test_file} - EXCEPTION: {e}")
+    
+    print(f"\nUnit Tests Summary: {success_count}/{total_count} passed")
+    return success_count == total_count
+
 def main():
     """Main test runner."""
-    parser = argparse.ArgumentParser(description="Camera Calibration Toolkit - Example Validator")
+    parser = argparse.ArgumentParser(description="Camera Calibration Toolkit - Test Runner")
     parser.add_argument("--examples", action="store_true", help="Validate example scripts")
     parser.add_argument("--check", action="store_true", help="Check environment")
-    parser.add_argument("--all", action="store_true", help="Run examples validation (same as --examples)")
+    parser.add_argument("--tests", action="store_true", help="Run unit tests")
+    parser.add_argument("--all", action="store_true", help="Run all validations (examples, tests, environment)")
     
     args = parser.parse_args()
     
     # If no specific args, show help
     if not any(vars(args).values()):
-        print("Camera Calibration Toolkit - Example Validator")
+        print("Camera Calibration Toolkit - Test Runner")
         print("=" * 50)
         print("Available commands:")
         print("  --examples    Validate example scripts")
+        print("  --tests       Run unit tests")
         print("  --check       Check environment and dependencies")
-        print("  --all         Run examples validation (same as --examples)")
+        print("  --all         Run all validations (examples, tests, environment)")
         print()
         print("Examples:")
         print("  python test_runner.py --examples")
+        print("  python test_runner.py --tests")
         print("  python test_runner.py --all")
         print("  python test_runner.py --check")
         return 0
@@ -211,7 +293,7 @@ def main():
     total_count = 0
     
     # Check environment first if requested
-    if args.check:
+    if args.check or args.all:
         total_count += 1
         if check_environment():
             success_count += 1
@@ -220,6 +302,12 @@ def main():
     if args.examples or args.all:
         total_count += 1
         if validate_examples():
+            success_count += 1
+    
+    # Run unit tests
+    if args.tests or args.all:
+        total_count += 1
+        if run_unit_tests():
             success_count += 1
     
     # Summary
