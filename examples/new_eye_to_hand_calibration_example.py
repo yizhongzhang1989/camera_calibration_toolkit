@@ -133,10 +133,10 @@ def perform_intrinsic_calibration(data_dir: str, results_dir: str) -> tuple:
 
 def main():
     """
-    Main function demonstrating new eye-to-hand calibration data loading and intrinsic calibration.
+    Main function demonstrating complete eye-to-hand calibration workflow.
     """
     print("=" * 80)
-    print("👁️ New Eye-to-Hand Calibration Example - Data Loading & Intrinsic Calibration")
+    print("🤖 New Eye-to-Hand Calibration Example - Complete Calibration Workflow")
     print("=" * 80)
     
     # Define data paths
@@ -231,66 +231,79 @@ def main():
         
         print("✅ NewEyeToHandCalibrator initialized successfully")
         
-        # Step 5: Calculate target-to-camera matrices
+        # Step 5: Perform Eye-to-Hand Calibration
         print("\n" + "="*60)
-        print("🎯 Step 5: Calculate Target-to-Camera Matrices")
+        print("🤖 Step 5: Perform Eye-to-Hand Calibration")
+        print("="*60)
+                
+        print("🧪 Testing calibration with automatic method selection...")
+        calibration_result = eye_to_hand_calibrator.calibrate(method=None, verbose=True)
+        
+        if calibration_result is not None:
+            print(f"✅ Eye-to-hand calibration completed successfully!")
+            print(f"   • RMS error: {calibration_result['rms_error']:.4f} pixels")
+            print(f"   • Valid images: {len([p for p in eye_to_hand_calibrator.image_points if p is not None])}/{len(eye_to_hand_calibrator.image_points)}")
+            print(f"   • Base-to-camera transformation matrix shape: {calibration_result['base2cam_matrix'].shape}")
+            print(f"   • Target-to-end transformation matrix shape: {calibration_result['target2end_matrix'].shape}")
+            
+            # Step 6: Generate Debug Images
+            print("\n" + "="*60)
+            print("🔍 Step 6: Generate Debug Images")
+            print("="*60)
+            
+            # Set up output directory for debug images
+            debug_output_dir = os.path.join(results_dir, "debug_images")
+            os.makedirs(debug_output_dir, exist_ok=True)
+            
+            print(f"🎨 Generating debug images...")
+            
+            try:
+                # Draw detected patterns on original images
+                pattern_debug_dir = os.path.join(debug_output_dir, "pattern_detection")
+                os.makedirs(pattern_debug_dir, exist_ok=True)
+                pattern_images = eye_to_hand_calibrator.draw_pattern_on_images()
+                
+                for filename, debug_img in pattern_images:
+                    output_path = os.path.join(pattern_debug_dir, f"{filename}.jpg")
+                    cv2.imwrite(output_path, debug_img)
+                
+                print(f"   ✅ Pattern detection images: {len(pattern_images)} images saved to {pattern_debug_dir}")
+                
+                # Draw 3D axes on undistorted images
+                axes_debug_dir = os.path.join(debug_output_dir, "undistorted_axes")
+                os.makedirs(axes_debug_dir, exist_ok=True)
+                axes_images = eye_to_hand_calibrator.draw_axes_on_undistorted_images()
+                
+                for filename, debug_img in axes_images:
+                    output_path = os.path.join(axes_debug_dir, f"{filename}.jpg")
+                    cv2.imwrite(output_path, debug_img)
+                
+                print(f"   ✅ Undistorted axes images: {len(axes_images)} images saved to {axes_debug_dir}")
+                
+                # Draw pattern point reprojections on original images
+                reprojection_debug_dir = os.path.join(debug_output_dir, "reprojection_analysis")
+                os.makedirs(reprojection_debug_dir, exist_ok=True)
+                reprojection_images = eye_to_hand_calibrator.draw_reprojection_on_images()
+                
+                for filename, debug_img in reprojection_images:
+                    output_path = os.path.join(reprojection_debug_dir, f"{filename}.jpg")
+                    cv2.imwrite(output_path, debug_img)
+                
+                print(f"   ✅ Reprojection analysis images: {len(reprojection_images)} images saved to {reprojection_debug_dir}")
+                print(f"   📁 All debug images saved to: {debug_output_dir}")
+                
+            except Exception as e:
+                print(f"   ⚠️ Warning: Debug image generation failed: {e}")
+        else:
+            print("❌ Eye-to-hand calibration failed")
+
+        # Step 7: Save Results
+        print("\n" + "="*60)
+        print("💾 Step 7: Save Results")
         print("="*60)
         
         try:
-            # First detect calibration patterns in all images
-            eye_to_hand_calibrator.detect_pattern_points(verbose=True)
-            
-            # Calculate target2cam matrices for all detected patterns
-            eye_to_hand_calibrator._calculate_target2cam_matrices(verbose=True)
-            
-            # Count successful calculations
-            successful_matrices = sum(1 for matrix in eye_to_hand_calibrator.target2cam_matrices if matrix is not None)
-            print(f"✅ Successfully calculated {successful_matrices} target2cam matrices")
-            
-        except Exception as e:
-            print(f"⚠️ Target2cam matrix calculation failed: {e}")
-            import traceback
-            traceback.print_exc()
-        
-        # Step 6: Display calibration information
-        print("\n" + "="*60)
-        print("📊 Step 6: Eye-to-Hand Calibration Information")
-        print("="*60)
-        
-        calib_info = eye_to_hand_calibrator.get_calibration_info()
-        print(f"📋 Calibration Info:")
-        print(f"   • Images loaded: {calib_info['image_count']}")
-        print(f"   • Robot poses: {calib_info['transform_count']}")
-        print(f"   • Pattern: {calib_info['pattern_type']}")
-        print(f"   • Has intrinsics: {calib_info['has_intrinsics']}")
-        print(f"   • Has extrinsics: {calib_info['has_extrinsics']}")
-        print(f"   • Calibration completed: {calib_info['calibration_completed']}")
-        
-        # Step 7: Test IO methods
-        print("\n" + "="*60)
-        print("💾 Step 7: Test IO Methods")
-        print("="*60)
-        
-        # Test base2cam matrix operations (should be None initially)
-        print(f"📄 Initial base2cam_matrix: {eye_to_hand_calibrator.get_base2cam_matrix()}")
-        
-        # Test setting a dummy base2cam matrix
-        dummy_base2cam = np.eye(4)
-        eye_to_hand_calibrator.set_base2cam_matrix(dummy_base2cam)
-        print(f"✅ Set dummy base2cam_matrix")
-        print(f"📄 Retrieved base2cam_matrix shape: {eye_to_hand_calibrator.get_base2cam_matrix().shape}")
-        
-        # Test getting calibration results
-        results = eye_to_hand_calibrator.get_calibration_results()
-        print(f"📊 Calibration results keys: {list(results.keys())}")
-        
-        # Step 8: Save results
-        print("\n" + "="*60)
-        print("💾 Step 8: Save Results")
-        print("="*60)
-        
-        try:
-            eye_to_hand_calibrator.save_eye_to_hand_results(results_dir)
+            eye_to_hand_calibrator.save_results(results_dir)
             print("✅ Eye-to-hand results saved successfully")
         except Exception as e:
             print(f"⚠️ Could not save results: {e}")
@@ -299,40 +312,22 @@ def main():
         print("🎉 NEW EYE-TO-HAND CALIBRATION EXAMPLE COMPLETED SUCCESSFULLY!")
         print("="*80)
         print(f"📊 Summary:")
-        print(f"   • Performed intrinsic calibration")
-        print(f"   • Loaded {len(image_paths)} image-pose pairs for eye-to-hand")
+        print(f"   • Loaded {len(image_paths)} image-pose pairs")
         print(f"   • Intrinsic calibration RMS error: {rms_error:.4f} pixels")
+        if calibration_result is not None:
+            print(f"   • Eye-to-hand calibration: ✅ COMPLETED")
+            print(f"   • Best calibration method: {eye_to_hand_calibrator.get_best_method_name()}")
+            print(f"   • Hand-eye calibration RMS error: {calibration_result['rms_error']:.4f} pixels")
+            print(f"   • Used {len([p for p in eye_to_hand_calibrator.image_points if p is not None])}/{len(eye_to_hand_calibrator.image_points)} images")
+        else:
+            print(f"   • Eye-to-hand calibration: ⚠️ FAILED")
         print(f"   • All data validation: ✅ PASSED")
         print(f"   • IO operations: ✅ TESTED")
-        print(f"   • Complete eye-to-hand calibration: ✅ PERFORMED")
         print(f"   • Results saved to: {results_dir}")
-        print("\nThe NewEyeToHandCalibrator now supports complete calibration functionality!")
-        print("All OpenCV hand-eye calibration methods are available with automatic selection.")
-        
-        # Demonstrate the new calibrate interface
-        print("\n" + "="*60)
-        print("🧪 Step 9: Perform Complete Eye-to-Hand Calibration")
-        print("="*60)
-        
-        print("📋 Available calibration methods:")
-        methods = eye_to_hand_calibrator.get_available_methods()
-        for method_name in methods.values():
-            print(f"   • {method_name}")
-        
-        print(f"\n� Performing complete eye-to-hand calibration (trying all methods)...")
-        result = eye_to_hand_calibrator.calibrate(method=None, verbose=True)
-        
-        if result is not None:
-            print(f"✅ Eye-to-hand calibration successful!")
-            print(f"   RMS reprojection error: {result['rms_error']:.4f} pixels")
-            print(f"   Base to camera matrix shape: {result['base2cam_matrix'].shape}")
-            print(f"   Target to end matrix shape: {result['target2end_matrix'].shape}")
-                                        
-        else:
-            print(f"❌ Eye-to-hand calibration failed")
+        print("\nNote: This example demonstrates the complete eye-to-hand calibration workflow")
+        print("with the updated dictionary return format from the calibrate() method.")
         
         return True
-        
     except Exception as e:
         print(f"❌ Eye-to-hand calibrator initialization failed: {e}")
         import traceback

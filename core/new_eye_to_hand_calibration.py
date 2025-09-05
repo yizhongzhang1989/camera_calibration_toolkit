@@ -438,54 +438,6 @@ class NewEyeToHandCalibrator(HandEyeBaseCalibrator):
         return self.base2cam_matrix
     
     # ============================================================================
-    # Eye-to-Hand Specific Result Access Methods
-    # ============================================================================
-    
-    def get_calibration_results(self) -> Dict[str, Any]:
-        """
-        Get eye-to-hand specific calibration results.
-        
-        Returns:
-            dict: Dictionary containing eye-to-hand calibration results
-        """
-        base_info = self.get_calibration_info()
-        
-        eye_to_hand_info = {
-            "calibration_type": "eye_to_hand",
-            "base2cam_matrix": self.base2cam_matrix.tolist() if self.base2cam_matrix is not None else None,
-            "target2end_matrix": self.target2end_matrix.tolist() if self.target2end_matrix is not None else None,
-            "has_base2cam": self.base2cam_matrix is not None,
-            "has_target2end": self.target2end_matrix is not None
-        }
-        
-        # Merge base info with eye-to-hand specific info
-        base_info.update(eye_to_hand_info)
-        return base_info
-    
-    def save_eye_to_hand_results(self, save_directory: str) -> None:
-        """
-        Save eye-to-hand calibration results to directory.
-        
-        Args:
-            save_directory: Directory to save results
-        """
-        try:
-            os.makedirs(save_directory, exist_ok=True)
-            
-            # Get all calibration results
-            results = self.get_calibration_results()
-            
-            # Save main results file
-            results_file = os.path.join(save_directory, "eye_to_hand_calibration_results.json")
-            with open(results_file, 'w') as f:
-                json.dump(results, f, indent=2)
-            
-            print(f"✅ Eye-to-hand calibration results saved to: {results_file}")
-            
-        except Exception as e:
-            print(f"❌ Failed to save eye-to-hand results: {e}")
-    
-    # ============================================================================
     # Validation Methods
     # ============================================================================
     
@@ -885,7 +837,8 @@ class NewEyeToHandCalibrator(HandEyeBaseCalibrator):
                 target2end_matrix = xyz_rpy_to_matrix(target2end_params)
                 
                 # Calculate error using both matrices
-                return self._calculate_optimization_error(base2cam_matrix, target2end_matrix)
+                rms_error, _ = self.calculate_reprojection_errors(base2cam_matrix, target2end_matrix, verbose=False)
+                return rms_error
             
             opt.set_min_objective(joint_objective)
             opt.set_ftol_rel(ftol_rel)
@@ -916,69 +869,3 @@ class NewEyeToHandCalibrator(HandEyeBaseCalibrator):
             if verbose:
                 print("   nlopt not available, skipping joint optimization")
             return initial_base2cam, initial_target2end
-
-    def _calculate_optimization_error(self, base2cam_matrix: np.ndarray, target2end_matrix: np.ndarray) -> float:
-        """
-        Calculate RMS reprojection error for given transformation matrices.
-        
-        Args:
-            base2cam_matrix: Base to camera transformation matrix
-            target2end_matrix: Target to end-effector transformation matrix
-            
-        Returns:
-            float: RMS reprojection error
-        """
-        total_error = 0.0
-        valid_images = 0
-        
-        for i in range(len(self.image_points)):
-            if (self.image_points[i] is not None and 
-                self.object_points[i] is not None and 
-                self.end2base_matrices[i] is not None):
-                try:
-                    # Calculate target to camera using eye-to-hand calibration chain
-                    # Eye-to-hand transformation chain: target2cam = base2cam * end2base * target2end
-                    target2cam = base2cam_matrix @ self.end2base_matrices[i] @ target2end_matrix
-                    
-                    # Project 3D points to image
-                    projected_points, _ = cv2.projectPoints(
-                        self.object_points[i], 
-                        target2cam[:3, :3], 
-                        target2cam[:3, 3], 
-                        self.camera_matrix, 
-                        self.distortion_coefficients)
-                    
-                    # Calculate reprojection error
-                    error = cv2.norm(self.image_points[i], projected_points, cv2.NORM_L2) / len(projected_points)
-                    total_error += error * error
-                    valid_images += 1
-                    
-                except Exception:
-                    continue
-        
-        if valid_images > 0:
-            return np.sqrt(total_error / valid_images)
-        else:
-            return float('inf')
-
-    def save_results(self, save_directory: str) -> None:
-        """
-        Save eye-to-hand calibration results to directory using JSON serialization.
-        
-        Args:
-            save_directory: Directory to save results to
-        """
-        # Create directory if it doesn't exist
-        os.makedirs(save_directory, exist_ok=True)
-        
-        # Save as JSON
-        json_path = os.path.join(save_directory, 'eye_to_hand_calibration.json')
-        calibration_data = self.to_json()
-        
-        with open(json_path, 'w') as f:
-            json.dump(calibration_data, f, indent=2)
-        
-        print(f"✅ Eye-to-hand calibration results saved to: {json_path}")
-        
-        # Also save using the legacy method for compatibility
-        self.save_eye_to_hand_results(save_directory)
