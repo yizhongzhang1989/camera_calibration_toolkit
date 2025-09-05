@@ -118,6 +118,20 @@ class IntrinsicCalibrator(BaseCalibrator):
         if self.image_size is None:
             raise ValueError("Image size not set")
         
+        # Validate that all images have the same size (required for intrinsic calibration)
+        if self.images is not None:
+            expected_size = self.image_size  # (width, height)
+            for i, img in enumerate(self.images):
+                if img is not None:
+                    h, w = img.shape[:2]
+                    actual_size = (w, h)
+                    if actual_size != expected_size:
+                        raise ValueError(
+                            f"Image size mismatch: Image {i} has size {actual_size}, "
+                            f"but expected {expected_size}. All images must have the same size "
+                            f"for intrinsic calibration."
+                        )
+        
         # Create temporary arrays for OpenCV (only successful detections)
         temp_object_points = [pts for pts in self.object_points if pts is not None]
         temp_image_points = [pts for pts in self.image_points if pts is not None]
