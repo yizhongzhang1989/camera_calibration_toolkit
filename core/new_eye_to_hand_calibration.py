@@ -28,7 +28,17 @@ import numpy as np
 import cv2
 from typing import Tuple, List, Optional, Dict, Any
 
+# Optional import for optimization
+try:
+    import nlopt
+    HAS_NLOPT = True
+except ImportError:
+    nlopt = None
+    HAS_NLOPT = False
+
 from .hand_eye_base_calibration import HandEyeBaseCalibrator
+from .calibration_patterns import CalibrationPattern
+from .utils import xyz_rpy_to_matrix, matrix_to_xyz_rpy
 from .calibration_patterns import CalibrationPattern
 
 
@@ -251,6 +261,76 @@ class NewEyeToHandCalibrator(HandEyeBaseCalibrator):
                 print(f"❌ Eye-to-hand calibration failed: {e}")
             self.calibration_completed = False
             return None
+
+    def to_json(self) -> dict:
+        """
+        Serialize eye-to-hand calibrator state to JSON-compatible dictionary.
+        
+        Extends HandEyeBaseCalibrator.to_json() to include eye-to-hand specific data:
+        - base2cam_matrix: Robot base to camera transformation matrix
+        - target2end_matrix: Target to end-effector transformation matrix
+        
+        Returns:
+            dict: JSON-compatible dictionary containing complete calibrator state
+        """
+        # Get base class data (HandEyeBaseCalibrator -> BaseCalibrator)
+        data = super().to_json()
+        
+        # Add eye-to-hand specific data
+        if self.base2cam_matrix is not None:
+            data['base2cam_matrix'] = self.base2cam_matrix.tolist()
+            
+        if self.target2end_matrix is not None:
+            data['target2end_matrix'] = self.target2end_matrix.tolist()
+        
+        # Add calibration type identifier
+        data['calibration_type'] = 'eye_to_hand'
+        
+        return data
+
+    def from_json(self, data: dict) -> None:
+        """
+        Deserialize eye-to-hand calibrator state from JSON-compatible dictionary.
+        
+        Extends HandEyeBaseCalibrator.from_json() to load eye-to-hand specific data:
+        - base2cam_matrix: Robot base to camera transformation matrix
+        - target2end_matrix: Target to end-effector transformation matrix
+        
+        Args:
+            data: JSON-compatible dictionary containing calibrator state
+        """
+        # Load base class data first (HandEyeBaseCalibrator -> BaseCalibrator)
+        super().from_json(data)
+        
+        # Load eye-to-hand specific data
+        if 'base2cam_matrix' in data:
+            self.base2cam_matrix = np.array(data['base2cam_matrix'], dtype=np.float32)
+            
+        if 'target2end_matrix' in data:
+            self.target2end_matrix = np.array(data['target2end_matrix'], dtype=np.float32)
+
+    def save_results(self, save_directory: str) -> None:
+        """
+        Save eye-to-hand calibration results to files using JSON serialization.
+        
+        Args:
+            save_directory: Directory to save results
+        """
+        import os
+        import json
+        
+        # Create directory if it doesn't exist
+        os.makedirs(save_directory, exist_ok=True)
+        
+        # Get complete calibration state as JSON
+        calibration_data = self.to_json()
+        
+        # Save as JSON file
+        json_filepath = os.path.join(save_directory, 'eye_to_hand_calibration_results.json')
+        with open(json_filepath, 'w') as f:
+            json.dump(calibration_data, f, indent=4)
+        
+        print(f"✅ Eye-to-hand calibration results saved to: {json_filepath}")
 
     # ============================================================================
     # Eye-to-Hand Specific IO Methods
@@ -672,20 +752,78 @@ class NewEyeToHandCalibrator(HandEyeBaseCalibrator):
                 print(f"   Calibration failed: {e}")
             return False, None, None, float('inf'), None
 
-    def save_results(self, save_directory: str) -> None:
+    def optimize_calibration(self, ftol_rel: float = 1e-6, verbose: bool = False) -> Tuple[float, float]:
         """
-        Save eye-to-hand calibration results to directory.
+        Optimize calibration results by jointly refining base2cam and target2end matrices.
+        
+        This method uses nonlinear optimization to minimize reprojection error by
+        simultaneously optimizing both the robot-base-to-camera transformation
+        and the target-to-end-effector transformation.
         
         Args:
-            save_directory: Directory to save results to
+            ftol_rel: Relative tolerance for convergence
+            verbose: Whether to print optimization progress
+            
+        Returns:
+            Tuple[float, float]: (initial_error, final_error) - RMS reprojection errors before and after optimization
+            
+        Raises:
+            ValueError: If calibration has not been completed
+            ImportError: If nlopt optimization library is not available
+            
+        Note:
+            This is a placeholder implementation. Full optimization functionality
+            will be implemented in future versions.
         """
-        self.save_eye_to_hand_results(save_directory)
+        if not hasattr(self, 'base2cam_matrix') or self.base2cam_matrix is None:
+            raise ValueError("Initial calibration must be completed before optimization. Call calibrate() first.")
+            
+        if not HAS_NLOPT:
+            if verbose:
+                print("⚠️ nlopt library not available, skipping optimization")
+            return self.rms_error, self.rms_error
+            
+        if verbose:
+            print(f"🔧 Optimization placeholder - would optimize eye-to-hand calibration...")
+            print(f"   Initial RMS error: {self.rms_error:.4f} pixels")
+            print(f"   Optimization not yet implemented for eye-to-hand")
+            
+        # Store initial values
+        initial_error = self.rms_error
+        
+        # TODO: Implement optimization for eye-to-hand calibration
+        # This would involve:
+        # 1. Setting up optimization parameters for base2cam and target2end matrices
+        # 2. Defining objective function for eye-to-hand reprojection error
+        # 3. Running nlopt optimization
+        # 4. Validating and storing optimized results
+        
+        # For now, return the same error values
+        final_error = initial_error
+        
+        if verbose:
+            print(f"   Final RMS error: {final_error:.4f} pixels (no optimization performed)")
+            
+        return initial_error, final_error
 
     def save_results(self, save_directory: str) -> None:
         """
-        Save eye-to-hand calibration results to directory.
+        Save eye-to-hand calibration results to directory using JSON serialization.
         
         Args:
             save_directory: Directory to save results to
         """
+        # Create directory if it doesn't exist
+        os.makedirs(save_directory, exist_ok=True)
+        
+        # Save as JSON
+        json_path = os.path.join(save_directory, 'eye_to_hand_calibration.json')
+        calibration_data = self.to_json()
+        
+        with open(json_path, 'w') as f:
+            json.dump(calibration_data, f, indent=2)
+        
+        print(f"✅ Eye-to-hand calibration results saved to: {json_path}")
+        
+        # Also save using the legacy method for compatibility
         self.save_eye_to_hand_results(save_directory)
