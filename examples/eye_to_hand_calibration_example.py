@@ -105,8 +105,8 @@ def perform_intrinsic_calibration(data_dir: str, results_dir: str) -> tuple:
 
             # Save intrinsic calibration results
             intrinsic_results_dir = os.path.join(results_dir, "intrinsic_calibration")
-            intrinsic_calibrator.save_results(intrinsic_results_dir)
-            print(f"✅ Intrinsic calibration results saved to: {intrinsic_results_dir}")
+            report_path = intrinsic_calibrator.generate_calibration_report(intrinsic_results_dir)
+            print(f"✅ Intrinsic calibration report generated: {report_path}")
 
             return camera_matrix, distortion_coefficients, rms_error
 
@@ -308,16 +308,16 @@ def test_eye_to_hand_calibration():
             print("❌ Eye-to-hand calibration failed")
             raise ValueError("Eye-to-hand calibration failed")
 
-        # Step 6: Save Results
+        # Step 6: Generate Calibration Report
         print("\n" + "="*60)
-        print("💾 Step 6: Save Results")
+        print("💾 Step 6: Generate Calibration Report")
         print("="*60)
 
         try:
-            eye_to_hand_calibrator.save_results(results_dir)
-            print("✅ Eye-to-hand results saved successfully")
+            report_path = eye_to_hand_calibrator.generate_calibration_report(results_dir)
+            print(f"✅ Eye-to-hand calibration report generated: {report_path}")
         except Exception as e:
-            print(f"⚠️ Could not save results: {e}")
+            print(f"⚠️ Could not generate report: {e}")
 
         print("\n" + "="*80)
         print("🎉 EYE-TO-HAND CALIBRATION TEST COMPLETED SUCCESSFULLY!")

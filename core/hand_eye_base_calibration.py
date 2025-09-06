@@ -254,16 +254,19 @@ class HandEyeBaseCalibrator(BaseCalibrator):
         if 'best_method_name' in data:
             self.best_method_name = str(data['best_method_name'])
 
-    @abstractmethod
-    def save_results(self, save_directory: str) -> None:
+    def generate_calibration_report(self, output_dir: str, **kwargs) -> str:
         """
-        Save hand-eye calibration results to files.
-        Must be implemented by subclasses.
+        Generate comprehensive hand-eye calibration report.
+        Should be implemented by subclasses.
         
         Args:
-            save_directory: Directory to save results
+            output_dir: Directory to save all report files
+            **kwargs: Additional options for report generation
+            
+        Returns:
+            str: Path to the generated HTML report file
         """
-        pass
+        raise NotImplementedError("Subclasses must implement generate_calibration_report()")
 
     def set_images_from_paths(self, image_paths: List[str]) -> bool:
         """

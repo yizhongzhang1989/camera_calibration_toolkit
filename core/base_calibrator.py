@@ -333,16 +333,28 @@ class BaseCalibrator(ABC):
         if self.camera_matrix is not None and self.distortion_coefficients is not None:
             self.calibration_completed = True
     
-    @abstractmethod
-    def save_results(self, save_directory: str) -> None:
+    def generate_calibration_report(self, output_dir: str, **kwargs) -> str:
         """
-        Save calibration results to files.
-        Must be implemented by subclasses.
+        Generate comprehensive calibration report with JSON data, debug images, and HTML viewer.
+        
+        Creates a complete calibration analysis package including:
+        - JSON file with all calibration parameters and results
+        - Debug images showing pattern detection, reprojection analysis, etc.
+        - Interactive HTML report for viewing and analyzing results
         
         Args:
-            save_directory: Directory to save results
+            output_dir: Directory to save all report files
+            **kwargs: Additional options for report generation (implementation-specific)
+            
+        Returns:
+            str: Path to the generated HTML report file
+            
+        Note:
+            This method should be implemented by subclasses to provide calibration-specific
+            report generation. The base implementation provides a framework that can be
+            extended by specialized calibrators.
         """
-        pass
+        raise NotImplementedError("Subclasses must implement generate_calibration_report()")
 
     def set_images_from_paths(self, image_paths: List[str]) -> bool:
         """

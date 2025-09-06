@@ -205,12 +205,12 @@ def main():
                 print("Eye-in-hand calibration failed")
                 return 1
             
-            # Save results using modern API
-            eye_in_hand_cal.save_results(args.calib_out_dir)
+            # Generate calibration report using modern API
+            report_path = eye_in_hand_cal.generate_calibration_report(args.calib_out_dir)
             
             print(f"Eye-in-hand calibration completed successfully!")
             print(f"RMS reprojection error: {rms_error:.4f} pixels")
-            print(f"Results saved to: {args.calib_out_dir}")
+            print(f"Calibration report generated: {report_path}")
             
             # Generate visualizations if output directory specified
             if args.reproj_out_dir:

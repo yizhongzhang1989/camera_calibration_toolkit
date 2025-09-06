@@ -119,8 +119,8 @@ success = calibrator.detect_pattern_points(verbose=True)
 if success:
     rms_error = calibrator.calibrate(verbose=True)
     
-    # Save results
-    calibrator.save_results("./results")
+    # Generate comprehensive calibration report
+    report_path = calibrator.generate_calibration_report("./results")
     
     # Generate debug images
     pattern_images = calibrator.draw_pattern_on_images()
@@ -162,8 +162,8 @@ cam2end_matrix = calibrator.get_transformation_matrix()
 print("Camera to End-Effector Transformation:")
 print(cam2end_matrix)
 
-# Save all results
-calibrator.save_results("./eye_in_hand_results")
+# Generate comprehensive calibration report
+report_path = calibrator.generate_calibration_report("./eye_in_hand_results")
 ```
 
 ### Using Different Patterns

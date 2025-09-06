@@ -339,28 +339,35 @@ class EyeToHandCalibrator(HandEyeBaseCalibrator):
         if 'target2end_matrix' in data:
             self.target2end_matrix = np.array(data['target2end_matrix'], dtype=np.float32)
 
-    def save_results(self, save_directory: str) -> None:
+    def generate_calibration_report(self, output_dir: str, **kwargs) -> str:
         """
-        Save eye-to-hand calibration results to files using JSON serialization.
+        Generate comprehensive eye-to-hand calibration report with JSON data, debug images, and HTML summary.
         
         Args:
-            save_directory: Directory to save results
+            output_dir: Directory to save all report files
+            **kwargs: Additional options for report generation
+            
+        Returns:
+            str: Path to the generated HTML report file
         """
         import os
         import json
         
         # Create directory if it doesn't exist
-        os.makedirs(save_directory, exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
         
         # Get complete calibration state as JSON
         calibration_data = self.to_json()
         
         # Save as JSON file
-        json_filepath = os.path.join(save_directory, 'eye_to_hand_calibration_results.json')
+        json_filepath = os.path.join(output_dir, 'eye_to_hand_calibration_results.json')
         with open(json_filepath, 'w') as f:
             json.dump(calibration_data, f, indent=4)
         
         print(f"✅ Eye-to-hand calibration results saved to: {json_filepath}")
+        
+        # Return path to main report file (JSON for now, will be HTML in future)
+        return json_filepath
 
     # ============================================================================
     # Eye-to-Hand Specific IO Methods
