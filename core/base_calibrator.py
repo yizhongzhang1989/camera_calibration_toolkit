@@ -447,7 +447,9 @@ class BaseCalibrator(ABC):
             if verbose:
                 print("📊 Generating reprojection analysis...")
             reprojection_images = self.draw_reprojection_on_images()
-            reprojection_files = self._save_debug_images(reprojection_images, subdirs['reprojection'])
+            # Filter out None values for saving (but keep original list for indexing)
+            valid_reprojection_images = [img for img in reprojection_images if img is not None]
+            reprojection_files = self._save_debug_images(valid_reprojection_images, subdirs['reprojection'])
             image_counts['reprojection'] = len(reprojection_files)
             
             # 5. Point distribution analysis
@@ -683,7 +685,8 @@ class BaseCalibrator(ABC):
         return debug_images
     
     def draw_reprojection_on_images(self, camera_matrix: Optional[np.ndarray] = None,
-                                   distortion_coefficients: Optional[np.ndarray] = None) -> List[Tuple[str, np.ndarray]]:
+                                   distortion_coefficients: Optional[np.ndarray] = None,
+                                   pattern2camera_matrices: Optional[List[np.ndarray]] = None) -> List[Optional[Tuple[str, np.ndarray]]]:
         """
         Draw reprojected calibration pattern points on original images.
         
@@ -694,9 +697,16 @@ class BaseCalibrator(ABC):
         Args:
             camera_matrix: Camera matrix to use for projection. If None, uses self.camera_matrix
             distortion_coefficients: Distortion coefficients. If None, uses self.distortion_coefficients
+            pattern2camera_matrices: Optional list of 4x4 pattern-to-camera transformation matrices.
+                                   If provided and matches image length, rvec and tvec will be extracted
+                                   from these matrices instead of using self.rvecs/self.tvecs.
+                                   Used for hand-eye calibration to draw reprojection from robot matrix chain.
+                                   Individual matrices can be None for images without valid poses.
             
         Returns:
-            List of tuples (filename_without_extension, debug_image_array) for successfully detected images only
+            List with same length as input images. Each element is either:
+            - (filename_without_extension, debug_image_array) for successfully processed images
+            - None for images that couldn't be processed (no detection, invalid matrices, etc.)
         """
         if not self.is_calibrated():
             raise ValueError("Calibration not completed. Run calibrate() first.")
@@ -704,8 +714,16 @@ class BaseCalibrator(ABC):
         if not self.images or not self.image_points or not self.object_points:
             raise ValueError("No images or detected points available. Run detect_pattern_points() first.")
         
-        if not self.rvecs or not self.tvecs:
-            raise ValueError("No extrinsic parameters available. Ensure calibration completed successfully.")
+        # Validate pattern2camera_matrices if provided
+        use_external_matrices = False
+        if pattern2camera_matrices is not None:
+            if len(pattern2camera_matrices) != len(self.images):
+                raise ValueError(f"pattern2camera_matrices length ({len(pattern2camera_matrices)}) must match images length ({len(self.images)})")
+            use_external_matrices = True
+        else:
+            # Use internal rvecs/tvecs - check they exist
+            if not self.rvecs or not self.tvecs:
+                raise ValueError("No extrinsic parameters available. Ensure calibration completed successfully or provide pattern2camera_matrices.")
         
         # Use provided camera parameters or try to get from calibrator
         if camera_matrix is None:
@@ -718,18 +736,57 @@ class BaseCalibrator(ABC):
         
         debug_images = []
         
-        # Iterate through all images - arrays are now aligned
+        # Iterate through all images - maintain same length as input
         for i, img in enumerate(self.images):
-            # Skip images with no detection (None entries)
-            if (self.image_points[i] is None or self.object_points[i] is None or 
-                self.rvecs[i] is None or self.tvecs[i] is None):
+            # Check if we can process this image
+            can_process = True
+            rvec = None
+            tvec = None
+            
+            # Skip images with no detection
+            if self.image_points[i] is None or self.object_points[i] is None:
+                can_process = False
+            
+            # Get rvec and tvec from appropriate source
+            if can_process and use_external_matrices:
+                # Check if matrix is None or invalid
+                if pattern2camera_matrices[i] is None:
+                    can_process = False
+                else:
+                    pattern2cam_matrix = pattern2camera_matrices[i]
+                    
+                    # Check if matrix has correct shape and is valid
+                    if (pattern2cam_matrix is None or 
+                        not isinstance(pattern2cam_matrix, np.ndarray) or 
+                        pattern2cam_matrix.shape != (4, 4)):
+                        can_process = False
+                    else:
+                        try:
+                            # Extract rotation matrix and translation vector
+                            rotation_matrix = pattern2cam_matrix[:3, :3]
+                            translation_vector = pattern2cam_matrix[:3, 3]
+                            
+                            # Convert rotation matrix to rotation vector
+                            rvec, _ = cv2.Rodrigues(rotation_matrix)
+                            tvec = translation_vector.reshape(-1, 1)
+                        except Exception:
+                            can_process = False
+            elif can_process:
+                # Use internal rvecs/tvecs
+                if self.rvecs[i] is None or self.tvecs[i] is None:
+                    can_process = False
+                else:
+                    rvec = self.rvecs[i]
+                    tvec = self.tvecs[i]
+            
+            # If we can't process this image, append None and continue
+            if not can_process:
+                debug_images.append(None)
                 continue
                 
-            # Get the detection and calibration results for this image
+            # Get the detection results for this image
             detected_corners = self.image_points[i]
             object_points = self.object_points[i]
-            rvec = self.rvecs[i]
-            tvec = self.tvecs[i]
             
             # Create copy of original image
             debug_img = img.copy()
