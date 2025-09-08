@@ -684,9 +684,30 @@ class BaseCalibrator(ABC):
         
         return debug_images
     
+    def get_reproject_rvec_tvec(self) -> Tuple[List[Optional[np.ndarray]], List[Optional[np.ndarray]]]:
+        """
+        Get rotation and translation vectors for reprojection visualization.
+        
+        This method provides the rvec and tvec arrays used for reprojection visualization.
+        By default, it returns the calibrated rvecs and tvecs from pattern pose estimation.
+        Subclasses can override this method to provide different sources of pose data,
+        such as robot kinematic chain calculations for hand-eye calibration.
+        
+        Returns:
+            Tuple containing:
+            - List of rotation vectors (one per image, None for failed detections)
+            - List of translation vectors (one per image, None for failed detections)
+            
+        Raises:
+            ValueError: If no extrinsic parameters are available
+        """
+        if not self.rvecs or not self.tvecs:
+            raise ValueError("No extrinsic parameters available. Ensure calibration completed successfully.")
+        
+        return self.rvecs, self.tvecs
+    
     def draw_reprojection_on_images(self, camera_matrix: Optional[np.ndarray] = None,
-                                   distortion_coefficients: Optional[np.ndarray] = None,
-                                   pattern2camera_matrices: Optional[List[np.ndarray]] = None) -> List[Optional[Tuple[str, np.ndarray]]]:
+                                   distortion_coefficients: Optional[np.ndarray] = None) -> List[Optional[Tuple[str, np.ndarray]]]:
         """
         Draw reprojected calibration pattern points on original images.
         
@@ -694,14 +715,13 @@ class BaseCalibrator(ABC):
         camera parameters and compares them with the detected corner points. Shows both detected
         corners (green) and reprojected points (red) with per-image reprojection error.
         
+        Uses the get_reproject_rvec_tvec() method to obtain rotation and translation vectors,
+        allowing subclasses to override the source of pose data (e.g., robot kinematic chains
+        for hand-eye calibration).
+        
         Args:
             camera_matrix: Camera matrix to use for projection. If None, uses self.camera_matrix
             distortion_coefficients: Distortion coefficients. If None, uses self.distortion_coefficients
-            pattern2camera_matrices: Optional list of 4x4 pattern-to-camera transformation matrices.
-                                   If provided and matches image length, rvec and tvec will be extracted
-                                   from these matrices instead of using self.rvecs/self.tvecs.
-                                   Used for hand-eye calibration to draw reprojection from robot matrix chain.
-                                   Individual matrices can be None for images without valid poses.
             
         Returns:
             List with same length as input images. Each element is either:
@@ -714,16 +734,11 @@ class BaseCalibrator(ABC):
         if not self.images or not self.image_points or not self.object_points:
             raise ValueError("No images or detected points available. Run detect_pattern_points() first.")
         
-        # Validate pattern2camera_matrices if provided
-        use_external_matrices = False
-        if pattern2camera_matrices is not None:
-            if len(pattern2camera_matrices) != len(self.images):
-                raise ValueError(f"pattern2camera_matrices length ({len(pattern2camera_matrices)}) must match images length ({len(self.images)})")
-            use_external_matrices = True
-        else:
-            # Use internal rvecs/tvecs - check they exist
-            if not self.rvecs or not self.tvecs:
-                raise ValueError("No extrinsic parameters available. Ensure calibration completed successfully or provide pattern2camera_matrices.")
+        # Get rvecs/tvecs from the calibrator (allows subclasses to override source)
+        try:
+            rvecs_source, tvecs_source = self.get_reproject_rvec_tvec()
+        except ValueError as e:
+            raise ValueError(f"No extrinsic parameters available: {e}")
         
         # Use provided camera parameters or try to get from calibrator
         if camera_matrix is None:
@@ -747,37 +762,14 @@ class BaseCalibrator(ABC):
             if self.image_points[i] is None or self.object_points[i] is None:
                 can_process = False
             
-            # Get rvec and tvec from appropriate source
-            if can_process and use_external_matrices:
-                # Check if matrix is None or invalid
-                if pattern2camera_matrices[i] is None:
+            # Get rvec and tvec from get_reproject_rvec_tvec() method
+            if can_process:
+                # Use rvecs/tvecs from get_reproject_rvec_tvec() method
+                if rvecs_source[i] is None or tvecs_source[i] is None:
                     can_process = False
                 else:
-                    pattern2cam_matrix = pattern2camera_matrices[i]
-                    
-                    # Check if matrix has correct shape and is valid
-                    if (pattern2cam_matrix is None or 
-                        not isinstance(pattern2cam_matrix, np.ndarray) or 
-                        pattern2cam_matrix.shape != (4, 4)):
-                        can_process = False
-                    else:
-                        try:
-                            # Extract rotation matrix and translation vector
-                            rotation_matrix = pattern2cam_matrix[:3, :3]
-                            translation_vector = pattern2cam_matrix[:3, 3]
-                            
-                            # Convert rotation matrix to rotation vector
-                            rvec, _ = cv2.Rodrigues(rotation_matrix)
-                            tvec = translation_vector.reshape(-1, 1)
-                        except Exception:
-                            can_process = False
-            elif can_process:
-                # Use internal rvecs/tvecs
-                if self.rvecs[i] is None or self.tvecs[i] is None:
-                    can_process = False
-                else:
-                    rvec = self.rvecs[i]
-                    tvec = self.tvecs[i]
+                    rvec = rvecs_source[i]
+                    tvec = tvecs_source[i]
             
             # If we can't process this image, append None and continue
             if not can_process:

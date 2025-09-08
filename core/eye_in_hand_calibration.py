@@ -411,6 +411,67 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
         """
         return self.cam2end_matrix
     
+    def get_reproject_rvec_tvec(self) -> Tuple[List[Optional[np.ndarray]], List[Optional[np.ndarray]]]:
+        """
+        Get rotation and translation vectors for reprojection visualization from robot kinematic chain.
+        
+        For eye-in-hand calibration, calculates rvec and tvec for each image from the robot
+        transformation chain: target2cam = inv(cam2end) @ inv(end2base) @ target2base
+        
+        Returns:
+            Tuple containing:
+            - List of rotation vectors (one per image, None for failed calculations)
+            - List of translation vectors (one per image, None for failed calculations)
+            
+        Raises:
+            ValueError: If hand-eye calibration not completed or required data missing
+        """
+        # Check if hand-eye calibration is completed
+        if not self.is_calibrated() or self.cam2end_matrix is None or self.target2base_matrix is None:
+            raise ValueError("Hand-eye calibration not completed. Run calibrate() first.")
+        
+        # Check if we have the required data
+        if not self.end2base_matrices:
+            raise ValueError("Robot end-effector poses not available. Set end2base_matrices first.")
+        
+        rvecs = []
+        tvecs = []
+        
+        for i in range(len(self.images)):
+            if (self.end2base_matrices[i] is not None and 
+                self.image_points[i] is not None and 
+                self.object_points[i] is not None):
+                
+                try:
+                    # Eye-in-hand transformation chain: target2cam = inv(cam2end) @ inv(end2base) @ target2base
+                    end2cam_matrix = np.linalg.inv(self.cam2end_matrix)
+                    base2end_matrix = np.linalg.inv(self.end2base_matrices[i])
+                    
+                    # Calculate pattern2camera transformation for this pose
+                    pattern2cam_matrix = end2cam_matrix @ base2end_matrix @ self.target2base_matrix
+                    
+                    # Extract rotation matrix and translation vector
+                    rotation_matrix = pattern2cam_matrix[:3, :3]
+                    translation_vector = pattern2cam_matrix[:3, 3]
+                    
+                    # Convert rotation matrix to rotation vector
+                    rvec, _ = cv2.Rodrigues(rotation_matrix)
+                    tvec = translation_vector.reshape(-1, 1)
+                    
+                    rvecs.append(rvec)
+                    tvecs.append(tvec)
+                    
+                except Exception:
+                    # Failed to calculate transformation for this image
+                    rvecs.append(None)
+                    tvecs.append(None)
+            else:
+                # Missing required data for this image
+                rvecs.append(None)
+                tvecs.append(None)
+        
+        return rvecs, tvecs
+
     # ============================================================================
     # Validation Methods
     # ============================================================================
@@ -849,65 +910,3 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
                 initial_error = float('inf')  # Fallback if calculation fails
             return initial_cam2end, initial_target2base, initial_error, initial_error
 
-    def draw_reprojection_on_images(self, camera_matrix: Optional[np.ndarray] = None,
-                                   distortion_coefficients: Optional[np.ndarray] = None,
-                                   pattern2camera_matrices: Optional[List[np.ndarray]] = None) -> List[Optional[Tuple[str, np.ndarray]]]:
-        """
-        Draw reprojected calibration pattern points on original images using hand-eye calibration results.
-        
-        This method overrides the base implementation to use the calibrated hand-eye transformation
-        chain to calculate pattern-to-camera matrices from the robot kinematic chain instead of
-        the intrinsic calibration rvec/tvec results.
-        
-        For eye-in-hand calibration, the transformation chain is:
-        target2cam = inv(cam2end) @ inv(end2base) @ target2base
-        
-        Args:
-            camera_matrix: Camera matrix to use for projection. If None, uses self.camera_matrix
-            distortion_coefficients: Distortion coefficients. If None, uses self.distortion_coefficients
-            pattern2camera_matrices: If provided, uses these matrices instead of calculating from
-                                   robot chain. Useful for comparing different transformation sources.
-            
-        Returns:
-            List with same length as input images. Each element is either:
-            - (filename_without_extension, debug_image_array) for successfully processed images
-            - None for images that couldn't be processed (no detection, invalid poses, etc.)
-        """
-        # If pattern2camera_matrices is provided, use base implementation
-        if pattern2camera_matrices is not None:
-            return super().draw_reprojection_on_images(camera_matrix, distortion_coefficients, pattern2camera_matrices)
-        
-        # Check if hand-eye calibration is completed
-        if not self.is_calibrated() or self.cam2end_matrix is None or self.target2base_matrix is None:
-            raise ValueError("Hand-eye calibration not completed. Run calibrate() first.")
-        
-        # Check if we have the required data
-        if not self.end2base_matrices:
-            raise ValueError("Robot end-effector poses not available. Set end2base_matrices first.")
-        
-        # Calculate pattern2camera matrices from robot kinematic chain
-        calculated_pattern2camera_matrices = []
-        
-        for i in range(len(self.images)):
-            if (self.end2base_matrices[i] is not None and 
-                self.image_points[i] is not None and 
-                self.object_points[i] is not None):
-                
-                try:
-                    # Eye-in-hand transformation chain: target2cam = inv(cam2end) @ inv(end2base) @ target2base
-                    end2cam_matrix = np.linalg.inv(self.cam2end_matrix)
-                    base2end_matrix = np.linalg.inv(self.end2base_matrices[i])
-                    
-                    # Calculate pattern2camera transformation for this pose
-                    pattern2cam_matrix = end2cam_matrix @ base2end_matrix @ self.target2base_matrix
-                    calculated_pattern2camera_matrices.append(pattern2cam_matrix)
-                    
-                except Exception:
-                    # Failed to calculate transformation for this image
-                    calculated_pattern2camera_matrices.append(None)
-            else:
-                # Missing required data for this image
-                calculated_pattern2camera_matrices.append(None)
-        
-        # Call base implementation with calculated matrices
-        return super().draw_reprojection_on_images(camera_matrix, distortion_coefficients, calculated_pattern2camera_matrices)
