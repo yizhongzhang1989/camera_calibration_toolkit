@@ -339,26 +339,6 @@ class EyeToHandCalibrator(HandEyeBaseCalibrator):
         if 'target2end_matrix' in data:
             self.target2end_matrix = np.array(data['target2end_matrix'], dtype=np.float32)
 
-    def generate_calibration_report(self, output_dir: str, **kwargs) -> Optional[dict]:
-        """
-        Generate comprehensive eye-to-hand calibration report with JSON data, debug images, and HTML viewer.
-        
-        This method uses the BaseCalibrator implementation to create a complete calibration
-        analysis package including JSON data, debug images, and interactive HTML report.
-        
-        Args:
-            output_dir: Directory to save all report files
-            **kwargs: Additional options for report generation (passed to base class)
-            
-        Returns:
-            Optional[dict]: Dictionary with paths to generated files if successful, None if failed
-        """
-        # Import BaseCalibrator to call its implementation directly
-        from .base_calibrator import BaseCalibrator
-        
-        # Use the BaseCalibrator implementation which provides comprehensive reporting
-        return BaseCalibrator.generate_calibration_report(self, output_dir, **kwargs)
-
     # ============================================================================
     # Eye-to-Hand Specific IO Methods
     # ============================================================================
