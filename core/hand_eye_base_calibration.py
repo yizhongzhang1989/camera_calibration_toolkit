@@ -48,7 +48,8 @@ class HandEyeBaseCalibrator(BaseCalibrator):
                  image_paths: Optional[List[str]] = None, 
                  calibration_pattern: Optional[CalibrationPattern] = None,
                  camera_matrix: Optional[np.ndarray] = None,
-                 distortion_coefficients: Optional[np.ndarray] = None):
+                 distortion_coefficients: Optional[np.ndarray] = None,
+                 verbose: bool = False):
         """
         Initialize HandEyeBaseCalibrator with unified interface for hand-eye calibration.
         
@@ -59,6 +60,7 @@ class HandEyeBaseCalibrator(BaseCalibrator):
             calibration_pattern: CalibrationPattern instance or None
             camera_matrix: 3x3 camera intrinsic matrix or None (if None, will be calibrated)
             distortion_coefficients: Camera distortion coefficients or None (if None, will be calibrated)
+            verbose: Whether to print progress information during initialization (default: False)
             
         Constructor Behavior:
             • Only image_paths provided: Automatically loads end2base matrices from JSON files
@@ -92,19 +94,20 @@ class HandEyeBaseCalibrator(BaseCalibrator):
         if image_paths is not None and end2base_matrices is not None:
             # Initialize base class WITHOUT calling set_images_from_paths automatically
             # We'll handle image loading manually to preserve the provided end2base_matrices
-            super().__init__(images=None, image_paths=None, calibration_pattern=calibration_pattern)
+            super().__init__(images=None, image_paths=None, calibration_pattern=calibration_pattern, verbose=verbose)
             
             # Set images manually using base class method to avoid JSON loading
-            success = super().set_images_from_paths(image_paths)
+            success = super().set_images_from_paths(image_paths, verbose=verbose)
             if not success:
                 raise ValueError("Failed to load images from provided paths")
                 
-            print(f"ℹ️  Loaded {len(self.images)} images from paths, using provided end2base_matrices")
-            print(f"   (JSON files were not loaded to preserve provided transformation matrices)")
+            if verbose:
+                print(f"ℹ️  Loaded {len(self.images)} images from paths, using provided end2base_matrices")
+                print(f"   (JSON files were not loaded to preserve provided transformation matrices)")
             
         else:
             # Standard initialization - let base class handle image loading
-            super().__init__(images, image_paths, calibration_pattern)
+            super().__init__(images, image_paths, calibration_pattern, verbose=verbose)
         
         # Set camera intrinsics if provided
         if camera_matrix is not None:
@@ -256,7 +259,7 @@ class HandEyeBaseCalibrator(BaseCalibrator):
 
 
 
-    def set_images_from_paths(self, image_paths: List[str]) -> bool:
+    def set_images_from_paths(self, image_paths: List[str], verbose: bool = False) -> bool:
         """
         Set images from file paths and read corresponding JSON files with end2base matrices.
         
@@ -269,12 +272,14 @@ class HandEyeBaseCalibrator(BaseCalibrator):
         
         Args:
             image_paths: List of image file paths
+            verbose: Whether to print progress information (default: False)
             
         Returns:
             bool: True if all images and JSON files loaded successfully
         """
         if not image_paths:
-            print("Error: No image paths provided")
+            if verbose:
+                print("Error: No image paths provided")
             return False
         
         try:
@@ -282,13 +287,15 @@ class HandEyeBaseCalibrator(BaseCalibrator):
             end2base_matrices = []
             valid_paths = []
             
-            print(f"Loading {len(image_paths)} images and corresponding JSON files...")
+            if verbose:
+                print(f"Loading {len(image_paths)} images and corresponding JSON files...")
             
             for i, img_path in enumerate(image_paths):
                 # Load image
                 img = cv2.imread(img_path)
                 if img is None:
-                    print(f"Error: Could not load image {img_path}")
+                    if verbose:
+                        print(f"Error: Could not load image {img_path}")
                     return False
                 
                 # Construct JSON file path (same name, different extension)
@@ -297,7 +304,8 @@ class HandEyeBaseCalibrator(BaseCalibrator):
                 
                 # Check if JSON file exists
                 if not os.path.exists(json_path):
-                    print(f"Error: JSON file not found: {json_path}")
+                    if verbose:
+                        print(f"Error: JSON file not found: {json_path}")
                     return False
                 
                 # Load and parse JSON file
@@ -307,7 +315,8 @@ class HandEyeBaseCalibrator(BaseCalibrator):
                     
                     # Extract end2base matrix
                     if 'end2base' not in json_data:
-                        print(f"Error: 'end2base' key not found in {json_path}")
+                        if verbose:
+                            print(f"Error: 'end2base' key not found in {json_path}")
                         return False
                     
                     end2base = json_data['end2base']
@@ -316,12 +325,14 @@ class HandEyeBaseCalibrator(BaseCalibrator):
                     end2base_matrix = np.array(end2base, dtype=np.float64)
                     
                     if end2base_matrix.shape != (4, 4):
-                        print(f"Error: end2base matrix in {json_path} is not 4x4, got shape {end2base_matrix.shape}")
+                        if verbose:
+                            print(f"Error: end2base matrix in {json_path} is not 4x4, got shape {end2base_matrix.shape}")
                         return False
                     
                     # Validate that it looks like a proper transformation matrix
                     if not np.allclose(end2base_matrix[3, :], [0, 0, 0, 1], atol=1e-6):
-                        print(f"Warning: end2base matrix in {json_path} bottom row is not [0, 0, 0, 1]: {end2base_matrix[3, :]}")
+                        if verbose:
+                            print(f"Warning: end2base matrix in {json_path} bottom row is not [0, 0, 0, 1]: {end2base_matrix[3, :]}")
                         # Don't return False here - just warn, as some matrices might have slight numerical errors
                     
                     # If we get here, both image and JSON loaded successfully
@@ -329,13 +340,16 @@ class HandEyeBaseCalibrator(BaseCalibrator):
                     end2base_matrices.append(end2base_matrix)
                     valid_paths.append(img_path)
                     
-                    print(f"✅ Loaded image {i+1}/{len(image_paths)}: {os.path.basename(img_path)} with transform")
+                    if verbose:
+                        print(f"✅ Loaded image {i+1}/{len(image_paths)}: {os.path.basename(img_path)} with transform")
                     
                 except json.JSONDecodeError as e:
-                    print(f"Error: Could not parse JSON file {json_path}: {e}")
+                    if verbose:
+                        print(f"Error: Could not parse JSON file {json_path}: {e}")
                     return False
                 except Exception as e:
-                    print(f"Error: Could not load JSON file {json_path}: {e}")
+                    if verbose:
+                        print(f"Error: Could not load JSON file {json_path}: {e}")
                     return False
             
             # If we get here, all images and JSON files were loaded successfully
@@ -352,8 +366,9 @@ class HandEyeBaseCalibrator(BaseCalibrator):
             from .utils import FilenameManager
             self.filename_manager = FilenameManager(valid_paths)
             
-            print(f"✅ Successfully loaded {len(self.images)} images with end2base matrices")
-            print(f"📏 Image size: {self.image_size}")
+            if verbose:
+                print(f"✅ Successfully loaded {len(self.images)} images with end2base matrices")
+                print(f"📏 Image size: {self.image_size}")
             
             # Validate consistency of loaded data
             self._validate_input_consistency()
@@ -361,15 +376,17 @@ class HandEyeBaseCalibrator(BaseCalibrator):
             return True
             
         except Exception as e:
-            print(f"Error loading images and transformations: {e}")
+            if verbose:
+                print(f"Error loading images and transformations: {e}")
             return False
 
-    def set_images_from_arrays(self, images: List[np.ndarray]) -> bool:
+    def set_images_from_arrays(self, images: List[np.ndarray], verbose: bool = False) -> bool:
         """
         Set images from numpy arrays.
         
         Args:
             images: List of image arrays
+            verbose: Whether to print progress information (default: False)
             
         Returns:
             bool: True if images set successfully
@@ -379,7 +396,8 @@ class HandEyeBaseCalibrator(BaseCalibrator):
             h, w = images[0].shape[:2]
             self.image_size = (w, h)
             
-        print(f"Set {len(images)} images from arrays")
+        if verbose:
+            print(f"Set {len(images)} images from arrays")
         return True
 
     def set_calibration_pattern(self, pattern: CalibrationPattern):

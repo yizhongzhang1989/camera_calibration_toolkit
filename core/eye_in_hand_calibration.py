@@ -61,7 +61,8 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
                  image_paths: Optional[List[str]] = None, 
                  calibration_pattern: Optional[CalibrationPattern] = None,
                  camera_matrix: Optional[np.ndarray] = None,
-                 distortion_coefficients: Optional[np.ndarray] = None):
+                 distortion_coefficients: Optional[np.ndarray] = None,
+                 verbose: bool = False):
         """
         Initialize EyeInHandCalibrator for IO operations.
         
@@ -72,10 +73,11 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
             calibration_pattern: CalibrationPattern instance or None
             camera_matrix: 3x3 camera intrinsic matrix or None
             distortion_coefficients: Camera distortion coefficients or None
+            verbose: Whether to print progress information during initialization (default: False)
         """
         # Initialize base class with common functionality
         super().__init__(images, end2base_matrices, image_paths, calibration_pattern, 
-                        camera_matrix, distortion_coefficients)
+                        camera_matrix, distortion_coefficients, verbose=verbose)
         
         # Eye-in-hand specific transformation matrices
         self.cam2end_matrix = None              # Camera to end-effector transformation (primary result)
@@ -121,10 +123,10 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
         """
         try:
             # detect pattern points
-            self.detect_pattern_points()
+            self.detect_pattern_points(verbose=verbose)
 
             # Calculate target2cam matrices
-            self._calculate_target2cam_matrices()
+            self._calculate_target2cam_matrices(verbose=verbose)
 
             # Validate prerequisites
             self._validate_calibration_prerequisites()

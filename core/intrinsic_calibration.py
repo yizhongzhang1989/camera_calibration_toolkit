@@ -45,7 +45,7 @@ class IntrinsicCalibrator(BaseCalibrator):
     - distortion_model: Distortion model used for calibration
     """
     
-    def __init__(self, images=None, image_paths=None, calibration_pattern=None):
+    def __init__(self, images=None, image_paths=None, calibration_pattern=None, verbose: bool = False):
         """
         Initialize IntrinsicCalibrator with smart constructor arguments.
         
@@ -53,9 +53,10 @@ class IntrinsicCalibrator(BaseCalibrator):
             images: List of image arrays (numpy arrays) or None
             image_paths: List of image file paths or None
             calibration_pattern: CalibrationPattern instance or None
+            verbose: Whether to print progress information during initialization (default: False)
         """
         # Initialize base class with common functionality
-        super().__init__(images, image_paths, calibration_pattern)
+        super().__init__(images, image_paths, calibration_pattern, verbose=verbose)
             
     # Abstract method implementations
     def calibrate(self, 

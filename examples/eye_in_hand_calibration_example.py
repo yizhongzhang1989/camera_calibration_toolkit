@@ -250,7 +250,8 @@ def test_eye_in_hand_calibration():
             image_paths=None,  # Set to None as we directly provide images and matrices
             calibration_pattern=calibration_pattern,
             camera_matrix=camera_matrix,
-            distortion_coefficients=distortion_coefficients.flatten()  # Flatten to 1D array
+            distortion_coefficients=distortion_coefficients.flatten(),  # Flatten to 1D array
+            verbose=True
         )
         
         print("✅ EyeInHandCalibrator initialized successfully")
