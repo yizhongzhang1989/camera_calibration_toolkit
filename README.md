@@ -4,11 +4,39 @@
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![OpenCV](https://img.shields.io/badge/opencv-4.5+-red.svg)
 
-A modern Python toolkit for camera calibration with clean APIs and web interface.
+A comprehensive Python toolkit for camera calibration providing clean APIs for intrinsic calibration, eye-in-hand, and eye-to-hand robot calibration workflows.
 
 ## 🚀 Quick Start
 
-### Installation
+### As Git Submodule (Recommended)
+
+The toolkit is designed to work seamlessly as a git submodule in your projects:
+
+```bash
+# Add as submodule to your project
+git submodule add https://github.com/yourusername/camera-calibration-toolkit.git camera_calibration_toolkit
+cd camera_calibration_toolkit
+pip install -r requirements.txt
+
+# Update submodule to latest version
+git submodule update --remote camera_calibration_toolkit
+```
+
+### Usage in Your Project
+
+```python
+# Import from submodule
+import sys
+sys.path.append('camera_calibration_toolkit')  # Add submodule to path
+
+from core.intrinsic_calibration import IntrinsicCalibrator
+from core.eye_in_hand_calibration import EyeInHandCalibrator  
+from core.calibration_patterns import StandardChessboard, load_pattern_from_json
+
+# Your calibration code here...
+```
+
+### Alternative: Direct Clone
 
 ```bash
 git clone https://github.com/yourusername/camera-calibration-toolkit.git
@@ -16,306 +44,376 @@ cd camera-calibration-toolkit
 pip install -r requirements.txt
 ```
 
-### Basic Usage
+## 📖 Core Calibration Workflows
 
-#### 1. Intrinsic Camera Calibration
+### 1. Intrinsic Camera Calibration
 
-```python
-from core.calibration_factory import CalibrationFactory
-from core.calibration_patterns import load_pattern_from_json
-
-# Create pattern configuration and load pattern
-pattern_config = {
-    "pattern_id": "standard_chessboard",
-    "name": "Standard Chessboard",
-    "description": "Traditional black and white checkerboard pattern",
-    "is_planar": True,
-    "parameters": {
-        "width": 11,
-        "height": 8,
-        "square_size": 0.02
-    }
-}
-pattern = load_pattern_from_json(pattern_config)
-calibrator = CalibrationFactory.create_calibrator(
-    'intrinsic',
-    image_paths=['img1.jpg', 'img2.jpg', 'img3.jpg'],
-    calibration_pattern=pattern
-)
-
-# Run calibration
-calibrator.detect_pattern_points(verbose=True)
-rms_error = calibrator.calibrate()
-
-# Get results
-camera_matrix = calibrator.get_camera_matrix()
-dist_coeffs = calibrator.get_distortion_coefficients()
-print(f"RMS Error: {rms_error:.3f} pixels")
-```
-
-#### 2. Eye-in-Hand Robot Calibration
+Calibrate camera's internal parameters (focal length, principal point, distortion):
 
 ```python
-# For robot-mounted cameras
-eye_calibrator = CalibrationFactory.create_calibrator(
-    'eye_in_hand',
-    image_paths=image_paths,
-    robot_poses=robot_poses,  # List of robot poses
-    camera_matrix=camera_matrix,
-    distortion_coefficients=dist_coeffs,
-    calibration_pattern=pattern
-)
+import sys
+sys.path.append('camera_calibration_toolkit')  # If using as submodule
 
-# Calibrate and optimize
-rms_error = eye_calibrator.calibrate()
-optimized_error = eye_calibrator.optimize_calibration()
+from core.intrinsic_calibration import IntrinsicCalibrator
+from core.calibration_patterns import StandardChessboard
 
-# Get camera-to-robot transformation
-transformation = eye_calibrator.get_transformation_matrix()
-print(f"Optimization improved error: {rms_error:.3f} → {optimized_error:.3f}")
-```
+# Create calibration pattern (11x8 chessboard with 20mm squares)
+pattern = StandardChessboard(width=11, height=8, square_size=0.020)
 
-#### 3. Web Interface
-
-```bash
-python main.py --mode web
-# Open browser to http://localhost:5000
-```
-
-## 📖 Examples
-
-### Complete Intrinsic Calibration
-
-```python
-import glob
-from core.calibration_factory import CalibrationFactory
-from core.calibration_patterns import load_pattern_from_json
-
-# Get all calibration images
-image_paths = glob.glob("calibration_images/*.jpg")
-
-# Create 11x8 chessboard pattern with 20mm squares  
-pattern_config = {
-    "pattern_id": "standard_chessboard",
-    "name": "Standard Chessboard",
-    "description": "Traditional black and white checkerboard pattern",
-    "is_planar": True,
-    "parameters": {
-        "width": 11,
-        "height": 8,
-        "square_size": 0.020
-    }
-}
-pattern = load_pattern_from_json(pattern_config)
-
-# Create and run calibrator
-calibrator = CalibrationFactory.create_calibrator('intrinsic',
-    image_paths=image_paths,
-    calibration_pattern=pattern
-)
+# Initialize calibrator with image paths
+image_paths = ['img1.jpg', 'img2.jpg', 'img3.jpg', ...]
+calibrator = IntrinsicCalibrator(image_paths, pattern)
 
 # Detect patterns and calibrate
-success = calibrator.detect_pattern_points(verbose=True)
-if success:
-    rms_error = calibrator.calibrate(verbose=True)
-    
-    # Generate comprehensive calibration report
-    report_path = calibrator.generate_calibration_report("./results")
-    
-    # Generate debug images
-    pattern_images = calibrator.draw_pattern_on_images()
-    axes_images = calibrator.draw_axes_on_undistorted_images()
+calibrator.detect_pattern_points(verbose=True)
+rms_error = calibrator.calibrate(verbose=True)
+
+# Get calibration results
+camera_matrix = calibrator.get_camera_matrix()
+dist_coeffs = calibrator.get_distortion_coefficients()
+print(f"Calibration RMS Error: {rms_error:.3f} pixels")
+
+# Generate comprehensive report with visualizations
+report_info = calibrator.generate_calibration_report("./calibration_results")
+print(f"Report saved to: {report_info['html_report']}")
 ```
 
-### Complete Eye-in-Hand Calibration
+### 2. Eye-in-Hand Robot Calibration
+
+For cameras mounted on robot end-effectors, find the transformation between camera and robot frames:
 
 ```python
-from core.calibration_factory import CalibrationFactory
-from core.calibration_patterns import load_pattern_from_json
+from core.eye_in_hand_calibration import EyeInHandCalibrator
 import json
 
-# Load robot poses from JSON files
+# Load robot poses (end-effector positions when images were taken)
 robot_poses = []
-for pose_file in glob.glob("poses/*.json"):
+for pose_file in ['pose1.json', 'pose2.json', 'pose3.json']:
     with open(pose_file, 'r') as f:
         pose_data = json.load(f)
         robot_poses.append(pose_data)
 
-# Create calibrator with camera intrinsics and poses
-calibrator = CalibrationFactory.create_calibrator('eye_in_hand',
+# Initialize calibrator with intrinsic parameters and robot poses  
+calibrator = EyeInHandCalibrator(
     image_paths=image_paths,
     robot_poses=robot_poses,
+    camera_matrix=camera_matrix,        # From intrinsic calibration
+    distortion_coefficients=dist_coeffs, # From intrinsic calibration
+    calibration_pattern=pattern
+)
+
+# Run hand-eye calibration
+calibrator.detect_pattern_points(verbose=True)
+initial_error = calibrator.calibrate(verbose=True)
+
+# Optimize for better accuracy
+final_error = calibrator.optimize_calibration(verbose=True) 
+print(f"Optimization: {initial_error:.3f} → {final_error:.3f} pixels")
+
+# Get camera-to-end-effector transformation matrix
+transformation = calibrator.get_transformation_matrix()
+print("Camera to End-Effector Transformation:")
+print(transformation)
+
+# Generate report with pattern detection and reprojection analysis
+report_info = calibrator.generate_calibration_report("./hand_eye_results")
+```
+
+### 3. Eye-to-Hand Robot Calibration
+
+For stationary cameras observing robot workspaces:
+
+```python
+from core.eye_to_hand_calibration import EyeToHandCalibrator
+
+# Same API as eye-in-hand but different transformation result
+calibrator = EyeToHandCalibrator(
+    image_paths=image_paths,
+    robot_poses=robot_poses,  # Robot poses when calibration target was attached
     camera_matrix=camera_matrix,
     distortion_coefficients=dist_coeffs,
     calibration_pattern=pattern
 )
 
-# Run calibration
+# Calibration workflow identical to eye-in-hand
 calibrator.detect_pattern_points(verbose=True)
-initial_error = calibrator.calibrate(verbose=True)
+rms_error = calibrator.calibrate(verbose=True)
+optimized_error = calibrator.optimize_calibration(verbose=True)
 
-# Optimize for better accuracy
-final_error = calibrator.optimize_calibration(iterations=5, verbose=True)
-
-# Get transformation matrix (camera to end-effector)
-cam2end_matrix = calibrator.get_transformation_matrix()
-print("Camera to End-Effector Transformation:")
-print(cam2end_matrix)
-
-# Generate comprehensive calibration report
-report_path = calibrator.generate_calibration_report("./eye_in_hand_results")
+# Get base-to-camera transformation matrix
+transformation = calibrator.get_transformation_matrix()
+print("Base to Camera Transformation:")
+print(transformation)
 ```
 
-### Using Different Patterns
+## 🎯 Calibration Patterns
+
+### Standard Chessboard (Most Common)
 
 ```python
-# Standard chessboard
-chessboard_config = {
-    "pattern_id": "standard_chessboard",
-    "name": "Standard Chessboard",
-    "description": "Traditional black and white checkerboard pattern",
-    "is_planar": True,
-    "parameters": {
-        "width": 9,
-        "height": 6,
-        "square_size": 0.025
-    }
-}
-chessboard = load_pattern_from_json(chessboard_config)
+from core.calibration_patterns import StandardChessboard
 
-# ChArUco board (more robust detection)
-charuco_config = {
-    "pattern_id": "charuco_board",
-    "name": "ChArUco Board",
-    "description": "Chessboard pattern with ArUco markers for robust detection",
-    "is_planar": True,
-    "parameters": {
-        "width": 8,
-        "height": 6,
-        "square_size": 0.04,
-        "marker_size": 0.02,
-        "dictionary_id": 1
-    }
-}
-charuco = load_pattern_from_json(charuco_config)
+# Create 11x8 chessboard with 20mm squares
+chessboard = StandardChessboard(width=11, height=8, square_size=0.020)
 
-# Use either pattern the same way
-calibrator = CalibrationFactory.create_calibrator('intrinsic',
-    image_paths=image_paths,
-    calibration_pattern=charuco  # or chessboard
-)
+# Use with any calibrator
+calibrator = IntrinsicCalibrator(image_paths, chessboard)
 ```
 
-### Pattern Serialization and Recovery
+### ChArUco Board (More Robust)
 
-Save and load calibration patterns using JSON for reproducible results:
+ChArUco patterns combine chessboard and ArUco markers for better detection:
 
 ```python
-from core.calibration_patterns import (
-    get_pattern_manager, 
-    save_pattern_to_json, 
-    load_pattern_from_json
+from core.calibration_patterns import CharucoBoard
+
+# Create 8x6 ChArUco board  
+charuco = CharucoBoard(
+    width=8, height=6,
+    square_size=0.040,      # 40mm squares
+    marker_size=0.020,      # 20mm ArUco markers
+    dictionary_id=1         # DICT_4X4_50
 )
 
-# Create and save pattern
-manager = get_pattern_manager()
-pattern = manager.create_pattern('standard_chessboard', 
-    width=11, height=8, square_size=0.025)
+# More robust detection, especially with partial visibility
+calibrator = IntrinsicCalibrator(image_paths, charuco)
+```
 
-# Save pattern to JSON
+### Grid Board (Circle Patterns)
+
+```python
+from core.calibration_patterns import GridBoard
+
+# Asymmetric circle grid
+grid = GridBoard(width=4, height=11, spacing=0.02)
+calibrator = IntrinsicCalibrator(image_paths, grid)
+```
+
+### Pattern Serialization
+
+Save and restore exact pattern configurations:
+
+```python
+from core.calibration_patterns import save_pattern_to_json, load_pattern_from_json
+
+# Save pattern configuration
+pattern = StandardChessboard(width=11, height=8, square_size=0.025)
 pattern_json = save_pattern_to_json(pattern)
 
-# Later, restore exact same pattern
+# Later, restore identical pattern
 restored_pattern = load_pattern_from_json(pattern_json)
 
-# Embed pattern info in calibration results
-calibration_results = {
-    'timestamp': '2025-08-20T10:30:00Z',
-    'calibration_pattern': pattern_json,  # Embed pattern
-    'camera_matrix': camera_matrix,
-    'distortion_coefficients': dist_coeffs
+# Embed in calibration results for reproducibility
+calibration_data = {
+    'timestamp': '2025-09-08T15:30:00Z',
+    'pattern_config': pattern_json,  # Exact pattern used
+    'camera_matrix': camera_matrix.tolist(),
+    'distortion_coefficients': dist_coeffs.tolist(),
+    'rms_error': rms_error
 }
-
-# Perfect for reproducible calibration analysis
 ```
 
 ## 📋 Data Formats
 
-### Robot Pose JSON Format
+### Robot Pose Format
+
+Robot poses should be provided as JSON with end-effector position and orientation:
 
 ```json
 {
     "end_xyzrpy": {
-        "x": 0.5, "y": 0.2, "z": 0.3,
-        "rx": 0.0, "ry": 0.0, "rz": 1.57
+        "x": 0.500,    # Position in meters
+        "y": 0.200, 
+        "z": 0.300,
+        "rx": 0.000,   # Rotation in radians (roll-pitch-yaw)
+        "ry": 0.000,
+        "rz": 1.570
     }
 }
 ```
 
-### Required Image Setup
+### Image Requirements
 
-- **Minimum Images**: 10-15 for intrinsic, 5-8 for eye-in-hand  
-- **Pattern Visibility**: Chessboard must be fully visible in each image
-- **Variety**: Different angles, distances, and orientations
-- **Quality**: Sharp, well-lit images without motion blur
+- **Minimum**: 10-15 images for intrinsic, 5-8 for hand-eye calibration
+- **Quality**: Sharp, well-lit, no motion blur
+- **Coverage**: Various angles, distances, pattern positions
+- **Pattern**: Fully visible calibration pattern in each image
 
-## 🛠️ Available Calibrators
+## 🗂️ Project Structure as Submodule
+
+When used as a submodule, your project structure might look like:
+
+```
+your_robot_project/
+├── camera_calibration_toolkit/        # This toolkit as submodule
+│   ├── core/                          # Core calibration modules
+│   │   ├── intrinsic_calibration.py
+│   │   ├── eye_in_hand_calibration.py 
+│   │   ├── eye_to_hand_calibration.py
+│   │   └── calibration_patterns/
+│   ├── examples/                      # Reference examples
+│   └── requirements.txt
+├── your_robot_code/
+│   ├── calibration_script.py      # Your calibration workflow
+│   ├── camera_data/              # Your calibration images
+│   └── poses/                    # Your robot pose data  
+└── README.md
+```
+
+## � Complete Integration Example
 
 ```python
-# Get list of available calibrator types
-from core.calibration_factory import CalibrationFactory
-print(CalibrationFactory.get_available_types())
-# Output: ['intrinsic', 'eye_in_hand']
+# your_robot_code/calibration_script.py
+import sys
+import os
+import json
+import glob
 
-# Create any calibrator type
-cal = CalibrationFactory.create_calibrator('intrinsic', **kwargs)
+# Add calibration toolkit to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'camera_calibration_toolkit'))
+
+from core.intrinsic_calibration import IntrinsicCalibrator
+from core.eye_in_hand_calibration import EyeInHandCalibrator
+from core.calibration_patterns import StandardChessboard
+
+def main():
+    # 1. Setup calibration pattern
+    pattern = StandardChessboard(width=11, height=8, square_size=0.020)
+    
+    # 2. Intrinsic calibration
+    intrinsic_images = glob.glob('camera_data/intrinsic/*.jpg')
+    intrinsic_cal = IntrinsicCalibrator(intrinsic_images, pattern)
+    intrinsic_cal.detect_pattern_points(verbose=True)
+    rms_error = intrinsic_cal.calibrate(verbose=True)
+    
+    camera_matrix = intrinsic_cal.get_camera_matrix()
+    dist_coeffs = intrinsic_cal.get_distortion_coefficients()
+    
+    # 3. Hand-eye calibration  
+    hand_eye_images = glob.glob('camera_data/hand_eye/*.jpg')
+    pose_files = glob.glob('poses/*.json')
+    
+    robot_poses = []
+    for pose_file in sorted(pose_files):
+        with open(pose_file, 'r') as f:
+            robot_poses.append(json.load(f))
+    
+    hand_eye_cal = EyeInHandCalibrator(
+        image_paths=hand_eye_images,
+        robot_poses=robot_poses,
+        camera_matrix=camera_matrix,
+        distortion_coefficients=dist_coeffs,
+        calibration_pattern=pattern
+    )
+    
+    hand_eye_cal.detect_pattern_points(verbose=True)
+    he_error = hand_eye_cal.calibrate(verbose=True)
+    he_optimized = hand_eye_cal.optimize_calibration(verbose=True)
+    
+    transformation = hand_eye_cal.get_transformation_matrix()
+    
+    # 4. Save results
+    results = {
+        'intrinsic': {
+            'camera_matrix': camera_matrix.tolist(),
+            'distortion_coefficients': dist_coeffs.tolist(),
+            'rms_error': float(rms_error)
+        },
+        'hand_eye': {
+            'transformation_matrix': transformation.tolist(),
+            'rms_error': float(he_optimized),
+            'improvement': float(he_error - he_optimized)
+        }
+    }
+    
+    with open('calibration_results.json', 'w') as f:
+        json.dump(results, f, indent=2)
+    
+    print(f"✅ Calibration completed!")
+    print(f"   Intrinsic RMS: {rms_error:.3f} pixels")  
+    print(f"   Hand-eye RMS: {he_optimized:.3f} pixels")
+    print(f"   Results saved to: calibration_results.json")
+
+if __name__ == "__main__":
+    main()
 ```
 
-## 📁 Project Structure
+## 🔧 Advanced Usage
 
+### Custom Calibration Workflows
+
+```python
+# Custom optimization parameters
+calibrator.optimize_calibration(
+    iterations=10,           # More optimization iterations
+    method='LM',            # Levenberg-Marquardt 
+    verbose=True
+)
+
+# Custom calibration flags
+calibrator.calibrate(
+    flags=cv2.CALIB_FIX_ASPECT_RATIO | cv2.CALIB_ZERO_TANGENT_DIST,
+    verbose=True
+)
+
+# Access detailed calibration data
+per_image_errors = calibrator.get_per_image_errors()
+point_correspondences = calibrator.get_image_points()
 ```
-camera-calibration-toolkit/
-├── core/                          # Core calibration modules
-│   ├── calibration_factory.py     # Factory for creating calibrators
-│   ├── base_calibrator.py         # Base class for all calibrators
-│   ├── intrinsic_calibration.py   # Single camera calibration
-│   ├── eye_in_hand_calibration.py # Robot camera calibration
-│   └── calibration_patterns/      # Pattern detection system
-├── examples/                      # Working examples
-│   ├── intrinsic_calibration_example.py
-│   ├── eye_in_hand_calibration_example.py  
-│   └── chessboard_pattern_example.py
-├── web/                          # Web interface
-└── main.py                       # Entry point
+
+### Multiple Pattern Support
+
+```python
+# Detect multiple pattern types for robustness
+from core.calibration_patterns import PatternManager
+
+manager = PatternManager()
+chessboard = manager.create_pattern('standard_chessboard', width=11, height=8, square_size=0.02)
+charuco = manager.create_pattern('charuco_board', width=8, height=6, square_size=0.04, marker_size=0.02)
+
+# Try multiple patterns for each image
+calibrator = IntrinsicCalibrator(image_paths, chessboard)
+# If detection fails, try: calibrator.set_pattern(charuco)
 ```
 
 ## 🚨 Troubleshooting
 
-**Pattern not detected:**
-- Check chessboard parameters (width, height, square_size)
-- Ensure good lighting and sharp images
+**Pattern Detection Issues:**
+- Verify pattern parameters (width, height, square_size)
+- Check image quality (lighting, focus, no motion blur)  
 - Try ChArUco patterns for better robustness
+- Ensure pattern is fully visible in images
 
-**High calibration errors:**
-- Add more images with better coverage
-- Check image quality (focus, lighting)
-- Verify chessboard measurements are accurate
+**High Calibration Errors:**
+- Increase number of calibration images (15+ recommended)
+- Improve image coverage (different angles, distances)
+- Check pattern measurements accuracy
+- Verify robot pose accuracy for hand-eye calibration
 
-**Import errors:**
-- Make sure you're in the project directory
-- Install dependencies: `pip install -r requirements.txt`
+**Import/Path Issues:**
+- Ensure submodule is properly added: `git submodule update --init`
+- Check Python path: `sys.path.append('path/to/camera_calibration_toolkit')`
+- Install dependencies: `pip install -r camera_calibration_toolkit/requirements.txt`
 
 ## 🤝 Contributing
 
+This toolkit is designed for integration into robotics projects. Contributions welcome:
+
 1. Fork the repository
-2. Create your feature branch
-3. Add tests for new features  
-4. Submit a pull request
+2. Create feature branch: `git checkout -b feature/new-calibration-method`
+3. Add tests for new functionality
+4. Submit pull request with clear description
 
 ## 📜 License
 
 MIT License - see [LICENSE](LICENSE) file for details.
 
+## 🔗 Related Projects
+
+- **OpenCV**: Core computer vision functionality
+- **NumPy**: Numerical computations
+- **SciPy**: Scientific computing and optimization
+
 ---
 
-**Need more examples?** Check the `examples/` directory for complete working code!
+**Perfect for robotics projects!** This toolkit integrates seamlessly as a git submodule in robot vision applications.
