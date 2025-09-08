@@ -3,8 +3,26 @@
 Unit Tests for Intrinsic Camera Calibration
 ==========================================
 
-This module contains focused unit tests for the IntrinsicCalibrator class,
-specifically testing calibration with real data and different camera models.
+This module contains comprehensive unit tests for the IntrinsicCalibrator class.
+
+Test Classes:
+1. TestIntrinsicCalibrationDistortionModels:
+   - Tests different OpenCV camera distortion models
+   - Validates calibration with standard, rational, thin prism, and tilted models
+   - Compares calibration results across different models
+   - Uses real sample data for validation
+
+2. TestIntrinsicCalibrationPatternDetectionFailures:
+   - Tests edge cases where calibration patterns cannot be detected
+   - Validates handling of white/blank images
+   - Tests image size validation and error handling
+   - Ensures robustness with mixed valid/invalid images
+
+Future test classes can be added here for:
+- Different calibration patterns (ChArUco, grid, custom)
+- Performance benchmarks
+- Calibration accuracy validation
+- Integration tests with camera hardware
 """
 
 import unittest
@@ -22,8 +40,25 @@ from core.intrinsic_calibration import IntrinsicCalibrator
 from core.calibration_patterns import load_pattern_from_json
 
 
-class TestIntrinsicCalibrationWithRealData(unittest.TestCase):
-    """Test intrinsic calibration with real sample data and different camera models."""
+class TestIntrinsicCalibrationDistortionModels(unittest.TestCase):
+    """Test intrinsic calibration with different camera distortion models.
+    
+    This test class validates the IntrinsicCalibrator's ability to handle different
+    OpenCV distortion models:
+    
+    - Standard model (5 coefficients): k1, k2, p1, p2, k3
+    - Rational model (8+ coefficients): adds k4, k5, k6
+    - Thin prism model (12+ coefficients): adds s1, s2, s3, s4
+    - Tilted model (14 coefficients): adds τx, τy
+    
+    Each test verifies:
+    - Successful calibration with reasonable RMS error
+    - Correct number of distortion coefficients returned
+    - Proper matrix shapes and data types
+    - Calibration parameter accuracy
+    
+    Uses real sample data from the eye_in_hand_test_data directory.
+    """
     
     @classmethod
     def setUpClass(cls):
@@ -291,30 +326,40 @@ class TestIntrinsicCalibrationWithRealData(unittest.TestCase):
             self.assertLess(data['rms_error'], 0.5, f"{model_name} has unreasonable RMS error")
 
 
-class TestIntrinsicCalibrationCornerCases(unittest.TestCase):
+class TestIntrinsicCalibrationPatternDetectionFailures(unittest.TestCase):
     """
-    Test intrinsic calibration corner cases and edge conditions.
+    Test intrinsic calibration with pattern detection failures and edge cases.
     
-    This test class validates how the IntrinsicCalibrator handles problematic scenarios:
+    This test class validates how the IntrinsicCalibrator handles problematic scenarios
+    where calibration patterns cannot be detected or other edge conditions occur:
     
-    1. Images with no detectable calibration patterns (pure white images)
-    2. Mixed image sizes in the calibration set
+    1. **Pattern Detection Failures:**
+       - Pure white images (no detectable patterns)
+       - Images with corrupted or missing pattern data
+       - Images where pattern detection algorithms fail
     
-    Expected behaviors:
-    - White images (no pattern): Should be skipped, calibration continues with valid images
-    - Resized images: May increase RMS error but calibration should still work or fail gracefully
+    2. **Image Size Validation:**
+       - Mixed image sizes in calibration set (should fail with clear error)
+       - Consistent image sizes (should succeed)
     
-    Key validations:
-    - Arrays (rvecs, tvecs, per_image_errors, image_points, point_ids, object_points) should have same length as input images
-    - Failed detection positions should have None values in arrays
-    - Valid detection positions should have non-None values in arrays
+    3. **Data Alignment Verification:**
+       - Arrays (rvecs, tvecs, per_image_errors, etc.) maintain proper alignment
+       - Failed detections have None values at correct indices
+       - Successful detections have valid data at correct indices
     
-    Implementation approach:
-    - Uses images directly (numpy arrays) instead of image paths for simplicity
+    **Expected Behaviors:**
+    - Failed pattern detections: Skipped gracefully, calibration continues with valid images
+    - Mixed image sizes: Clear validation error with descriptive message
+    - Array alignment: All result arrays have same length as input image count
+    - Robustness: System handles edge cases without crashing
+    
+    **Implementation Approach:**
+    - Uses numpy arrays directly (in-memory) for clean testing
     - No temporary file management required
-    - Clean, in-memory testing approach
+    - Systematic validation of array lengths and None/non-None patterns
     
-    These tests ensure robustness and help identify potential edge cases in real-world usage.
+    These tests ensure robustness for real-world usage where not all images
+    may contain detectable calibration patterns.
     """
     
     @classmethod
@@ -588,14 +633,279 @@ class TestIntrinsicCalibrationCornerCases(unittest.TestCase):
         print(f"  All images have same size - validation passed")
 
 
+class TestIntrinsicCalibrationPatternTypes(unittest.TestCase):
+    """
+    Test intrinsic calibration with different calibration pattern types.
+    
+    This test class validates the IntrinsicCalibrator's ability to work with
+    different types of calibration patterns supported by OpenCV:
+    
+    1. **Standard Chessboard Pattern:**
+       - Traditional black-white checkerboard pattern
+       - Corner detection based on gradient analysis
+       - Most widely used and well-tested pattern type
+    
+    2. **ChArUco Board Pattern:**
+       - Combines chessboard corners with ArUco markers
+       - Robust against partial occlusion and perspective distortion
+       - Provides both corner and marker-based feature detection
+    
+    3. **ArUco Grid Board Pattern:**
+       - Grid of ArUco markers without chessboard squares
+       - Excellent for challenging lighting and perspective conditions
+       - Marker-based detection with unique identification
+    
+    Each test validates:
+    - Successful pattern detection across multiple images
+    - Reasonable calibration RMS error for the pattern type
+    - Proper initialization with pattern-specific configurations
+    - Compatibility with pattern JSON configuration files
+    
+    **RMS Error Thresholds (based on pattern characteristics):**
+    - Standard Chessboard: < 0.5 pixels (high precision corner detection)
+    - ChArUco Board: < 0.5 pixels (combined corner+marker robustness)
+    - Grid Board: < 1.5 pixels (marker-based detection, slightly higher tolerance)
+    
+    **Implementation:**
+    - Uses the same sample data directories as the examples
+    - Loads pattern configurations from JSON files
+    - Focuses on calibration success rather than result serialization
+    - Validates different pattern detection algorithms
+    
+    These tests ensure the calibrator works reliably across different
+    calibration pattern types commonly used in computer vision applications.
+    """
+    
+    @classmethod
+    def setUpClass(cls):
+        """Set up test data paths for different pattern types."""
+        # Get project root (3 levels up from tests/unit/)
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        
+        # Define sample data directories for each pattern type
+        cls.chessboard_dir = os.path.join(project_root, "sample_data", "eye_in_hand_test_data")
+        cls.charuco_dir = os.path.join(project_root, "sample_data", "intrinsic_calib_charuco_test_images")
+        cls.gridboard_dir = os.path.join(project_root, "sample_data", "intrinsic_calib_grid_test_images")
+        
+        # Check which test data sets are available
+        cls.has_chessboard_data = (
+            os.path.exists(cls.chessboard_dir) and 
+            os.path.exists(os.path.join(cls.chessboard_dir, "chessboard_config.json"))
+        )
+        cls.has_charuco_data = (
+            os.path.exists(cls.charuco_dir) and 
+            os.path.exists(os.path.join(cls.charuco_dir, "chessboard_config.json"))
+        )
+        cls.has_gridboard_data = (
+            os.path.exists(cls.gridboard_dir) and 
+            os.path.exists(os.path.join(cls.gridboard_dir, "chessboard_config.json"))
+        )
+    
+    def load_images_from_directory(self, directory: str, max_images: int = 10) -> List[str]:
+        """Load image file paths from a directory."""
+        image_paths = []
+        for filename in sorted(os.listdir(directory)):
+            if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                image_paths.append(os.path.join(directory, filename))
+                if len(image_paths) >= max_images:
+                    break
+        return image_paths
+    
+    def load_pattern_from_config(self, config_path: str):
+        """Load pattern configuration from JSON file."""
+        with open(config_path, 'r') as f:
+            config_data = json.load(f)
+        return load_pattern_from_json(config_data)
+    
+    def test_standard_chessboard_calibration(self):
+        """Test calibration with standard chessboard pattern."""
+        if not self.has_chessboard_data:
+            self.skipTest("Standard chessboard test data not available")
+        
+        # Load sample images and pattern configuration
+        image_paths = self.load_images_from_directory(self.chessboard_dir, max_images=6)
+        config_path = os.path.join(self.chessboard_dir, "chessboard_config.json")
+        pattern = self.load_pattern_from_config(config_path)
+        
+        # Initialize calibrator with pattern and images
+        calibrator = IntrinsicCalibrator(
+            image_paths=image_paths,
+            calibration_pattern=pattern
+        )
+        
+        # Perform calibration
+        result = calibrator.calibrate(flags=0, verbose=False)
+        
+        # Verify successful calibration
+        self.assertIsNotNone(result, "Standard chessboard calibration should succeed")
+        self.assertIn('camera_matrix', result)
+        self.assertIn('distortion_coefficients', result)
+        self.assertIn('rms_error', result)
+        
+        # Check RMS error threshold for chessboard (high precision expected)
+        rms_error = result['rms_error']
+        self.assertLess(rms_error, 0.5, 
+                       f"Standard chessboard RMS error {rms_error:.4f} should be < 0.5 pixels")
+        
+        # Verify pattern type
+        self.assertEqual(pattern.pattern_id, 'standard_chessboard')
+        
+        print(f"Standard Chessboard - RMS error: {rms_error:.4f} pixels")
+        print(f"  Pattern: {pattern.name}")
+        print(f"  Images used: {len(image_paths)}")
+        print(f"  Calibration successful: ✅")
+    
+    def test_charuco_board_calibration(self):
+        """Test calibration with ChArUco board pattern."""
+        if not self.has_charuco_data:
+            self.skipTest("ChArUco board test data not available")
+        
+        # Load sample images and pattern configuration
+        image_paths = self.load_images_from_directory(self.charuco_dir, max_images=7)
+        config_path = os.path.join(self.charuco_dir, "chessboard_config.json")
+        pattern = self.load_pattern_from_config(config_path)
+        
+        # Load images into memory (as done in the example)
+        images = []
+        for image_path in image_paths:
+            img = cv2.imread(image_path)
+            if img is not None:
+                images.append(img)
+        
+        # Initialize calibrator with pattern and images
+        calibrator = IntrinsicCalibrator(
+            images=images,
+            calibration_pattern=pattern
+        )
+        
+        # Perform calibration
+        result = calibrator.calibrate(flags=0, verbose=False)
+        
+        # Verify successful calibration
+        self.assertIsNotNone(result, "ChArUco board calibration should succeed")
+        self.assertIn('camera_matrix', result)
+        self.assertIn('distortion_coefficients', result)
+        self.assertIn('rms_error', result)
+        
+        # Check RMS error threshold for ChArUco (robust detection expected)
+        rms_error = result['rms_error']
+        self.assertLess(rms_error, 0.5, 
+                       f"ChArUco board RMS error {rms_error:.4f} should be < 0.5 pixels")
+        
+        # Verify pattern type
+        self.assertEqual(pattern.pattern_id, 'charuco_board')
+        
+        print(f"ChArUco Board - RMS error: {rms_error:.4f} pixels")
+        print(f"  Pattern: {pattern.name}")
+        print(f"  Images used: {len(images)}")
+        print(f"  Calibration successful: ✅")
+    
+    def test_grid_board_calibration(self):
+        """Test calibration with ArUco grid board pattern."""
+        if not self.has_gridboard_data:
+            self.skipTest("Grid board test data not available")
+        
+        # Load sample images and pattern configuration
+        image_paths = self.load_images_from_directory(self.gridboard_dir, max_images=7)
+        config_path = os.path.join(self.gridboard_dir, "chessboard_config.json")
+        pattern = self.load_pattern_from_config(config_path)
+        
+        # Initialize calibrator with pattern and images
+        calibrator = IntrinsicCalibrator(
+            image_paths=image_paths,
+            calibration_pattern=pattern
+        )
+        
+        # Perform calibration
+        result = calibrator.calibrate(flags=0, verbose=False)
+        
+        # Verify successful calibration
+        self.assertIsNotNone(result, "Grid board calibration should succeed")
+        self.assertIn('camera_matrix', result)
+        self.assertIn('distortion_coefficients', result)
+        self.assertIn('rms_error', result)
+        
+        # Check RMS error threshold for grid board (marker-based, slightly higher tolerance)
+        rms_error = result['rms_error']
+        self.assertLess(rms_error, 1.5, 
+                       f"Grid board RMS error {rms_error:.4f} should be < 1.5 pixels")
+        
+        # Verify pattern type
+        self.assertEqual(pattern.pattern_id, 'grid_board')
+        
+        print(f"Grid Board - RMS error: {rms_error:.4f} pixels")
+        print(f"  Pattern: {pattern.name}")
+        print(f"  Images used: {len(image_paths)}")
+        print(f"  Calibration successful: ✅")
+    
+    def test_pattern_comparison(self):
+        """Compare calibration results across different pattern types."""
+        results = {}
+        
+        # Test each pattern type that has available data
+        pattern_tests = [
+            ('standard_chessboard', self.has_chessboard_data, self.chessboard_dir, 0.5),
+            ('charuco_board', self.has_charuco_data, self.charuco_dir, 0.5),
+            ('grid_board', self.has_gridboard_data, self.gridboard_dir, 1.5)
+        ]
+        
+        for pattern_name, has_data, data_dir, threshold in pattern_tests:
+            if not has_data:
+                continue
+                
+            try:
+                # Load images and pattern
+                image_paths = self.load_images_from_directory(data_dir, max_images=6)
+                config_path = os.path.join(data_dir, "chessboard_config.json")
+                pattern = self.load_pattern_from_config(config_path)
+                
+                # Initialize and calibrate
+                if pattern_name == 'charuco_board':
+                    # Load images into memory for ChArUco (as in example)
+                    images = [cv2.imread(path) for path in image_paths if cv2.imread(path) is not None]
+                    calibrator = IntrinsicCalibrator(images=images, calibration_pattern=pattern)
+                else:
+                    calibrator = IntrinsicCalibrator(image_paths=image_paths, calibration_pattern=pattern)
+                
+                result = calibrator.calibrate(flags=0, verbose=False)
+                
+                if result is not None:
+                    results[pattern_name] = {
+                        'rms_error': result['rms_error'],
+                        'threshold': threshold,
+                        'success': result['rms_error'] < threshold,
+                        'pattern_name': pattern.name
+                    }
+                    
+            except Exception as e:
+                print(f"Warning: {pattern_name} calibration failed: {e}")
+        
+        # Verify we tested at least one pattern
+        self.assertGreater(len(results), 0, "At least one pattern type should be testable")
+        
+        # Print comparison results
+        print("\nPattern Type Comparison:")
+        print("-" * 70)
+        for pattern_id, data in results.items():
+            status = "✅ PASS" if data['success'] else "❌ FAIL"
+            print(f"{data['pattern_name']:20} | RMS: {data['rms_error']:6.4f} | "
+                  f"Threshold: {data['threshold']:4.1f} | {status}")
+        
+        # Verify all tested patterns meet their thresholds
+        for pattern_id, data in results.items():
+            self.assertTrue(data['success'], 
+                          f"{pattern_id} failed: RMS {data['rms_error']:.4f} > {data['threshold']}")
+
+
 def run_tests():
     """Run all tests with detailed output."""
     loader = unittest.TestLoader()
     
     # List of all test classes - add new test classes here
     test_classes = [
-        TestIntrinsicCalibrationWithRealData,
-        TestIntrinsicCalibrationCornerCases,
+        TestIntrinsicCalibrationDistortionModels,
+        TestIntrinsicCalibrationPatternDetectionFailures,
+        TestIntrinsicCalibrationPatternTypes,
     ]
     
     # Load tests from all test classes
