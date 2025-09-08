@@ -52,15 +52,19 @@ calibrator = IntrinsicCalibrator(
 # Perform calibration - returns dictionary with results
 result = calibrator.calibrate()
 
-# print results
-print(f"RMS Error: {result['rms_error']:.4f} pixels")
-print("Camera Matrix:")
-print(result['camera_matrix'])
-print("Distortion Coefficients:")
-print(result['distortion_coefficients'])
-    
-# Generate comprehensive report with visualizations
-calibrator.generate_calibration_report("./calibration_results")
+if result is not None:
+    # print results
+    print(f"RMS Error: {result['rms_error']:.4f} pixels")
+    print("Camera Matrix:")
+    print(result['camera_matrix'])
+    print("Distortion Coefficients:")
+    print(result['distortion_coefficients'])
+        
+    # Generate comprehensive report with visualizations
+    calibrator.generate_calibration_report("./calibration_results")
+
+else:
+    print("Intrinsic calibration failed!")
 ```
 
 ### 2. Eye-in-Hand Robot Calibration
@@ -102,13 +106,17 @@ hand_eye_calibrator = EyeInHandCalibrator(
 
 result = hand_eye_calibrator.calibrate(verbose=True)
 
-# Print results
-print(f"RMS Error: {result['rms_error']:.4f} pixels")
-print("Camera to End-Effector Transformation:")
-print(result['cam2end_matrix'])
+if result is not None:
+    print(f"RMS Error: {result['rms_error']:.4f} pixels")
+    print("Camera to End-Effector Transformation:")
+    print(result['cam2end_matrix'])
+    print("Target to Robot-Base Transformation:")
+    print(result['cam2end_matrix'])
 
-# Generate calibration report
-hand_eye_calibrator.generate_calibration_report("./hand_eye_results")
+    # Generate calibration report
+    hand_eye_calibrator.generate_calibration_report("./hand_eye_results")
+else:
+    print("eye-in-hand calibration failed!")
 ```
 
 ### 3. Eye-to-Hand Robot Calibration
@@ -116,38 +124,49 @@ hand_eye_calibrator.generate_calibration_report("./hand_eye_results")
 For stationary cameras observing robot workspaces:
 
 ```python
+import cv2
+import json
 from core.eye_to_hand_calibration import EyeToHandCalibrator
 
-# Use same intrinsic calibration workflow as eye-in-hand
-# ... (intrinsic calibration code same as above)
+# Prepare image paths
+image_paths = ["/path/to/image1.jpg", "/path/to/image2.jpg", ...]
 
-# For eye-to-hand, use image paths instead of loaded images
-image_paths = ['img1.jpg', 'img2.jpg', 'img3.jpg', ...]
+# Load images and end2base_matrices
+images = []
+end2base_matrices = []
+for img_path in image_paths:
+    images.append(cv2.imread(img_path))
+    json_path = os.path.splitext(img_path)[0] + ".json"
+    with open(json_path, "r") as f:
+        data = json.load(f)
+        end2base_matrices.append(np.array(data["end2base"]))
 
 # Initialize eye-to-hand calibrator
 calibrator = EyeToHandCalibrator(
-    image_paths=image_paths,               # Use paths for eye-to-hand
-    calibration_pattern=pattern,
-    camera_matrix=camera_matrix,
-    distortion_coefficients=distortion_coefficients
+    images=images,
+    end2base_matrices=end2base_matrices,
+    calibration_pattern=pattern,    # create pattern as previous example
+    camera_matrix=camera_matrix,    # calculate intrinsic as previous example
+    distortion_coefficients=distortion_coefficients,    # calculate distortion coefficients as previous example
+    verbose=True
 )
 
-# Calibration workflow identical to eye-in-hand
 calibration_result = calibrator.calibrate(verbose=True)
 
-if calibration_result['rms_error'] < 1.0:
+if calibration_result is not None:
     print(f"✅ Eye-to-hand calibration successful!")
     print(f"RMS Error: {calibration_result['rms_error']:.4f} pixels")
-    
-    # Get base-to-camera transformation matrix
-    base2cam_matrix = calibration_result['base2cam_matrix']
+
+    # Print main transformation matrix (base to camera)
     print("Base to Camera Transformation:")
-    print(base2cam_matrix)
-    
+    print(calibration_result['base2cam_matrix'])
+    print("Target to End-Effector Transformation:")
+    print(calibration_result['target2end_matrix'])
+
     # Generate calibration report
     report_info = calibrator.generate_calibration_report("./eye_to_hand_results")
 else:
-    print(f"❌ Eye-to-hand calibration failed!")
+    print(f"❌ Eye-to-hand calibration failed.")
 ```
 
 ## 🎯 Calibration Patterns
