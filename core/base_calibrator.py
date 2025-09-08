@@ -156,7 +156,12 @@ class BaseCalibrator(ABC):
             
         # Save per-image errors
         if self.per_image_errors is not None:
-            data['per_image_errors'] = [float(err) for err in self.per_image_errors]
+            data['per_image_errors'] = []
+            for err in self.per_image_errors:
+                if err is not None:
+                    data['per_image_errors'].append(float(err))
+                else:
+                    data['per_image_errors'].append(None)
             
         # Save rotation vectors
         if self.rvecs is not None:
@@ -270,7 +275,12 @@ class BaseCalibrator(ABC):
             
         # Load per-image errors
         if 'per_image_errors' in data:
-            self.per_image_errors = [float(err) for err in data['per_image_errors']]
+            self.per_image_errors = []
+            for err in data['per_image_errors']:
+                if err is not None:
+                    self.per_image_errors.append(float(err))
+                else:
+                    self.per_image_errors.append(None)
             
         # Load rotation vectors
         if 'rvecs' in data:
@@ -1217,11 +1227,25 @@ class BaseCalibrator(ABC):
             max-width: 120px;
         }}
         .image-unavailable {{
-            color: #a0aec0;
+            color: #e53e3e;
             font-style: italic;
-            padding: 20px;
-            background: #f7fafc;
-            border-radius: 4px;
+            padding: 40px 20px;
+            background: #fed7d7;
+            border: 2px dashed #e53e3e;
+            border-radius: 8px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100px;
+            font-weight: bold;
+        }}
+        .image-unavailable::before {{
+            content: "⚠️";
+            font-size: 2em;
+            margin-bottom: 8px;
+            display: block;
         }}
         .image-count-summary {{
             display: flex;
@@ -1418,7 +1442,7 @@ class BaseCalibrator(ABC):
                 else:
                     html_content += '''
                             <td>
-                                <div class="image-unavailable">Not Available</div>
+                                <div class="image-unavailable">Detection Failed</div>
                             </td>'''
             
             html_content += '''

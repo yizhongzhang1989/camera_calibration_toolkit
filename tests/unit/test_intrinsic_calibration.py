@@ -563,9 +563,51 @@ class TestIntrinsicCalibrationPatternDetectionFailures(unittest.TestCase):
                 print(f"  Valid point_ids: {sum(1 for p in calibrator.point_ids if p is not None)}")
             print(f"  Valid object_points: {sum(1 for o in calibrator.object_points if o is not None)}")
             
+            # Generate calibration report and verify it's created successfully
+            output_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "results", f"test_white_image_{test_name}")
+            try:
+                report_files = calibrator.generate_calibration_report(output_dir)
+                
+                # Verify that report files were created
+                self.assertIsNotNone(report_files, "Report files should not be None")
+                self.assertIsInstance(report_files, dict, "Report files should be a dictionary")
+                
+                # Check for expected report components
+                if 'html_report' in report_files:
+                    html_file = report_files['html_report']
+                    self.assertTrue(os.path.exists(html_file), f"HTML report should exist: {html_file}")
+                    print(f"  HTML report created: {html_file}")
+                
+                if 'json_data' in report_files:
+                    json_file = report_files['json_data']
+                    self.assertTrue(os.path.exists(json_file), f"JSON data should exist: {json_file}")
+                    print(f"  JSON data created: {json_file}")
+                
+                if 'visualizations' in report_files:
+                    viz_dir = report_files['visualizations']
+                    self.assertTrue(os.path.exists(viz_dir), f"Visualizations directory should exist: {viz_dir}")
+                    print(f"  Visualizations created in: {viz_dir}")
+                
+                print(f"  Report generation successful for {test_name} test")
+                
+            except Exception as e:
+                self.fail(f"Report generation failed for {test_name} test: {str(e)}")
+            
         else:
             # Calibration failed - this could happen if not enough valid images remain
             print(f"White image {test_name} - Calibration failed as expected (insufficient valid images)")
+            
+            # Even for failed calibrations, try to generate a report to test error handling
+            output_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "results", f"test_white_image_{test_name}_failed")
+            try:
+                report_files = calibrator.generate_calibration_report(output_dir)
+                # For failed calibrations, report generation might still work or might return None
+                if report_files is not None:
+                    print(f"  Report generated even for failed calibration: {test_name}")
+                else:
+                    print(f"  No report generated for failed calibration: {test_name}")
+            except Exception as e:
+                print(f"  Report generation failed for failed calibration {test_name}: {str(e)}")
     
     def test_calibration_with_resized_duplicate_last(self):
         """Test calibration with resized duplicate of last image (should fail due to size mismatch)."""

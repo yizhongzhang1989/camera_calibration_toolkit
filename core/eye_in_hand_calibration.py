@@ -338,7 +338,7 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
         """
         Generate comprehensive eye-in-hand calibration report with JSON data, debug images, and HTML viewer.
         
-        This method uses the base class implementation to create a complete calibration
+        This method uses the BaseCalibrator implementation to create a complete calibration
         analysis package including JSON data, debug images, and interactive HTML report.
         
         Args:
@@ -348,8 +348,11 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
         Returns:
             Optional[dict]: Dictionary with paths to generated files if successful, None if failed
         """
-        # Use the base class implementation which provides comprehensive reporting
-        return super().generate_calibration_report(output_dir, **kwargs)
+        # Import BaseCalibrator to call its implementation directly
+        from .base_calibrator import BaseCalibrator
+        
+        # Use the BaseCalibrator implementation which provides comprehensive reporting
+        return BaseCalibrator.generate_calibration_report(self, output_dir, **kwargs)
 
     # ============================================================================
     # Eye-in-Hand Specific IO Methods
