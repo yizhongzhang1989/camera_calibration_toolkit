@@ -66,6 +66,12 @@ def test_chessboard_calibration():
         print(result['distortion_coefficients'])
         print("rms_error")
         print(result['rms_error'])
+        
+        print("\n📄 Generating calibration report...")
+        report_result = calibrator.generate_calibration_report("data/results/intrinsic_calibration_example_chessboard")
+        if report_result:
+            print(f"   📄 HTML Report: {report_result['html_report']}")
+            print(f"   📊 JSON Data: {report_result['json_data']}")
     else:
         print(f"\n❌ Calibration failed - RMS error too high!")
         raise ValueError("Standard chessboard calibration failed")
@@ -116,6 +122,12 @@ def test_charuco_calibration():
         print(result['distortion_coefficients'])
         print("rms_error")
         print(result['rms_error'])
+        
+        print("\n📄 Generating calibration report...")
+        report_result = calibrator.generate_calibration_report("data/results/intrinsic_calibration_example_charuco")
+        if report_result:
+            print(f"   📄 HTML Report: {report_result['html_report']}")
+            print(f"   📊 JSON Data: {report_result['json_data']}")
     else:
         print(f"\n❌ Calibration failed - RMS error too high!")
         raise ValueError("ChArUco calibration failed")
@@ -159,6 +171,12 @@ def test_gridboard_calibration():
         print(result['distortion_coefficients'])
         print("rms_error")
         print(result['rms_error'])
+        
+        print("\n📄 Generating calibration report...")
+        report_result = calibrator.generate_calibration_report("data/results/intrinsic_calibration_example_gridboard")
+        if report_result:
+            print(f"   📄 HTML Report: {report_result['html_report']}")
+            print(f"   📊 JSON Data: {report_result['json_data']}")
     else:
         print(f"\n❌ Calibration failed - RMS error too high!")
         raise ValueError("GridBoard calibration failed")

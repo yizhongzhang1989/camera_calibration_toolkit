@@ -249,25 +249,22 @@ class IntrinsicCalibrator(BaseCalibrator):
                 print(f"❌ Calibration failed with exception: {e}")
             return None
 
-    def generate_calibration_report(self, output_dir: str, **kwargs) -> str:
+    def generate_calibration_report(self, output_dir: str, **kwargs) -> Optional[dict]:
         """
-        Generate comprehensive calibration report (wrapper for save_calibration).
+        Generate comprehensive calibration report with JSON data, debug images, and HTML viewer.
+        
+        This method uses the base class implementation to create a complete calibration
+        analysis package including JSON data, debug images, and interactive HTML report.
         
         Args:
-            output_dir: Directory to save results
-            **kwargs: Additional options for report generation
+            output_dir: Directory to save all report files
+            **kwargs: Additional options for report generation (passed to base class)
             
         Returns:
-            str: Path to the generated report file
+            Optional[dict]: Dictionary with paths to generated files if successful, None if failed
         """
-        if not self.is_calibrated():
-            raise ValueError("No calibration results to save. Run calibration first.")
-        
-        import os
-        os.makedirs(output_dir, exist_ok=True)
-        filepath = os.path.join(output_dir, "intrinsic_calibration_results.json")
-        self.save_calibration(filepath)
-        return filepath
+        # Use the base class implementation which provides comprehensive reporting
+        return super().generate_calibration_report(output_dir, **kwargs)
 
     def save_calibration(self, filepath: str, include_extrinsics: bool = True) -> None:
         """

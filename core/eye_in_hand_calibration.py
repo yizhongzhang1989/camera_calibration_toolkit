@@ -334,35 +334,22 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
         if 'target2base_matrix' in data:
             self.target2base_matrix = np.array(data['target2base_matrix'], dtype=np.float32)
 
-    def generate_calibration_report(self, output_dir: str, **kwargs) -> str:
+    def generate_calibration_report(self, output_dir: str, **kwargs) -> Optional[dict]:
         """
-        Generate comprehensive eye-in-hand calibration report with JSON data, debug images, and HTML summary.
+        Generate comprehensive eye-in-hand calibration report with JSON data, debug images, and HTML viewer.
+        
+        This method uses the base class implementation to create a complete calibration
+        analysis package including JSON data, debug images, and interactive HTML report.
         
         Args:
             output_dir: Directory to save all report files
-            **kwargs: Additional options for report generation
+            **kwargs: Additional options for report generation (passed to base class)
             
         Returns:
-            str: Path to the generated HTML report file
+            Optional[dict]: Dictionary with paths to generated files if successful, None if failed
         """
-        import os
-        import json
-        
-        # Create directory if it doesn't exist
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Get complete calibration state as JSON
-        calibration_data = self.to_json()
-        
-        # Save as JSON file
-        json_filepath = os.path.join(output_dir, 'eye_in_hand_calibration_results.json')
-        with open(json_filepath, 'w') as f:
-            json.dump(calibration_data, f, indent=4)
-        
-        print(f"✅ Eye-in-hand calibration results saved to: {json_filepath}")
-        
-        # Return path to main report file (JSON for now, will be HTML in future)
-        return json_filepath
+        # Use the base class implementation which provides comprehensive reporting
+        return super().generate_calibration_report(output_dir, **kwargs)
 
     # ============================================================================
     # Eye-in-Hand Specific IO Methods
