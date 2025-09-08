@@ -257,8 +257,6 @@ class HandEyeBaseCalibrator(BaseCalibrator):
         if 'best_method_name' in data:
             self.best_method_name = str(data['best_method_name'])
 
-
-
     def set_images_from_paths(self, image_paths: List[str], verbose: bool = False) -> bool:
         """
         Set images from file paths and read corresponding JSON files with end2base matrices.
