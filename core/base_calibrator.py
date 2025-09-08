@@ -81,18 +81,20 @@ class BaseCalibrator(ABC):
             self.set_calibration_pattern(calibration_pattern)
     
     @abstractmethod
-    def calibrate(self, **kwargs) -> bool:
+    def calibrate(self, **kwargs) -> Optional[dict]:
         """
         Perform calibration using the specific algorithm.
         Must be implemented by subclasses.
         
         Returns:
-            bool: True if calibration succeeded, False if failed
+            Optional[dict]: Dictionary containing calibration results if successful, None if failed.
+            The dictionary should contain key results specific to the calibration type:
+            - For intrinsic calibration: camera_matrix, distortion_coefficients, rms_error, etc.
+            - For hand-eye calibration: cam2end_matrix, target2base_matrix, rms_error, etc.
             
         Note:
-            After successful calibration, use getter methods to access results:
-            - Calibration quality metrics (RMS errors, etc.)
-            - Calibrated parameters (camera matrix, transforms, etc.)
+            This new return pattern provides immediate access to results while maintaining
+            backward compatibility through class member variables for detailed results.
         """
         pass
 
@@ -154,7 +156,12 @@ class BaseCalibrator(ABC):
             
         # Save per-image errors
         if self.per_image_errors is not None:
-            data['per_image_errors'] = [float(err) for err in self.per_image_errors]
+            data['per_image_errors'] = []
+            for err in self.per_image_errors:
+                if err is not None:
+                    data['per_image_errors'].append(float(err))
+                else:
+                    data['per_image_errors'].append(None)
             
         # Save rotation vectors
         if self.rvecs is not None:
@@ -268,7 +275,12 @@ class BaseCalibrator(ABC):
             
         # Load per-image errors
         if 'per_image_errors' in data:
-            self.per_image_errors = [float(err) for err in data['per_image_errors']]
+            self.per_image_errors = []
+            for err in data['per_image_errors']:
+                if err is not None:
+                    self.per_image_errors.append(float(err))
+                else:
+                    self.per_image_errors.append(None)
             
         # Load rotation vectors
         if 'rvecs' in data:
@@ -331,16 +343,124 @@ class BaseCalibrator(ABC):
         if self.camera_matrix is not None and self.distortion_coefficients is not None:
             self.calibration_completed = True
     
-    @abstractmethod
-    def save_results(self, save_directory: str) -> None:
+    def generate_calibration_report(self, output_dir: str, **kwargs) -> Optional[dict]:
         """
-        Save calibration results to files.
-        Must be implemented by subclasses.
+        Generate comprehensive calibration report with JSON data, debug images, and HTML viewer.
+        
+        Creates a complete calibration analysis package including:
+        - JSON file with all calibration parameters and results
+        - Debug images in 4 categories: original, pattern detection, undistorted, reprojection
+        - Interactive HTML report for viewing and analyzing results
         
         Args:
-            save_directory: Directory to save results
+            output_dir: Directory to save all report files
+            **kwargs: Additional options for report generation:
+                - overwrite (bool): If True, overwrite existing files (default: True)
+                - html_filename (str): Custom name for HTML report (default: "calibration_report.html")
+                - json_filename (str): Custom name for JSON data (default: "calibration_data.json")
+            
+        Returns:
+            Optional[dict]: Dictionary with paths to generated files if successful, None if failed:
+                {
+                    'html_report': 'path/to/report.html',
+                    'json_data': 'path/to/data.json',
+                    'image_dirs': {
+                        'original_images': 'path/to/original/',
+                        'pattern_detection': 'path/to/pattern/',
+                        'undistorted': 'path/to/undistorted/',
+                        'reprojection': 'path/to/reprojection/'
+                    }
+                }
         """
-        pass
+        try:
+            # Check calibration status
+            if not self.is_calibrated():
+                print("❌ Cannot generate report: Calibration not completed")
+                return None
+            
+            # Parse options
+            overwrite = kwargs.get('overwrite', True)
+            html_filename = kwargs.get('html_filename', 'calibration_report.html')
+            json_filename = kwargs.get('json_filename', 'calibration_data.json')
+            
+            # Create output directory and subdirectories
+            os.makedirs(output_dir, exist_ok=True)
+            
+            subdirs = {
+                'original_images': os.path.join(output_dir, 'original_images'),
+                'pattern_detection': os.path.join(output_dir, 'pattern_detection'),
+                'undistorted': os.path.join(output_dir, 'undistorted'),
+                'reprojection': os.path.join(output_dir, 'reprojection')
+            }
+            
+            for subdir in subdirs.values():
+                os.makedirs(subdir, exist_ok=True)
+            
+            print(f"📁 Creating calibration report in: {output_dir}")
+            
+            # Generate and save JSON data
+            json_path = os.path.join(output_dir, json_filename)
+            calibration_data = self.to_json()
+            with open(json_path, 'w') as f:
+                json.dump(calibration_data, f, indent=2)
+            print(f"💾 Saved calibration data: {json_filename}")
+            
+            # Initialize filename manager for consistent naming
+            if not self.filename_manager:
+                if self.image_paths:
+                    self.filename_manager = FilenameManager(self.image_paths)
+                else:
+                    # Generate default names for loaded images
+                    default_names = [f"image_{i:03d}" for i in range(len(self.images))]
+                    self.filename_manager = FilenameManager(default_names)
+            
+            # Generate images for each category
+            image_counts = {}
+            
+            # 1. Original images
+            print("📸 Copying original images...")
+            original_files = self._save_original_images(subdirs['original_images'])
+            image_counts['original_images'] = len(original_files)
+            
+            # 2. Pattern detection images
+            print("🔍 Generating pattern detection images...")
+            pattern_images = self.draw_pattern_on_images()
+            pattern_files = self._save_debug_images(pattern_images, subdirs['pattern_detection'])
+            image_counts['pattern_detection'] = len(pattern_files)
+            
+            # 3. Undistorted images with axes
+            print("📐 Generating undistorted images with axes...")
+            undistorted_images = self.draw_axes_on_undistorted_images()
+            undistorted_files = self._save_debug_images(undistorted_images, subdirs['undistorted'])
+            image_counts['undistorted'] = len(undistorted_files)
+            
+            # 4. Reprojection analysis images
+            print("📊 Generating reprojection analysis...")
+            reprojection_images = self.draw_reprojection_on_images()
+            reprojection_files = self._save_debug_images(reprojection_images, subdirs['reprojection'])
+            image_counts['reprojection'] = len(reprojection_files)
+            
+            # Generate HTML report
+            print("🌐 Creating HTML report...")
+            html_path = os.path.join(output_dir, html_filename)
+            self._generate_html_report(html_path, json_filename, subdirs, image_counts)
+            
+            print(f"✅ Calibration report generated successfully!")
+            print(f"   📄 HTML Report: {html_filename}")
+            print(f"   📊 JSON Data: {json_filename}")
+            print(f"   🖼️  Images: {sum(image_counts.values())} total")
+            for category, count in image_counts.items():
+                print(f"      - {category.replace('_', ' ').title()}: {count}")
+            
+            return {
+                'html_report': html_path,
+                'json_data': json_path,
+                'image_dirs': subdirs
+            }
+            
+        except Exception as e:
+            print(f"❌ Failed to generate calibration report: {e}")
+            return None
 
     def set_images_from_paths(self, image_paths: List[str]) -> bool:
         """
@@ -838,3 +958,540 @@ class BaseCalibrator(ABC):
         
         return debug_images
     
+    def _save_original_images(self, output_dir: str) -> List[str]:
+        """
+        Save original images to the specified directory.
+        
+        Args:
+            output_dir: Directory to save original images
+            
+        Returns:
+            List of saved file paths
+        """
+        saved_files = []
+        
+        if not self.images:
+            return saved_files
+        
+        for i, img in enumerate(self.images):
+            if img is None:
+                continue
+                
+            # Get unique filename from filename manager
+            if self.filename_manager:
+                filename = self.filename_manager.get_unique_filename(i)
+            else:
+                filename = f"image_{i:03d}"
+            
+            output_path = os.path.join(output_dir, f"{filename}.jpg")
+            
+            # Save image
+            cv2.imwrite(output_path, img)
+            saved_files.append(output_path)
+        
+        return saved_files
+
+    def _save_debug_images(self, debug_images: List[Tuple[str, np.ndarray]], output_dir: str) -> List[str]:
+        """
+        Save debug images to the specified directory.
+        
+        Args:
+            debug_images: List of (filename, image_array) tuples
+            output_dir: Directory to save images
+            
+        Returns:
+            List of saved file paths
+        """
+        saved_files = []
+        
+        for filename, img in debug_images:
+            output_path = os.path.join(output_dir, f"{filename}.jpg")
+            cv2.imwrite(output_path, img)
+            saved_files.append(output_path)
+        
+        return saved_files
+
+    def _generate_html_report(self, html_path: str, json_filename: str, 
+                             subdirs: dict, image_counts: dict):
+        """
+        Generate an interactive HTML report for viewing calibration results.
+        
+        Args:
+            html_path: Path where HTML file should be saved
+            json_filename: Name of the JSON data file (relative to HTML)
+            subdirs: Dictionary mapping category names to directory paths
+            image_counts: Dictionary mapping category names to image counts
+        """
+        # Get relative paths for HTML (relative to the HTML file location)
+        html_dir = os.path.dirname(html_path)
+        rel_subdirs = {}
+        for category, abs_path in subdirs.items():
+            rel_subdirs[category] = os.path.relpath(abs_path, html_dir)
+        
+        # Generate list of image filenames for each category
+        image_lists = {}
+        for category, subdir_path in subdirs.items():
+            image_files = []
+            if os.path.exists(subdir_path):
+                for filename in sorted(os.listdir(subdir_path)):
+                    if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                        image_files.append(filename)
+            image_lists[category] = image_files
+        
+        # Get calibration summary data
+        rms_error = getattr(self, 'rms_error', 'N/A')
+        if isinstance(rms_error, (int, float)):
+            rms_error = f"{rms_error:.4f}"
+        
+        pattern_name = "Unknown"
+        if self.calibration_pattern:
+            pattern_name = getattr(self.calibration_pattern, 'name', 'Unknown Pattern')
+        
+        total_images = len(self.images) if self.images else 0
+        
+        # Get current timestamp for report generation
+        from datetime import datetime
+        current_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # HTML template
+        html_content = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Calibration Report</title>
+    <style>
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }}
+        .container {{
+            width: 95%;
+            min-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }}
+        .header {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }}
+        .header h1 {{
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }}
+        .header p {{
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+            font-size: 1.1em;
+        }}
+        .summary {{
+            padding: 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+        }}
+        .summary h2 {{
+            margin-top: 0;
+            color: #495057;
+        }}
+        .stats {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }}
+        .stat-card {{
+            background: white;
+            padding: 20px;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            text-align: center;
+        }}
+        .stat-value {{
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }}
+        .stat-label {{
+            color: #6c757d;
+            font-size: 0.9em;
+        }}
+        .content {{
+            padding: 30px;
+            overflow-x: auto;
+        }}
+        .section {{
+            margin-bottom: 40px;
+        }}
+        .section h3 {{
+            color: #495057;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }}
+        .image-gallery {{
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }}
+        .image-item {{
+            background: white;
+            border-radius: 6px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            transition: transform 0.2s ease;
+        }}
+        .image-item:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }}
+        .image-item img {{
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            cursor: pointer;
+        }}
+        .image-item .caption {{
+            padding: 15px;
+            font-size: 0.9em;
+            color: #6c757d;
+            text-align: center;
+        }}
+        .image-comparison-table {{
+            width: 100%;
+            table-layout: fixed;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }}
+        .image-comparison-table th {{
+            background: #667eea;
+            color: white;
+            padding: 8px;
+            text-align: center;
+            font-weight: 600;
+            font-size: 0.9em;
+            border-bottom: 2px solid #5a67d8;
+        }}
+        .image-comparison-table th:first-child {{
+            width: 120px;
+        }}
+        .image-comparison-table th:not(:first-child) {{
+            width: calc((100% - 120px) / 4);
+        }}
+        .image-comparison-table td {{
+            padding: 3px;
+            text-align: center;
+            border-bottom: 1px solid #e2e8f0;
+            vertical-align: top;
+        }}
+        .image-comparison-table tr:hover {{
+            background: #f7fafc;
+        }}
+        .table-image {{
+            width: 100%;
+            max-width: 350px;
+            height: auto;
+            aspect-ratio: 4/3;
+            object-fit: contain;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }}
+        .table-image:hover {{
+            transform: scale(1.02);
+        }}
+        .image-id {{
+            font-weight: bold;
+            color: #4a5568;
+            padding: 8px;
+            background: #f8f9fa;
+            border-right: 2px solid #e2e8f0;
+            font-size: 0.85em;
+            word-break: break-all;
+            min-width: 80px;
+            max-width: 120px;
+        }}
+        .image-unavailable {{
+            color: #e53e3e;
+            font-style: italic;
+            padding: 40px 20px;
+            background: #fed7d7;
+            border: 2px dashed #e53e3e;
+            border-radius: 8px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100px;
+            font-weight: bold;
+        }}
+        .image-unavailable::before {{
+            content: "⚠️";
+            font-size: 2em;
+            margin-bottom: 8px;
+            display: block;
+        }}
+        .image-count-summary {{
+            display: flex;
+            justify-content: space-around;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }}
+        .count-item {{
+            text-align: center;
+        }}
+        .count-value {{
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #667eea;
+        }}
+        .count-label {{
+            color: #6c757d;
+            font-size: 0.9em;
+        }}
+        .modal {{
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.9);
+        }}
+        .modal-content {{
+            margin: auto;
+            display: block;
+            width: 80%;
+            max-width: 900px;
+            max-height: 80%;
+            margin-top: 50px;
+        }}
+        .close {{
+            position: absolute;
+            top: 15px;
+            right: 35px;
+            color: #f1f1f1;
+            font-size: 40px;
+            font-weight: bold;
+            cursor: pointer;
+        }}
+        .close:hover {{
+            color: #bbb;
+        }}
+        .download-btn {{
+            display: inline-block;
+            background: #28a745;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 4px;
+            margin-top: 15px;
+            transition: background 0.2s ease;
+        }}
+        .download-btn:hover {{
+            background: #218838;
+            text-decoration: none;
+            color: white;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📷 Camera Calibration Report</h1>
+            <p>Generated on {current_timestamp}</p>
+        </div>
+        
+        <div class="summary">
+            <h2>Calibration Summary</h2>
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-value">{rms_error}</div>
+                    <div class="stat-label">RMS Error (pixels)</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{total_images}</div>
+                    <div class="stat-label">Total Images</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{pattern_name}</div>
+                    <div class="stat-label">Calibration Pattern</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{sum(image_counts.values())}</div>
+                    <div class="stat-label">Generated Images</div>
+                </div>
+            </div>
+            
+            <a href="{json_filename}" class="download-btn" download>
+                📄 Download Calibration Data (JSON)
+            </a>
+        </div>
+        
+        <div class="content">
+            <div class="section">
+                <h3>📸 Image Analysis</h3>
+                
+                <div class="image-count-summary">
+                    <div class="count-item">
+                        <div class="count-value">{image_counts.get('original_images', 0)}</div>
+                        <div class="count-label">Original Images</div>
+                    </div>
+                    <div class="count-item">
+                        <div class="count-value">{image_counts.get('pattern_detection', 0)}</div>
+                        <div class="count-label">Pattern Detection</div>
+                    </div>
+                    <div class="count-item">
+                        <div class="count-value">{image_counts.get('undistorted', 0)}</div>
+                        <div class="count-label">Undistorted</div>
+                    </div>
+                    <div class="count-item">
+                        <div class="count-value">{image_counts.get('reprojection', 0)}</div>
+                        <div class="count-label">Reprojection Analysis</div>
+                    </div>
+                </div>
+                
+                <table class="image-comparison-table">
+                    <thead>
+                        <tr>
+                            <th>Image Filename</th>
+                            <th>Original Image</th>
+                            <th>Pattern Detection</th>
+                            <th>Undistorted</th>
+                            <th>Reprojection Analysis</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+'''
+        
+        # Get all unique image filenames (base filenames without extensions) from original images
+        all_image_filenames = set()
+        
+        # Use original images as the primary source for filenames
+        original_files = image_lists.get('original_images', [])
+        for img_file in original_files:
+            # Extract base name without extension  
+            base_name = img_file.split('.')[0]
+            all_image_filenames.add(base_name)
+        
+        # Helper function for natural sorting (handles numbers correctly)
+        import re
+        def natural_sort_key(filename):
+            """Convert a string into a list of strings and numbers for natural sorting"""
+            return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', filename)]
+        
+        # Sort image filenames naturally for consistent display
+        sorted_image_filenames = sorted(list(all_image_filenames), key=natural_sort_key)
+        
+        # Generate table rows
+        for image_filename in sorted_image_filenames:
+            html_content += f'''
+                        <tr>
+                            <td class="image-id">{image_filename}</td>'''
+            
+            # For each category, find the matching image
+            categories = [
+                ('original_images', 'original_images'),
+                ('pattern_detection', 'pattern_detection'),
+                ('undistorted', 'undistorted'),
+                ('reprojection', 'reprojection')
+            ]
+            
+            for category_key, subdir_key in categories:
+                found_image = None
+                category_files = image_lists.get(category_key, [])
+                
+                # Look for matching file with various possible suffixes
+                possible_suffixes = ['', '_pattern', '_undistorted', '_reprojection', '_debug']
+                possible_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff']
+                
+                for suffix in possible_suffixes:
+                    for ext in possible_extensions:
+                        candidate = f"{image_filename}{suffix}{ext}"
+                        if candidate in category_files:
+                            found_image = candidate
+                            break
+                    if found_image:
+                        break
+                
+                if found_image:
+                    img_path = f"{rel_subdirs[subdir_key]}/{found_image}"
+                    html_content += f'''
+                            <td>
+                                <img src="{img_path}" alt="{found_image}" class="table-image" onclick="openModal(this.src)">
+                            </td>'''
+                else:
+                    html_content += '''
+                            <td>
+                                <div class="image-unavailable">Detection Failed</div>
+                            </td>'''
+            
+            html_content += '''
+                        </tr>'''
+        
+        html_content += '''
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal for image viewing -->
+    <div id="imageModal" class="modal">
+        <span class="close" onclick="closeModal()">&times;</span>
+        <img class="modal-content" id="modalImage">
+    </div>
+    
+    <script>
+        function openModal(src) {
+            const modal = document.getElementById('imageModal');
+            const modalImg = document.getElementById('modalImage');
+            modal.style.display = 'block';
+            modalImg.src = src;
+        }
+        
+        function closeModal() {
+            const modal = document.getElementById('imageModal');
+            modal.style.display = 'none';
+        }
+        
+        // Close modal when clicking outside the image
+        window.onclick = function(event) {
+            const modal = document.getElementById('imageModal');
+            if (event.target === modal) {
+                modal.style.display = 'none';
+            }
+        }
+        
+        // Close modal with Escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeModal();
+            }
+        });
+    </script>
+</body>
+</html>'''
+        
+        # Write HTML file
+        with open(html_path, 'w', encoding='utf-8') as f:
+            f.write(html_content)

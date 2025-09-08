@@ -26,6 +26,7 @@ import os
 import sys
 import cv2
 import numpy as np
+import json
 from datetime import datetime
 
 # Add the project root to the path
@@ -205,6 +206,24 @@ def generate_patterns():
             
             print(f"   💾 Generated: {filename} ({image.shape[1]}×{image.shape[0]}) - {file_size_kb:.1f} KB")
             
+            # Serialize pattern and export JSON
+            json_filename = f"{config['name']}.json"
+            json_filepath = os.path.join(output_dir, json_filename)
+            
+            try:
+                # Use the pattern's built-in to_json method
+                pattern_dict = pattern.to_json()
+                
+                # Write JSON file
+                with open(json_filepath, 'w') as f:
+                    json.dump(pattern_dict, f, indent=2)
+                
+                print(f"   📋 Pattern JSON: {json_filename}")
+                generated_files.append(json_filename)
+                
+            except Exception as json_error:
+                print(f"   ⚠️  JSON serialization warning: {json_error}")
+            
             # Generate info file
             info_filename = f"{config['name']}_info.txt"
             info_filepath = os.path.join(output_dir, info_filename)
@@ -249,7 +268,7 @@ def generate_patterns():
                 
                 f.write(f"\nGenerated: {start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
             
-            generated_files.extend([filename, info_filename])
+            generated_files.extend([filename, json_filename, info_filename])
             
         except Exception as e:
             print(f"   ❌ Error creating {config['name']}: {e}")

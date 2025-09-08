@@ -10,14 +10,14 @@ eye-in-hand calibration (camera mounted on robot end-effector):
 2. Perform intrinsic calibration using eye_in_hand_test_data images
 3. Initialize EyeInHandCalibrator with loaded data
 4. Perform complete eye-in-hand calibration with error validation
-5. Generate comprehensive debug images for calibration analysis
+5. Generate comprehensive calibration report with debug images and HTML viewer
 6. Save results and test IO operations
 
 Test Features:
 - RMS error threshold validation (fails if > 0.1 pixel)
 - Updated calibrate() method with comprehensive dictionary return format
 - Complete eye-in-hand calibration workflow with JSON serialization
-- Debug image generation: pattern detection, axes visualization, reprojection analysis
+- Integrated calibration report generation: pattern detection, axes visualization, reprojection analysis
 - Comprehensive calibration validation and error reporting
 
 Note: This test script validates calibration quality through error threshold checking
@@ -105,8 +105,8 @@ def perform_intrinsic_calibration(data_dir: str, results_dir: str) -> tuple:
             
             # Save intrinsic calibration results
             intrinsic_results_dir = os.path.join(results_dir, "intrinsic_calibration")
-            intrinsic_calibrator.save_results(intrinsic_results_dir)
-            print(f"✅ Intrinsic calibration results saved to: {intrinsic_results_dir}")
+            report_path = intrinsic_calibrator.generate_calibration_report(intrinsic_results_dir)
+            print(f"✅ Intrinsic calibration report generated: {report_path}")
             
             return camera_matrix, distortion_coefficients, rms_error
             
@@ -277,68 +277,33 @@ def test_eye_in_hand_calibration():
             print(f"   • Camera-to-end transformation matrix shape: {calibration_result['cam2end_matrix'].shape}")
             print(f"   • Target-to-base transformation matrix shape: {calibration_result['target2base_matrix'].shape}")
             
-            # Step 5: Generate Debug Images
+            # Step 5: Generate Calibration Report
             print("\n" + "="*60)
-            print("🔍 Step 5: Generate Debug Images")
+            print("� Step 5: Generate Calibration Report")
             print("="*60)
             
-            # Set up output directory for debug images
-            debug_output_dir = os.path.join(results_dir, "debug_images")
-            os.makedirs(debug_output_dir, exist_ok=True)
-            
-            print(f"🎨 Generating debug images...")
-            
             try:
-                # Draw detected patterns on original images
-                pattern_debug_dir = os.path.join(debug_output_dir, "pattern_detection")
-                os.makedirs(pattern_debug_dir, exist_ok=True)
-                pattern_images = eye_in_hand_calibrator.draw_pattern_on_images()
+                # Generate comprehensive calibration report with all debug images and HTML viewer
+                report_files = eye_in_hand_calibrator.generate_calibration_report(results_dir)
                 
-                for filename, debug_img in pattern_images:
-                    output_path = os.path.join(pattern_debug_dir, f"{filename}.jpg")
-                    cv2.imwrite(output_path, debug_img)
-                
-                print(f"   ✅ Pattern detection images: {len(pattern_images)} images saved to {pattern_debug_dir}")
-                
-                # Draw 3D axes on undistorted images
-                axes_debug_dir = os.path.join(debug_output_dir, "undistorted_axes")
-                os.makedirs(axes_debug_dir, exist_ok=True)
-                axes_images = eye_in_hand_calibrator.draw_axes_on_undistorted_images()
-                
-                for filename, debug_img in axes_images:
-                    output_path = os.path.join(axes_debug_dir, f"{filename}.jpg")
-                    cv2.imwrite(output_path, debug_img)
-                
-                print(f"   ✅ Undistorted axes images: {len(axes_images)} images saved to {axes_debug_dir}")
-                
-                # Draw pattern point reprojections on original images
-                reprojection_debug_dir = os.path.join(debug_output_dir, "reprojection_analysis")
-                os.makedirs(reprojection_debug_dir, exist_ok=True)
-                reprojection_images = eye_in_hand_calibrator.draw_reprojection_on_images()
-                
-                for filename, debug_img in reprojection_images:
-                    output_path = os.path.join(reprojection_debug_dir, f"{filename}.jpg")
-                    cv2.imwrite(output_path, debug_img)
-                
-                print(f"   ✅ Reprojection analysis images: {len(reprojection_images)} images saved to {reprojection_debug_dir}")
-                print(f"   📁 All debug images saved to: {debug_output_dir}")
-                
+                if report_files:
+                    print(f"✅ Eye-in-hand calibration report generated successfully!")
+                    print(f"   📄 HTML Report: {report_files['html_report']}")
+                    print(f"   📊 JSON Data: {report_files['json_data']}")
+                    print(f"   🖼️  Image directories:")
+                    for category, path in report_files['image_dirs'].items():
+                        category_name = category.replace('_', ' ').title()
+                        print(f"      - {category_name}: {path}")
+                else:
+                    print(f"⚠️ Warning: Report generation returned no files")
+                    
             except Exception as e:
-                print(f"   ⚠️ Warning: Debug image generation failed: {e}")
+                print(f"⚠️ Warning: Calibration report generation failed: {e}")
+                import traceback
+                traceback.print_exc()
         else:
             print("❌ Eye-in-hand calibration failed")
             raise ValueError("Eye-in-hand calibration failed")
-
-        # Step 6: Save Results
-        print("\n" + "="*60)
-        print("💾 Step 6: Save Results")
-        print("="*60)
-        
-        try:
-            eye_in_hand_calibrator.save_results(results_dir)
-            print("✅ Eye-in-hand results saved successfully")
-        except Exception as e:
-            print(f"⚠️ Could not save results: {e}")
         
         print("\n" + "="*80)
         print("🎉 EYE-IN-HAND CALIBRATION TEST COMPLETED SUCCESSFULLY!")

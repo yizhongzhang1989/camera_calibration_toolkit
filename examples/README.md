@@ -25,11 +25,8 @@ This directory contains example scripts demonstrating how to use the Camera Cali
 
 4. **`generate_chessboard_images.py`** - Synthetic calibration pattern generation
    - Creates chessboard patterns with various configurations
+   - Generates pattern images and JSON configuration files
    - Useful for testing and validation purposes
-
-5. **`pattern_serialization_example.py`** - Pattern configuration management
-   - Demonstrates JSON-based pattern configuration
-   - Shows how to create, save, and load calibration patterns
 
 ## 🔄 Automatic Testing System
 

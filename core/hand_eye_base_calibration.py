@@ -254,16 +254,7 @@ class HandEyeBaseCalibrator(BaseCalibrator):
         if 'best_method_name' in data:
             self.best_method_name = str(data['best_method_name'])
 
-    @abstractmethod
-    def save_results(self, save_directory: str) -> None:
-        """
-        Save hand-eye calibration results to files.
-        Must be implemented by subclasses.
-        
-        Args:
-            save_directory: Directory to save results
-        """
-        pass
+
 
     def set_images_from_paths(self, image_paths: List[str]) -> bool:
         """
