@@ -393,7 +393,8 @@ class BaseCalibrator(ABC):
                 'original_images': os.path.join(output_dir, 'original_images'),
                 'pattern_detection': os.path.join(output_dir, 'pattern_detection'),
                 'undistorted': os.path.join(output_dir, 'undistorted'),
-                'reprojection': os.path.join(output_dir, 'reprojection')
+                'reprojection': os.path.join(output_dir, 'reprojection'),
+                'analysis': os.path.join(output_dir, 'analysis')
             }
             
             for subdir in subdirs.values():
@@ -448,6 +449,21 @@ class BaseCalibrator(ABC):
             reprojection_images = self.draw_reprojection_on_images()
             reprojection_files = self._save_debug_images(reprojection_images, subdirs['reprojection'])
             image_counts['reprojection'] = len(reprojection_files)
+            
+            # 5. Point distribution analysis
+            if verbose:
+                print("📈 Generating point distribution analysis...")
+            try:
+                vis_img = self.vis_image_points_distribution()
+                analysis_path = os.path.join(subdirs['analysis'], 'point_distribution.jpg')
+                cv2.imwrite(analysis_path, vis_img)
+                image_counts['analysis'] = 1
+                if verbose:
+                    print(f"   ✅ Point distribution saved: {os.path.basename(analysis_path)}")
+            except Exception as e:
+                if verbose:
+                    print(f"   ⚠️ Failed to generate point distribution: {e}")
+                image_counts['analysis'] = 0
             
             # Generate HTML report
             if verbose:
@@ -976,6 +992,119 @@ class BaseCalibrator(ABC):
         
         return debug_images
     
+    def vis_image_points_distribution(self) -> np.ndarray:
+        """
+        Create a visualization showing the distribution of image points used for calibration.
+        
+        This function creates an image showing all detected image points from all images,
+        with each image's points drawn in a different color to visualize the distribution
+        and coverage of calibration points across the image plane.
+        
+        Returns:
+            np.ndarray: Visualization image of the same size as image_size showing point distribution
+            
+        Raises:
+            ValueError: If no images or image points are available, or if image_size is not set
+        """
+        if not self.images or not self.image_points:
+            raise ValueError("No images or detected points available. Run detect_pattern_points() first.")
+        
+        if self.image_size is None:
+            raise ValueError("Image size not available. Set image_size or load images first.")
+        
+        # Create blank image with white background
+        vis_img = np.ones((self.image_size[1], self.image_size[0], 3), dtype=np.uint8) * 255
+        
+        # Count valid images (images with detected points)
+        valid_images = []
+        for i, points in enumerate(self.image_points):
+            if points is not None:
+                valid_images.append(i)
+        
+        # Generate colors for each valid image (smooth color transition)
+        num_valid = len(valid_images)
+        if num_valid == 0:
+            # No valid images - return white image
+            return vis_img
+        
+        # Generate colors using HSV for smooth transitions
+        colors = []
+        for i in range(num_valid):
+            # Use HSV colorspace for smooth color transitions
+            hue = int(180 * i / max(1, num_valid - 1))  # Spread across hue range (0-180 in OpenCV)
+            hsv_color = np.uint8([[[hue, 255, 255]]])  # Full saturation and value
+            bgr_color = cv2.cvtColor(hsv_color, cv2.COLOR_HSV2BGR)[0][0]
+            colors.append(tuple(int(c) for c in bgr_color))
+        
+        # Draw points for each valid image
+        color_idx = 0
+        for i in valid_images:
+            points = self.image_points[i]
+            
+            # Check if this image should be drawn in black (per_image_errors is None)
+            if (self.per_image_errors is not None and 
+                i < len(self.per_image_errors) and 
+                self.per_image_errors[i] is not None):
+                # Use assigned color for valid calibration data
+                color = colors[color_idx]
+                color_idx += 1
+            else:
+                # Use black for images not used in calibration
+                color = (0, 0, 0)
+            
+            # Convert points to integer coordinates and draw circles
+            points_2d = points.reshape(-1, 2).astype(int)
+            for point in points_2d:
+                # Check if point is within image bounds
+                x, y = point[0], point[1]
+                if 0 <= x < self.image_size[0] and 0 <= y < self.image_size[1]:
+                    cv2.circle(vis_img, (x, y), 3, color, -1)  # Filled circles
+                    cv2.circle(vis_img, (x, y), 4, (128, 128, 128), 1)  # Gray outline for visibility
+        
+        # Add title and legend
+        title_text = f"Image Points Distribution ({num_valid} images)"
+        cv2.putText(vis_img, title_text, (10, 30), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
+        
+        # Add color legend in top-right corner
+        legend_x = self.image_size[0] - 200
+        legend_y_start = 50
+        
+        cv2.putText(vis_img, 'Legend:', (legend_x, legend_y_start), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+        
+        # Show a few color samples
+        sample_colors = min(5, num_valid)  # Show up to 5 color samples
+        for i in range(sample_colors):
+            y_pos = legend_y_start + 25 + i * 20
+            if i < len(colors):
+                color = colors[i]
+                cv2.circle(vis_img, (legend_x + 10, y_pos), 5, color, -1)
+                cv2.putText(vis_img, f'Image {valid_images[i] + 1}', (legend_x + 25, y_pos + 5), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1)
+        
+        # Add info about unused images (black points)
+        if self.per_image_errors is not None:
+            unused_count = sum(1 for i, err in enumerate(self.per_image_errors) 
+                             if i < len(self.image_points) and self.image_points[i] is not None and err is None)
+            if unused_count > 0:
+                y_pos = legend_y_start + 25 + sample_colors * 20 + 10
+                cv2.circle(vis_img, (legend_x + 10, y_pos), 5, (0, 0, 0), -1)
+                cv2.putText(vis_img, f'Unused ({unused_count})', (legend_x + 25, y_pos + 5), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1)
+        
+        # Add statistics in bottom-left corner
+        total_points = sum(len(points.reshape(-1, 2)) for points in self.image_points if points is not None)
+        stats_text = f"Total points: {total_points}"
+        cv2.putText(vis_img, stats_text, (10, self.image_size[1] - 40),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+        
+        coverage_text = f"Image coverage: {num_valid}/{len(self.image_points)} images"
+        cv2.putText(vis_img, coverage_text, (10, self.image_size[1] - 15),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+        
+        return vis_img
+    
     def _save_original_images(self, output_dir: str) -> List[str]:
         """
         Save original images to the specified directory.
@@ -1330,6 +1459,65 @@ class BaseCalibrator(ABC):
             text-decoration: none;
             color: white;
         }}
+        .analysis-section {{
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }}
+        .analysis-section p {{
+            color: #6c757d;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }}
+        .analysis-image-container {{
+            text-align: center;
+            margin: 20px 0;
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 6px;
+        }}
+        .analysis-image {{
+            max-width: 100%;
+            max-height: 600px;
+            border: 2px solid #e2e8f0;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }}
+        .analysis-image:hover {{
+            transform: scale(1.02);
+        }}
+        .analysis-legend {{
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 20px;
+        }}
+        .analysis-legend h4 {{
+            margin: 0 0 10px 0;
+            color: #495057;
+        }}
+        .analysis-legend ul {{
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }}
+        .analysis-legend li {{
+            margin: 8px 0;
+            display: flex;
+            align-items: center;
+            color: #6c757d;
+        }}
+        .legend-color-sample {{
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+            margin-right: 10px;
+            border: 1px solid #dee2e6;
+        }}
     </style>
 </head>
 <body>
@@ -1367,7 +1555,32 @@ class BaseCalibrator(ABC):
         
         <div class="content">
             <div class="section">
-                <h3>📸 Image Analysis</h3>
+                <h3>� Point Distribution Analysis</h3>
+                
+                <div class="analysis-section">
+                    <p>This visualization shows the distribution of all detected calibration points across the image plane. 
+                    Each image's points are displayed in a different color, helping to assess the coverage and quality of calibration data.</p>
+                    
+                    <div class="analysis-image-container">
+                        <img src="{rel_subdirs.get('analysis', 'analysis')}/point_distribution.jpg" 
+                             alt="Point Distribution Analysis" 
+                             class="analysis-image" 
+                             onclick="openModal(this.src)"
+                             onerror="this.parentElement.innerHTML='<div class=\\'image-unavailable\\'>Analysis image not available</div>'">
+                    </div>
+                    
+                    <div class="analysis-legend">
+                        <h4>Color Legend:</h4>
+                        <ul>
+                            <li><span class="legend-color-sample" style="background: linear-gradient(90deg, red, orange, yellow, green, cyan, blue, purple);"></span> Different colors represent points from different images</li>
+                            <li><span class="legend-color-sample" style="background: black;"></span> Black points indicate images detected but not used in calibration</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h3>�📸 Image Analysis</h3>
                 
                 <div class="image-count-summary">
                     <div class="count-item">
