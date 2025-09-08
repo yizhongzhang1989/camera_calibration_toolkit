@@ -459,13 +459,29 @@ class BaseCalibrator(ABC):
                 vis_img = self.vis_image_points_distribution()
                 analysis_path = os.path.join(subdirs['analysis'], 'point_distribution.jpg')
                 cv2.imwrite(analysis_path, vis_img)
-                image_counts['analysis'] = 1
+                analysis_count = 1
                 if verbose:
                     print(f"   ✅ Point distribution saved: {os.path.basename(analysis_path)}")
             except Exception as e:
                 if verbose:
                     print(f"   ⚠️ Failed to generate point distribution: {e}")
-                image_counts['analysis'] = 0
+                analysis_count = 0
+            
+            # 6. Reprojection error heatmap
+            if verbose:
+                print("🔥 Generating reprojection error heatmap...")
+            try:
+                error_img = self.vis_reprojection_error()
+                error_path = os.path.join(subdirs['analysis'], 'reprojection_error_heatmap.jpg')
+                cv2.imwrite(error_path, error_img)
+                analysis_count += 1
+                if verbose:
+                    print(f"   ✅ Reprojection error heatmap saved: {os.path.basename(error_path)}")
+            except Exception as e:
+                if verbose:
+                    print(f"   ⚠️ Failed to generate reprojection error heatmap: {e}")
+            
+            image_counts['analysis'] = analysis_count
             
             # Generate HTML report
             if verbose:
@@ -1154,6 +1170,202 @@ class BaseCalibrator(ABC):
         
         return vis_img
     
+    def vis_reprojection_error(self) -> np.ndarray:
+        """
+        Create a visualization showing the reprojection error heatmap across the image.
+        
+        This function creates an image showing the spatial distribution of reprojection errors,
+        where each detected point is colored according to its reprojection error magnitude.
+        This helps identify regions of the image with higher calibration uncertainty.
+        
+        Returns:
+            np.ndarray: Visualization image of the same size as image_size showing error heatmap
+            
+        Raises:
+            ValueError: If calibration not completed or required data missing
+        """
+        if not self.is_calibrated():
+            raise ValueError("Calibration not completed. Run calibrate() first.")
+            
+        if not self.images or not self.image_points or not self.object_points:
+            raise ValueError("No images or detected points available. Run detect_pattern_points() first.")
+        
+        if self.image_size is None:
+            raise ValueError("Image size not available. Set image_size or load images first.")
+        
+        # Get rvecs/tvecs for reprojection calculation
+        try:
+            rvecs_source, tvecs_source = self.get_reproject_rvec_tvec()
+        except ValueError as e:
+            raise ValueError(f"No extrinsic parameters available: {e}")
+        
+        # Get camera parameters
+        camera_matrix = getattr(self, 'camera_matrix', None)
+        distortion_coefficients = getattr(self, 'distortion_coefficients', None)
+        
+        if camera_matrix is None or distortion_coefficients is None:
+            raise ValueError("Camera matrix and distortion coefficients must be available from calibration")
+        
+        # Create blank image with black background
+        error_img = np.zeros((self.image_size[1], self.image_size[0], 3), dtype=np.uint8)
+        
+        # Collect all reprojection errors to determine color mapping range
+        all_errors = []
+        all_error_vectors = []  # Store 2D error vectors for direction mapping
+        valid_points_data = []  # Store (image_points_2d, error_vectors, error_magnitudes) for each valid image
+        
+        for i in range(len(self.images)):
+            # Skip images with missing data
+            if (self.image_points[i] is None or self.object_points[i] is None or
+                rvecs_source[i] is None or tvecs_source[i] is None):
+                continue
+            
+            # Get data for this image
+            detected_corners = self.image_points[i]
+            object_points = self.object_points[i]
+            rvec = rvecs_source[i]
+            tvec = tvecs_source[i]
+            
+            # Calculate reprojected points
+            try:
+                reprojected_points, _ = cv2.projectPoints(
+                    object_points, rvec, tvec, camera_matrix, distortion_coefficients
+                )
+                reprojected_points = reprojected_points.reshape(-1, 2)
+                
+                # Calculate per-point error vectors and magnitudes
+                detected_corners_2d = detected_corners.reshape(-1, 2)
+                error_vectors = detected_corners_2d - reprojected_points  # 2D error vectors
+                error_magnitudes = np.sqrt(np.sum(error_vectors**2, axis=1))  # Magnitudes
+                
+                # Store for color mapping
+                all_errors.extend(error_magnitudes)
+                all_error_vectors.extend(error_vectors)
+                valid_points_data.append((detected_corners_2d, error_vectors, error_magnitudes))
+                
+            except Exception:
+                # Skip this image if reprojection fails
+                continue
+        
+        if not all_errors:
+            # No valid reprojection data - return black image with error message
+            cv2.putText(error_img, 'No valid reprojection data available', 
+                       (self.image_size[0]//2 - 200, self.image_size[1]//2), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (128, 128, 128), 2)
+            return error_img
+        
+        # Calculate error statistics for display
+        min_error = np.min(all_errors)
+        max_error = np.max(all_errors)
+        mean_error = np.mean(all_errors)
+        
+        # Calculate error vector statistics for direction mapping
+        all_error_vectors = np.array(all_error_vectors)
+        if len(all_error_vectors) > 0:
+            max_abs_x = np.max(np.abs(all_error_vectors[:, 0]))
+            max_abs_y = np.max(np.abs(all_error_vectors[:, 1]))
+            max_abs_error = max(max_abs_x, max_abs_y)
+        else:
+            max_abs_error = 1.0
+        
+        # Draw error points with direction-based color coding
+        for points_2d, error_vectors, error_magnitudes in valid_points_data:
+            for point, error_vec, error_mag in zip(points_2d, error_vectors, error_magnitudes):
+                x, y = int(point[0]), int(point[1])
+                
+                # Check if point is within image bounds
+                if 0 <= x < self.image_size[0] and 0 <= y < self.image_size[1]:
+                    # Normalize error magnitude for arrow properties
+                    if max_error > min_error:
+                        normalized_magnitude = (error_mag - min_error) / (max_error - min_error)
+                    else:
+                        normalized_magnitude = 0.0
+                    
+                    # Color based on magnitude: green (low error) to red (high error)
+                    hue = int(120 * (1 - normalized_magnitude))  # 120=green, 0=red
+                    hue = max(0, min(120, hue))
+                    
+                    hsv_color = np.uint8([[[hue, 255, int(255 * (0.4 + 0.6 * normalized_magnitude))]]])
+                    bgr_color = cv2.cvtColor(hsv_color, cv2.COLOR_HSV2BGR)[0][0]
+                    color = tuple(int(c) for c in bgr_color)
+                    
+                    # Calculate arrow properties
+                    arrow_scale = 15.0  # Scale factor for arrow length visualization
+                    arrow_length_x = error_vec[0] * arrow_scale
+                    arrow_length_y = error_vec[1] * arrow_scale
+                    
+                    # End point of arrow
+                    end_x = int(x + arrow_length_x)
+                    end_y = int(y + arrow_length_y)
+                    
+                    # Arrow thickness based on magnitude
+                    thickness = max(1, int(1 + 3 * normalized_magnitude))
+                    
+                    # Only draw arrow if it has meaningful length (> 1 pixel)
+                    arrow_length = np.sqrt(arrow_length_x**2 + arrow_length_y**2)
+                    if arrow_length > 1.0:
+                        cv2.arrowedLine(error_img, (x, y), (end_x, end_y), color, thickness, tipLength=0.4)
+                    else:
+                        # For very small errors, draw a small circle
+                        cv2.circle(error_img, (x, y), max(1, thickness), color, -1)
+        
+        # Add title and statistics
+        title_text = f"Reprojection Error Vector Map ({len(valid_points_data)} images)"
+        cv2.putText(error_img, title_text, (10, 30), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+        
+        # Add error statistics in bottom-left corner
+        stats_y_start = self.image_size[1] - 100
+        cv2.putText(error_img, f"Min Error: {min_error:.3f} px", (10, stats_y_start), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        cv2.putText(error_img, f"Max Error: {max_error:.3f} px", (10, stats_y_start + 20), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        cv2.putText(error_img, f"Mean Error: {mean_error:.3f} px", (10, stats_y_start + 40), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        cv2.putText(error_img, f"Total Points: {len(all_errors)}", (10, stats_y_start + 60), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        cv2.putText(error_img, f"Max X/Y Error: {max_abs_error:.3f} px", (10, stats_y_start + 80), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        
+        # Add arrow legend in top-right corner
+        legend_x = self.image_size[0] - 300
+        legend_y_start = 50
+        
+        cv2.putText(error_img, 'Arrow Vector Legend:', (legend_x, legend_y_start), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        
+        # Draw example arrows showing different error magnitudes
+        arrow_center_x = legend_x + 80
+        arrow_center_y = legend_y_start + 40
+        
+        # Small error arrow (green)
+        cv2.arrowedLine(error_img, (arrow_center_x, arrow_center_y), 
+                       (arrow_center_x + 20, arrow_center_y), (0, 255, 0), 1, tipLength=0.4)
+        cv2.putText(error_img, 'Low Error', (arrow_center_x + 25, arrow_center_y + 5), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+        
+        # Medium error arrow (yellow)
+        cv2.arrowedLine(error_img, (arrow_center_x, arrow_center_y + 25), 
+                       (arrow_center_x + 30, arrow_center_y + 25), (0, 255, 255), 2, tipLength=0.4)
+        cv2.putText(error_img, 'Med Error', (arrow_center_x + 35, arrow_center_y + 30), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+        
+        # High error arrow (red)
+        cv2.arrowedLine(error_img, (arrow_center_x, arrow_center_y + 50), 
+                       (arrow_center_x + 40, arrow_center_y + 50), (0, 0, 255), 3, tipLength=0.4)
+        cv2.putText(error_img, 'High Error', (arrow_center_x + 45, arrow_center_y + 55), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+        
+        # Legend explanation
+        cv2.putText(error_img, 'Arrow Direction: Error Vector', (legend_x, arrow_center_y + 80), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+        cv2.putText(error_img, 'Arrow Length & Color: Magnitude', (legend_x, arrow_center_y + 95), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+        cv2.putText(error_img, 'Arrow Thickness: Magnitude', (legend_x, arrow_center_y + 110), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+        
+        return error_img
+    
     def _save_original_images(self, output_dir: str) -> List[str]:
         """
         Save original images to the specified directory.
@@ -1520,6 +1732,22 @@ class BaseCalibrator(ABC):
             line-height: 1.6;
             margin-bottom: 20px;
         }}
+        .analysis-images-container {{
+            display: flex;
+            gap: 20px;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            margin: 20px 0;
+        }}
+        .analysis-image-item {{
+            flex: 1;
+            min-width: 300px;
+            max-width: 600px;
+            text-align: center;
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 6px;
+        }}
         .analysis-image-container {{
             text-align: center;
             margin: 20px 0;
@@ -1529,7 +1757,7 @@ class BaseCalibrator(ABC):
         }}
         .analysis-image {{
             max-width: 100%;
-            max-height: 600px;
+            max-height: 500px;
             border: 2px solid #e2e8f0;
             border-radius: 6px;
             cursor: pointer;
@@ -1604,27 +1832,54 @@ class BaseCalibrator(ABC):
         
         <div class="content">
             <div class="section">
-                <h3>� Point Distribution Analysis</h3>
+                <h3>� Error Analysis</h3>
                 
                 <div class="analysis-section">
-                    <p>This visualization shows the distribution of all detected calibration points across the image plane. 
-                    Each image's points are displayed in a different color, helping to assess the coverage and quality of calibration data.</p>
+                    <p>This section provides comprehensive error analysis through different visualizations. 
+                    The point distribution shows coverage across the image plane, while the reprojection error heatmap reveals calibration accuracy patterns.</p>
                     
-                    <div class="analysis-image-container">
-                        <img src="{rel_subdirs.get('analysis', 'analysis')}/point_distribution.jpg" 
-                             alt="Point Distribution Analysis" 
-                             class="analysis-image" 
-                             onclick="openModal(this.src)"
-                             onerror="this.parentElement.innerHTML='<div class=\\'image-unavailable\\'>Analysis image not available</div>'">
+                    <div class="analysis-images-container">
+                        <div class="analysis-image-item">
+                            <h4>📈 Point Distribution</h4>
+                            <p>Distribution of detected calibration points across the image plane. Each image's points are displayed in different colors.</p>
+                            <div class="analysis-image-container">
+                                <img src="{rel_subdirs.get('analysis', 'analysis')}/point_distribution.jpg" 
+                                     alt="Point Distribution Analysis" 
+                                     class="analysis-image" 
+                                     onclick="openModal(this.src)"
+                                     onerror="this.parentElement.innerHTML='<div class=\\'image-unavailable\\'>Analysis image not available</div>'">
+                            </div>
+                            <div class="analysis-legend">
+                                <h5>Color Legend:</h5>
+                                <ul>
+                                    <li><span class="legend-color-sample" style="background: linear-gradient(90deg, red, orange, yellow, green, cyan, blue, purple);"></span> Different colors represent points from different images</li>
+                                    <li><span class="legend-color-sample" style="background: black;"></span> Black points indicate images detected but not used in calibration</li>
+                                </ul>
+                            </div>
+                        </div>
+                        
+                        <div class="analysis-image-item">
+                            <h4>🔥 Reprojection Error Heatmap</h4>
+                            <p>Heatmap visualizing reprojection errors across the image plane. Colors indicate the magnitude of error at each point location.</p>
+                            <div class="analysis-image-container">
+                                <img src="{rel_subdirs.get('analysis', 'analysis')}/reprojection_error_heatmap.jpg" 
+                                     alt="Reprojection Error Heatmap" 
+                                     class="analysis-image" 
+                                     onclick="openModal(this.src)"
+                                     onerror="this.parentElement.innerHTML='<div class=\\'image-unavailable\\'>Error heatmap not available</div>'">
+                            </div>
+                            <div class="analysis-legend">
+                                <h5>Color Legend:</h5>
+                                <ul>
+                                    <li><span class="legend-color-sample" style="background: linear-gradient(90deg, blue, cyan, green, yellow, orange, red);"></span> Blue = Low error, Red = High error</li>
+                                    <li>Point size also indicates error magnitude (larger = higher error)</li>
+                                </ul>
+                            </div>
+                        </div>
                     </div>
-                    
-                    <div class="analysis-legend">
-                        <h4>Color Legend:</h4>
-                        <ul>
-                            <li><span class="legend-color-sample" style="background: linear-gradient(90deg, red, orange, yellow, green, cyan, blue, purple);"></span> Different colors represent points from different images</li>
-                            <li><span class="legend-color-sample" style="background: black;"></span> Black points indicate images detected but not used in calibration</li>
-                        </ul>
-                    </div>
+                </div>
+            </div>
+            
                 </div>
             </div>
             
