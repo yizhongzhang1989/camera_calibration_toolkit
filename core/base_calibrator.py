@@ -36,7 +36,7 @@ class BaseCalibrator(ABC):
     Specialized calibrators inherit from this class and implement specific calibration algorithms.
     """
     
-    def __init__(self, images=None, image_paths=None, calibration_pattern=None):
+    def __init__(self, images=None, image_paths=None, calibration_pattern=None, verbose: bool = False):
         """
         Initialize BaseCalibrator with common parameters.
         
@@ -44,6 +44,7 @@ class BaseCalibrator(ABC):
             images: List of image arrays (numpy arrays) or None
             image_paths: List of image file paths or None
             calibration_pattern: CalibrationPattern instance or None
+            verbose: Whether to print progress information during initialization (default: False)
         """
         # Images and related parameters (common to all calibrators)
         self.images = None                   # List of image arrays
@@ -73,9 +74,9 @@ class BaseCalibrator(ABC):
         
         # Initialize with provided data using smart constructor
         if image_paths is not None:
-            self.set_images_from_paths(image_paths)
+            self.set_images_from_paths(image_paths, verbose=verbose)
         elif images is not None:
-            self.set_images_from_arrays(images)
+            self.set_images_from_arrays(images, verbose=verbose)
         
         if calibration_pattern is not None:
             self.set_calibration_pattern(calibration_pattern)
@@ -343,7 +344,7 @@ class BaseCalibrator(ABC):
         if self.camera_matrix is not None and self.distortion_coefficients is not None:
             self.calibration_completed = True
     
-    def generate_calibration_report(self, output_dir: str, **kwargs) -> Optional[dict]:
+    def generate_calibration_report(self, output_dir: str, verbose: bool = False, **kwargs) -> Optional[dict]:
         """
         Generate comprehensive calibration report with JSON data, debug images, and HTML viewer.
         
@@ -354,6 +355,7 @@ class BaseCalibrator(ABC):
         
         Args:
             output_dir: Directory to save all report files
+            verbose: Whether to print progress information (default: True)
             **kwargs: Additional options for report generation:
                 - overwrite (bool): If True, overwrite existing files (default: True)
                 - html_filename (str): Custom name for HTML report (default: "calibration_report.html")
@@ -375,7 +377,8 @@ class BaseCalibrator(ABC):
         try:
             # Check calibration status
             if not self.is_calibrated():
-                print("❌ Cannot generate report: Calibration not completed")
+                if verbose:
+                    print("❌ Cannot generate report: Calibration not completed")
                 return None
             
             # Parse options
@@ -396,14 +399,16 @@ class BaseCalibrator(ABC):
             for subdir in subdirs.values():
                 os.makedirs(subdir, exist_ok=True)
             
-            print(f"📁 Creating calibration report in: {output_dir}")
+            if verbose:
+                print(f"📁 Creating calibration report in: {output_dir}")
             
             # Generate and save JSON data
             json_path = os.path.join(output_dir, json_filename)
             calibration_data = self.to_json()
             with open(json_path, 'w') as f:
                 json.dump(calibration_data, f, indent=2)
-            print(f"💾 Saved calibration data: {json_filename}")
+            if verbose:
+                print(f"💾 Saved calibration data: {json_filename}")
             
             # Initialize filename manager for consistent naming
             if not self.filename_manager:
@@ -418,39 +423,45 @@ class BaseCalibrator(ABC):
             image_counts = {}
             
             # 1. Original images
-            print("📸 Copying original images...")
+            if verbose:
+                print("📸 Copying original images...")
             original_files = self._save_original_images(subdirs['original_images'])
             image_counts['original_images'] = len(original_files)
             
             # 2. Pattern detection images
-            print("🔍 Generating pattern detection images...")
+            if verbose:
+                print("🔍 Generating pattern detection images...")
             pattern_images = self.draw_pattern_on_images()
             pattern_files = self._save_debug_images(pattern_images, subdirs['pattern_detection'])
             image_counts['pattern_detection'] = len(pattern_files)
             
             # 3. Undistorted images with axes
-            print("📐 Generating undistorted images with axes...")
+            if verbose:
+                print("📐 Generating undistorted images with axes...")
             undistorted_images = self.draw_axes_on_undistorted_images()
             undistorted_files = self._save_debug_images(undistorted_images, subdirs['undistorted'])
             image_counts['undistorted'] = len(undistorted_files)
             
             # 4. Reprojection analysis images
-            print("📊 Generating reprojection analysis...")
+            if verbose:
+                print("📊 Generating reprojection analysis...")
             reprojection_images = self.draw_reprojection_on_images()
             reprojection_files = self._save_debug_images(reprojection_images, subdirs['reprojection'])
             image_counts['reprojection'] = len(reprojection_files)
             
             # Generate HTML report
-            print("🌐 Creating HTML report...")
+            if verbose:
+                print("🌐 Creating HTML report...")
             html_path = os.path.join(output_dir, html_filename)
             self._generate_html_report(html_path, json_filename, subdirs, image_counts)
             
-            print(f"✅ Calibration report generated successfully!")
-            print(f"   📄 HTML Report: {html_filename}")
-            print(f"   📊 JSON Data: {json_filename}")
-            print(f"   🖼️  Images: {sum(image_counts.values())} total")
-            for category, count in image_counts.items():
-                print(f"      - {category.replace('_', ' ').title()}: {count}")
+            if verbose:
+                print(f"✅ Calibration report generated successfully!")
+                print(f"   📄 HTML Report: {html_filename}")
+                print(f"   📊 JSON Data: {json_filename}")
+                print(f"   🖼️  Images: {sum(image_counts.values())} total")
+                for category, count in image_counts.items():
+                    print(f"      - {category.replace('_', ' ').title()}: {count}")
             
             return {
                 'html_report': html_path,
@@ -459,15 +470,17 @@ class BaseCalibrator(ABC):
             }
             
         except Exception as e:
-            print(f"❌ Failed to generate calibration report: {e}")
+            if verbose:
+                print(f"❌ Failed to generate calibration report: {e}")
             return None
 
-    def set_images_from_paths(self, image_paths: List[str]) -> bool:
+    def set_images_from_paths(self, image_paths: List[str], verbose: bool = False) -> bool:
         """
         Set images from file paths.
         
         Args:
             image_paths: List of image file paths
+            verbose: Whether to print progress information (default: True)
             
         Returns:
             bool: True if all images loaded successfully
@@ -478,7 +491,8 @@ class BaseCalibrator(ABC):
             for path in image_paths:
                 img = cv2.imread(path)
                 if img is None:
-                    print(f"Warning: Could not load image {path}")
+                    if verbose:
+                        print(f"Warning: Could not load image {path}")
                     return False
                 self.images.append(img)
                 
@@ -490,18 +504,21 @@ class BaseCalibrator(ABC):
             # Initialize filename manager for systematic duplicate handling
             self.filename_manager = FilenameManager(image_paths)
                 
-            print(f"Successfully loaded {len(self.images)} images")
+            if verbose:
+                print(f"Successfully loaded {len(self.images)} images")
             return True
         except Exception as e:
-            print(f"Error loading images: {e}")
+            if verbose:
+                print(f"Error loading images: {e}")
             return False
     
-    def set_images_from_arrays(self, images: List[np.ndarray]) -> bool:
+    def set_images_from_arrays(self, images: List[np.ndarray], verbose: bool = False) -> bool:
         """
         Set images from numpy arrays.
         
         Args:
             images: List of image arrays
+            verbose: Whether to print progress information (default: True)
             
         Returns:
             bool: True if images set successfully
@@ -511,7 +528,8 @@ class BaseCalibrator(ABC):
             h, w = images[0].shape[:2]
             self.image_size = (w, h)
             
-        print(f"Set {len(images)} images from arrays")
+        if verbose:
+            print(f"Set {len(images)} images from arrays")
         return True
     
     def set_calibration_pattern(self, pattern: CalibrationPattern):

@@ -54,25 +54,6 @@ def load_pattern_from_json(json_data: Dict[str, Any]):
     manager = get_pattern_manager()
     return manager.from_json(json_data)
 
-# Legacy function names for backward compatibility
-def create_chessboard_pattern(pattern_type, **kwargs):
-    """Create chessboard pattern (backward compatibility).
-    
-    Note: This is a legacy function. New code should use:
-    manager = get_pattern_manager()
-    pattern = manager.create_pattern(pattern_id, **parameters)
-    """
-    manager = get_pattern_manager()
-    
-    # Map legacy pattern types to new IDs
-    pattern_id_map = {
-        'standard': 'standard_chessboard',
-        'charuco': 'charuco_board'
-    }
-    
-    pattern_id = pattern_id_map.get(pattern_type, pattern_type)
-    return manager.create_pattern(pattern_id, **kwargs)
-
 # Export key classes and functions
 __all__ = [
     'CalibrationPattern',
@@ -85,5 +66,4 @@ __all__ = [
     'create_pattern_from_json',
     'save_pattern_to_json',
     'load_pattern_from_json',
-    'create_chessboard_pattern'
 ]
