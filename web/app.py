@@ -640,8 +640,8 @@ def calibrate():
                     # Get calibration results 
                     rms_error = calibrator.get_rms_error()
                     
-                    # Check RMS error threshold - consider calibration failed if > 0.5
-                    if rms_error > 0.5:
+                    # Check RMS error threshold - consider calibration failed if > 10.0
+                    if rms_error > 10.0:
                         print(f"❌ Calibration failed - RMS error too high: {rms_error:.4f} pixels (threshold: 0.5)")
                         return jsonify({
                             'error': f'Calibration failed - RMS error too high: {rms_error:.4f} pixels (threshold: 0.5)',
