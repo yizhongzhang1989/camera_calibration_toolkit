@@ -25,6 +25,3 @@ pytest-cov>=2.0.0
 # Optional: for advanced visualizations
 matplotlib>=3.3.0
 plotly>=5.0.0
-
-# Optional: for performance improvements
-numba>=0.54.0
