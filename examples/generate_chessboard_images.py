@@ -9,8 +9,8 @@ for printing and calibration purposes. Images are saved to data/results/chessboa
 Generated Patterns:
 - Standard chessboard 11×8 (default settings)
 - Standard chessboard 9×6 (200px squares, 200px border)
-- ChArUco 8×6 (DICT_4X4_100, 20mm squares, 15mm markers)
-- ChArUco 12×9 (DICT_6X6_250, 20mm squares, 10mm markers, 50px border)
+- ChArUco 8×6 (DICT_4X4_100, 20mm squares, 15mm markers) - black first & white first
+- ChArUco 12×9 (DICT_6X6_250, 20mm squares, 10mm markers, 50px border) - black first & white first
 - ArUco Grid Board 1×1 (DICT_4X4_50, 40mm markers, 10mm separation)
 - ArUco Grid Board 5×4 (DICT_4X4_50, 40mm markers, 10mm separation)
 
@@ -102,7 +102,7 @@ def generate_patterns():
         },
         {
             'name': 'charuco_8x6_4x4_100',
-            'description': 'ChArUco 8×6 with DICT_4X4_100, 20mm squares, 15mm markers',
+            'description': 'ChArUco 8×6 with DICT_4X4_100, 20mm squares, 15mm markers (black first)',
             'generate_params': {},  # Use defaults: 100px squares, 0px border
             'pattern_config': {
                 "pattern_id": "charuco_board",
@@ -114,13 +114,33 @@ def generate_patterns():
                     "height": 6,
                     "square_size": 0.02,
                     "marker_size": 0.015,
-                    "dictionary_id": cv2.aruco.DICT_4X4_100
+                    "dictionary_id": cv2.aruco.DICT_4X4_100,
+                    "first_square_white": False
+                }
+            }
+        },
+        {
+            'name': 'charuco_8x6_4x4_100_white_first',
+            'description': 'ChArUco 8×6 with DICT_4X4_100, 20mm squares, 15mm markers (white first)',
+            'generate_params': {},  # Use defaults: 100px squares, 0px border
+            'pattern_config': {
+                "pattern_id": "charuco_board",
+                "name": "ChArUco Board",
+                "description": "Chessboard pattern with ArUco markers for robust detection",
+                "is_planar": True,
+                "parameters": {
+                    "width": 8,
+                    "height": 6,
+                    "square_size": 0.02,
+                    "marker_size": 0.015,
+                    "dictionary_id": cv2.aruco.DICT_4X4_100,
+                    "first_square_white": True
                 }
             }
         },
         {
             'name': 'charuco_12x9_6x6_250_border50',
-            'description': 'ChArUco 12×9 with DICT_6X6_250, 20mm squares, 10mm markers, 50px border',
+            'description': 'ChArUco 12×9 with DICT_6X6_250, 20mm squares, 10mm markers, 50px border (black first)',
             'generate_params': {'border_pixels': 50},  # Use default 100px squares, add 50px border
             'pattern_config': {
                 "pattern_id": "charuco_board",
@@ -132,7 +152,27 @@ def generate_patterns():
                     "height": 9,
                     "square_size": 0.02,
                     "marker_size": 0.01,
-                    "dictionary_id": cv2.aruco.DICT_6X6_250
+                    "dictionary_id": cv2.aruco.DICT_6X6_250,
+                    "first_square_white": False
+                }
+            }
+        },
+        {
+            'name': 'charuco_12x9_6x6_250_border50_white_first',
+            'description': 'ChArUco 12×9 with DICT_6X6_250, 20mm squares, 10mm markers, 50px border (white first)',
+            'generate_params': {'border_pixels': 50},  # Use default 100px squares, add 50px border
+            'pattern_config': {
+                "pattern_id": "charuco_board",
+                "name": "ChArUco Board",
+                "description": "Chessboard pattern with ArUco markers for robust detection",
+                "is_planar": True,
+                "parameters": {
+                    "width": 12,
+                    "height": 9,
+                    "square_size": 0.02,
+                    "marker_size": 0.01,
+                    "dictionary_id": cv2.aruco.DICT_6X6_250,
+                    "first_square_white": True
                 }
             }
         },
@@ -254,6 +294,8 @@ def generate_patterns():
                         dict_name = [name for name, val in vars(cv2.aruco).items() 
                                    if name.startswith('DICT_') and val == pattern_params['dictionary_id']][0]
                         f.write(f"Dictionary: {dict_name}\n")
+                        first_square = pattern_params.get('first_square_white', False)
+                        f.write(f"First Square: {'White' if first_square else 'Black'}\n")
                 
                 f.write(f"\nImage Information:\n")
                 f.write(f"Size: {image.shape[1]}×{image.shape[0]} pixels\n")

@@ -61,7 +61,8 @@ class CharucoBoard(CalibrationPattern):
     }
     
     def __init__(self, width: int, height: int, square_size: float, marker_size: float, 
-                 dictionary_id: int = cv2.aruco.DICT_6X6_250, is_planar: bool = True):
+                 dictionary_id: int = cv2.aruco.DICT_6X6_250, is_planar: bool = True,
+                 first_square_white: bool = False):
         """
         Initialize ChArUco board.
         
@@ -72,6 +73,7 @@ class CharucoBoard(CalibrationPattern):
             marker_size: Physical size of ArUco markers in meters
             dictionary_id: ArUco dictionary to use
             is_planar: Whether the pattern lies in a plane (True) or has 3D structure (False)
+            first_square_white: Whether the top-left square should be white (True) or black (False)
         """
         super().__init__(
             pattern_id="charuco_board",
@@ -90,6 +92,7 @@ class CharucoBoard(CalibrationPattern):
         self.square_size = square_size
         self.marker_size = marker_size
         self.dictionary_id = dictionary_id
+        self.first_square_white = first_square_white
         
         # Create ArUco dictionary and ChArUco board
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(dictionary_id)
@@ -206,6 +209,13 @@ class CharucoBoard(CalibrationPattern):
                         {"value": cv2.aruco.DICT_ARUCO_MIP_36H12, "label": "DICT_ARUCO_MIP_36H12"}
                     ],
                     "description": "ArUco marker dictionary to use"
+                },
+                {
+                    "name": "first_square_white",
+                    "label": "First Square White",
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Whether the top-left square should be white (True) or black (False)"
                 }
             ]
         }
@@ -214,7 +224,12 @@ class CharucoBoard(CalibrationPattern):
         """Detect corners using ChArUco detection."""
         # Use base class utility to convert to grayscale
         gray = self.convert_to_grayscale(image)
+        
+        # For white-first boards, we need custom detection since OpenCV assumes black-first
+        if self.first_square_white:
+            return self._detect_corners_white_first(gray)
             
+        # Standard black-first detection
         # Use newer CharucoDetector if available
         if self.charuco_detector is not None:
             try:
@@ -225,7 +240,7 @@ class CharucoBoard(CalibrationPattern):
                     return True, corners_charuco, ids_charuco
                 else:
                     return False, None, None
-            except Exception as e:
+            except Exception:
                 # Fallback to older method
                 pass
         
@@ -257,34 +272,245 @@ class CharucoBoard(CalibrationPattern):
                     if ret > 0:
                         return True, corners_charuco, ids_charuco
                         
-            except Exception as e:
+            except Exception:
                 # If interpolation fails, we can't use ChArUco corners
                 pass
         
         return False, None, None
     
+    def _detect_corners_white_first(self, gray: np.ndarray) -> Tuple[bool, Optional[np.ndarray], Optional[np.ndarray]]:
+        """
+        Custom detection for white-first ChArUco boards.
+        Uses ArUco marker detection and custom corner interpolation.
+        """
+        # Detect ArUco markers
+        try:
+            # OpenCV 4.7+ method
+            detector = cv2.aruco.ArucoDetector(self.aruco_dict, self.detector_params)
+            corners_aruco, ids_aruco, _ = detector.detectMarkers(gray)
+        except AttributeError:
+            # Older OpenCV method
+            corners_aruco, ids_aruco, _ = cv2.aruco.detectMarkers(
+                gray, self.aruco_dict, parameters=self.detector_params
+            )
+        
+        if ids_aruco is None or len(ids_aruco) == 0:
+            return False, None, None
+        
+        # Build mapping of marker IDs to square positions for white-first layout
+        marker_id = 0
+        marker_positions = {}  # marker_id -> (row, col)
+        
+        for row in range(self.height):
+            for col in range(self.width):
+                # Determine if this square is white (has a marker)
+                # Must match the generation logic!
+                is_black_in_standard = (row + col) % 2 == 0
+                
+                # If first_square_white=False: black squares are where (row+col) is even
+                # If first_square_white=True: black squares are where (row+col) is odd
+                if self.first_square_white:
+                    is_black = not is_black_in_standard
+                else:
+                    is_black = is_black_in_standard
+                
+                # Markers are placed in white squares
+                if not is_black:
+                    marker_positions[marker_id] = (row, col)
+                    marker_id += 1
+        
+        # Total number of markers we expect
+        max_expected_marker_id = marker_id - 1
+        
+        # Calculate scaling factor to extrapolate from marker corners to square corners
+        # The marker is centered in the square and is smaller
+        # scale factor = square_size / marker_size
+        scale_factor = self.square_size / self.marker_size
+        
+        # Collect corners with averaging for shared corners
+        corner_accumulator = {}  # corner_id -> list of positions
+        
+        # For each detected marker, calculate its surrounding chessboard corners
+        for i, marker_id in enumerate(ids_aruco.flatten()):
+            # Skip markers that are out of range (false positives)
+            if marker_id not in marker_positions or marker_id > max_expected_marker_id:
+                continue
+            
+            row, col = marker_positions[marker_id]
+            marker_corners = corners_aruco[i][0]  # 4 corners: [TL, TR, BR, BL]
+            
+            # Calculate marker center
+            marker_center = np.mean(marker_corners, axis=0)
+            
+            # Extrapolate each marker corner to the corresponding square corner
+            # Marker corners are ordered: [top-left, top-right, bottom-right, bottom-left]
+            square_corners = []
+            for mc in marker_corners:
+                # Vector from center to marker corner
+                vec = mc - marker_center
+                # Extrapolate to square corner
+                sc = marker_center + vec * scale_factor
+                square_corners.append(sc)
+            
+            # Map square corners to chessboard corner IDs
+            # The square at (row, col) has its corners at these grid intersections:
+            # - Top-left corner at grid position (row, col)
+            # - Top-right corner at grid position (row, col+1)
+            # - Bottom-right corner at grid position (row+1, col+1)
+            # - Bottom-left corner at grid position (row+1, col)
+            
+            # Chessboard corner ID = row_in_corners * (width-1) + col_in_corners
+            # But corners start at (0,0) which is the intersection between squares
+            
+            # Top-left square corner -> grid intersection at (row, col)
+            if row > 0 and col > 0:
+                corner_id = (row - 1) * (self.width - 1) + (col - 1)
+                if corner_id not in corner_accumulator:
+                    corner_accumulator[corner_id] = []
+                corner_accumulator[corner_id].append(square_corners[0])
+            
+            # Top-right square corner -> grid intersection at (row, col+1)
+            if row > 0 and col < self.width - 1:
+                corner_id = (row - 1) * (self.width - 1) + col
+                if corner_id not in corner_accumulator:
+                    corner_accumulator[corner_id] = []
+                corner_accumulator[corner_id].append(square_corners[1])
+            
+            # Bottom-right square corner -> grid intersection at (row+1, col+1)
+            if row < self.height - 1 and col < self.width - 1:
+                corner_id = row * (self.width - 1) + col
+                if corner_id not in corner_accumulator:
+                    corner_accumulator[corner_id] = []
+                corner_accumulator[corner_id].append(square_corners[2])
+            
+            # Bottom-left square corner -> grid intersection at (row+1, col)
+            if row < self.height - 1 and col > 0:
+                corner_id = row * (self.width - 1) + (col - 1)
+                if corner_id not in corner_accumulator:
+                    corner_accumulator[corner_id] = []
+                corner_accumulator[corner_id].append(square_corners[3])
+        
+        if len(corner_accumulator) == 0:
+            return False, None, None
+        
+        # Average corners that were detected multiple times (shared by multiple markers)
+        final_corners = {}
+        for corner_id, positions in corner_accumulator.items():
+            final_corners[corner_id] = np.mean(positions, axis=0)
+        
+        # Convert to numpy arrays
+        final_ids = np.array(list(final_corners.keys()), dtype=np.int32).reshape(-1, 1)
+        final_corners_array = np.array([final_corners[cid] for cid in final_ids.flatten()], dtype=np.float32).reshape(-1, 1, 2)
+        
+        # Apply subpixel corner refinement for better accuracy
+        if len(final_corners_array) > 0:
+            # Build a map of all marker corner positions (matching OpenCV approach)
+            marker_corners_flat = []  # All marker corner positions
+            if len(corners_aruco) > 0:
+                for marker_corners in corners_aruco:
+                    corners_flat = marker_corners[0]
+                    for corner in corners_flat:
+                        marker_corners_flat.append(corner)
+            
+            # Define criteria for subpixel refinement
+            criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+            
+            # Store refinement stages for visualization
+            refinement_stages = []  # List of (corner_id, [initial, refined], [window], [movement])
+            
+            # Refine each corner
+            corners_to_keep = []
+            ids_to_keep = []
+            
+            for i, corner in enumerate(final_corners_array):
+                corner_id = final_ids[i][0]
+                cx, cy = corner[0]
+                
+                # Store initial position
+                initial_pos = (float(cx), float(cy))
+                
+                # Find distance to nearest marker corner
+                min_dist_to_marker = float('inf')
+                if marker_corners_flat:
+                    for marker_corner in marker_corners_flat:
+                        dist = np.sqrt((cx - marker_corner[0])**2 + (cy - marker_corner[1])**2)
+                        if dist < min_dist_to_marker:
+                            min_dist_to_marker = dist
+                
+                # Window size is half the distance to nearest marker corner (matching OpenCV)
+                if min_dist_to_marker != float('inf'):
+                    window_size_px = int(min_dist_to_marker / 2.0)
+                    # Ensure window size is odd and at least 3
+                    window_size_px = max(3, window_size_px if window_size_px % 2 == 1 else window_size_px + 1)
+                else:
+                    window_size_px = 5
+                
+                # Check boundaries - skip corner if window doesn't fit within image
+                half_win = window_size_px // 2
+                min_x = half_win
+                max_x = gray.shape[1] - half_win - 1
+                min_y = half_win
+                max_y = gray.shape[0] - half_win - 1
+                
+                # Skip this corner if it's too close to the border
+                if cx < min_x or cx > max_x or cy < min_y or cy > max_y:
+                    continue
+                
+                # Store position before refinement
+                prev_cx, prev_cy = cx, cy
+                
+                # Adjust coordinates by -0.5 pixels before cornerSubPix (matching OpenCV)
+                corner_adjusted = np.float32([[cx - 0.5, cy - 0.5]])
+                cv2.cornerSubPix(gray, corner_adjusted, (window_size_px, window_size_px), (-1, -1), criteria)
+                
+                # Add back 0.5 pixels after refinement (matching OpenCV)
+                cx, cy = corner_adjusted[0] + np.float32([0.5, 0.5])
+                refined_pos = (float(cx), float(cy))
+                
+                # Calculate how much the corner moved
+                movement = np.sqrt((cx - prev_cx)**2 + (cy - prev_cy)**2)
+                
+                # Update corner position
+                corner[0] = [cx, cy]
+                
+                # Keep this corner
+                corners_to_keep.append(corner)
+                ids_to_keep.append(corner_id)
+                
+                # Store refinement stage
+                refinement_stages.append((corner_id, [initial_pos, refined_pos], [window_size_px], [float(movement)]))
+            
+            # Update arrays with only valid corners
+            if len(corners_to_keep) > 0:
+                final_corners_array = np.array(corners_to_keep, dtype=np.float32)
+                final_ids = np.array(ids_to_keep, dtype=np.int32).reshape(-1, 1)
+            else:
+                final_corners_array = None
+                final_ids = None
+            
+            # Store refinement stages as an attribute for visualization
+            self._last_refinement_stages = refinement_stages
+        
+        if final_corners_array is None or len(final_corners_array) == 0:
+            return False, None, None
+        
+        return True, final_corners_array, final_ids
+    
     def generate_object_points(self, point_ids: Optional[np.ndarray] = None) -> np.ndarray:
         """Generate 3D object points for ChArUco board."""
-        # Get ChArUco board corner positions
-        try:
-            # Try newer OpenCV method to get all chessboard corners
-            all_objp = self.charuco_board.getChessboardCorners()
-        except AttributeError:
-            # Fallback for older OpenCV versions
-            try:
-                all_objp = self.charuco_board.chessboardCorners
-            except AttributeError:
-                # Manual generation as fallback
-                all_objp = np.zeros(((self.width - 1) * (self.height - 1), 3), np.float32)
-                all_objp[:, :2] = np.mgrid[0:self.width-1, 0:self.height-1].T.reshape(-1, 2)
-                all_objp *= self.square_size
+        # Generate all corner 3D positions
+        # ChArUco corners are at the intersections of squares
+        all_objp = np.zeros(((self.width - 1) * (self.height - 1), 3), np.float32)
+        for row in range(self.height - 1):
+            for col in range(self.width - 1):
+                corner_idx = row * (self.width - 1) + col
+                # Corner position in 3D space
+                all_objp[corner_idx] = [col * self.square_size, row * self.square_size, 0.0]
         
-        # For ChArUco, we need to return only the object points corresponding to detected corners
+        # Return object points for detected corners
         if point_ids is not None and len(point_ids) > 0:
-            # Return object points for the specific detected corner IDs
             return all_objp[point_ids.flatten()]
         else:
-            # Return all possible object points
             return all_objp
     
     def get_pattern_size(self) -> Tuple[int, int]:
@@ -322,6 +548,10 @@ class CharucoBoard(CalibrationPattern):
         Returns:
             Generated ChArUco board image as numpy array
         """
+        # For white-first boards, use manual generation
+        if self.first_square_white:
+            return self._generate_manual_charuco_pattern(pixel_per_square, border_pixels)
+        
         # Calculate image size from pattern dimensions
         total_pattern_width = self.width * pixel_per_square
         total_pattern_height = self.height * pixel_per_square
@@ -334,21 +564,21 @@ class CharucoBoard(CalibrationPattern):
             # Method 1: Try new generateImage() method (OpenCV 4.7+)
             if hasattr(self.charuco_board, 'generateImage'):
                 board_image = self.charuco_board.generateImage(
-                    (total_pattern_width, total_pattern_height), 
-                    marginSize=0, 
+                    (total_pattern_width, total_pattern_height),
+                    marginSize=0,
                     borderBits=1
                 )
             else:
                 # Method 2: Try legacy drawPlanarBoard (older OpenCV versions)
                 board_image = np.ones((total_pattern_height, total_pattern_width, 3), dtype=np.uint8) * 255
                 cv2.aruco.drawPlanarBoard(
-                    self.charuco_board, 
-                    (total_pattern_width, total_pattern_height), 
-                    board_image, 
-                    marginSize=0, 
+                    self.charuco_board,
+                    (total_pattern_width, total_pattern_height),
+                    board_image,
+                    marginSize=0,
                     borderBits=1
                 )
-                
+        
         except (AttributeError, TypeError) as e:
             # Method 3: Manual fallback for very old OpenCV versions
             print(f"Warning: Using manual ChArUco generation due to: {e}")
@@ -378,8 +608,8 @@ class CharucoBoard(CalibrationPattern):
     def _generate_manual_charuco_pattern(self, pixel_per_square: int = 100, 
                                        border_pixels: int = 0) -> np.ndarray:
         """
-        Manual ChArUco pattern generation as fallback for older OpenCV versions.
-        This is the old implementation kept as a backup.
+        Generate ChArUco pattern with markers properly placed in white squares.
+        Handles both first_square_white=True and first_square_white=False.
         """
         # Calculate image size from pattern dimensions
         total_pattern_width = self.width * pixel_per_square
@@ -397,11 +627,11 @@ class CharucoBoard(CalibrationPattern):
         
         # Calculate marker size in pixels
         marker_ratio = self.marker_size / self.square_size
-        marker_size_px = pixel_per_square * marker_ratio
+        marker_size_px = int(pixel_per_square * marker_ratio)
         
         marker_id = 0
         
-        # Draw ChArUco pattern manually
+        # Draw ChArUco pattern
         for row in range(self.height):
             for col in range(self.width):
                 # Calculate square position
@@ -410,39 +640,43 @@ class CharucoBoard(CalibrationPattern):
                 x2 = int(start_x + (col + 1) * pixel_per_square)
                 y2 = int(start_y + (row + 1) * pixel_per_square)
                 
-                # Determine square color (ChArUco pattern)
-                is_black = (row + col) % 2 == 0
+                # Determine if this square should be black or white
+                # Standard chessboard: (row + col) % 2 == 0 means black
+                is_black_in_standard = (row + col) % 2 == 0
+                
+                # If first_square_white=False (default): top-left is black, so black squares are where (row+col) is even
+                # If first_square_white=True: top-left is white, so black squares are where (row+col) is odd
+                if self.first_square_white:
+                    is_black = not is_black_in_standard
+                else:
+                    is_black = is_black_in_standard
                 
                 if is_black:
-                    # Black square with ArUco marker
+                    # Draw black square
                     cv2.rectangle(image, (x1, y1), (x2, y2), (0, 0, 0), -1)
+                else:
+                    # White square - place ArUco marker here
+                    cv2.rectangle(image, (x1, y1), (x2, y2), (255, 255, 255), -1)
                     
-                    # Draw simplified ArUco marker representation
-                    marker_x1 = int(x1 + (pixel_per_square - marker_size_px) / 2)
-                    marker_y1 = int(y1 + (pixel_per_square - marker_size_px) / 2)
-                    marker_x2 = int(marker_x1 + marker_size_px)
-                    marker_y2 = int(marker_y1 + marker_size_px)
-                    
-                    # White marker background
-                    cv2.rectangle(image, (marker_x1, marker_y1), (marker_x2, marker_y2), (255, 255, 255), -1)
-                    
-                    # Black border around marker
-                    cv2.rectangle(image, (marker_x1, marker_y1), (marker_x2, marker_y2), (0, 0, 0), 2)
+                    # Generate and draw the actual ArUco marker
+                    if marker_id < len(self.aruco_dict.bytesList):
+                        # Generate marker image
+                        marker_img = cv2.aruco.generateImageMarker(self.aruco_dict, marker_id, marker_size_px)
+                        
+                        # Calculate position to center marker in square
+                        marker_x1 = int(x1 + (pixel_per_square - marker_size_px) / 2)
+                        marker_y1 = int(y1 + (pixel_per_square - marker_size_px) / 2)
+                        marker_x2 = marker_x1 + marker_size_px
+                        marker_y2 = marker_y1 + marker_size_px
+                        
+                        # Convert marker to BGR if needed
+                        if len(marker_img.shape) == 2:
+                            marker_img = cv2.cvtColor(marker_img, cv2.COLOR_GRAY2BGR)
+                        
+                        # Place marker in the white square
+                        image[marker_y1:marker_y2, marker_x1:marker_x2] = marker_img
                     
                     marker_id += 1
-                else:
-                    # White square
-                    cv2.rectangle(image, (x1, y1), (x2, y2), (255, 255, 255), -1)
-                
-                # Add square border for clarity
-                cv2.rectangle(image, (x1, y1), (x2, y2), (128, 128, 128), 1)
-        
-        # Add outer border
-        border_thickness = max(2, int(pixel_per_square / 30))
-        cv2.rectangle(image, 
-                     (int(start_x), int(start_y)), 
-                     (int(start_x + total_pattern_width), int(start_y + total_pattern_height)), 
-                     (0, 0, 0), border_thickness)
         
         return image
     
@@ -454,6 +688,7 @@ class CharucoBoard(CalibrationPattern):
             'square_size': self.square_size,
             'marker_size': self.marker_size,
             'dictionary_id': self.dictionary_id,
+            'first_square_white': self.first_square_white,
             'total_corners': (self.width - 1) * (self.height - 1)
         }
     
@@ -466,5 +701,6 @@ class CharucoBoard(CalibrationPattern):
             height=params.get('height', 7),
             square_size=params.get('square_size', 0.025),
             marker_size=params.get('marker_size', 0.015),
-            dictionary_id=params.get('dictionary_id', cv2.aruco.DICT_6X6_250)
+            dictionary_id=params.get('dictionary_id', cv2.aruco.DICT_6X6_250),
+            first_square_white=params.get('first_square_white', False)
         )
