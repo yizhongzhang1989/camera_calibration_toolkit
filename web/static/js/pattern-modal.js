@@ -306,6 +306,28 @@ class PatternSelectionModal {
                 `;
                 break;
 
+            case 'boolean':
+                // Check if this should be a select dropdown instead
+                if (param.input_type === 'select' && param.options) {
+                    const options = param.options.map(opt => 
+                        `<option value="${opt.value}" ${opt.value === param.default ? 'selected' : ''}>${opt.label}</option>`
+                    ).join('');
+                    inputElement = `
+                        <select class="form-select form-select-sm" id="${inputId}" name="${param.name}" required>
+                            ${options}
+                        </select>
+                    `;
+                } else {
+                    inputElement = `
+                        <input type="checkbox" 
+                               class="form-check-input" 
+                               id="${inputId}" 
+                               name="${param.name}"
+                               ${param.default ? 'checked' : ''}>
+                    `;
+                }
+                break;
+
             case 'select':
                 const options = param.options.map(opt => 
                     `<option value="${opt.value}" ${opt.value === param.default ? 'selected' : ''}>${opt.label}</option>`
@@ -441,6 +463,9 @@ class PatternSelectionModal {
                         value = parseInt(value);
                     } else if (param.type === 'float') {
                         value = parseFloat(value);
+                    } else if (param.type === 'boolean') {
+                        // For checkboxes, use checked property instead of value
+                        value = input.type === 'checkbox' ? input.checked : (value === 'true' || value === true);
                     }
                 }
                 
