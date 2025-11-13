@@ -419,6 +419,9 @@ class CharucoBoard(CalibrationPattern):
             refinement_stages = []  # List of (corner_id, [initial, refined], [window], [movement])
             
             # Refine each corner
+            corners_to_keep = []
+            ids_to_keep = []
+            
             for i, corner in enumerate(final_corners_array):
                 corner_id = final_ids[i][0]
                 cx, cy = corner[0]
@@ -442,6 +445,17 @@ class CharucoBoard(CalibrationPattern):
                 else:
                     window_size_px = 5
                 
+                # Check boundaries - skip corner if window doesn't fit within image
+                half_win = window_size_px // 2
+                min_x = half_win
+                max_x = gray.shape[1] - half_win - 1
+                min_y = half_win
+                max_y = gray.shape[0] - half_win - 1
+                
+                # Skip this corner if it's too close to the border
+                if cx < min_x or cx > max_x or cy < min_y or cy > max_y:
+                    continue
+                
                 # Store position before refinement
                 prev_cx, prev_cy = cx, cy
                 
@@ -459,11 +473,26 @@ class CharucoBoard(CalibrationPattern):
                 # Update corner position
                 corner[0] = [cx, cy]
                 
+                # Keep this corner
+                corners_to_keep.append(corner)
+                ids_to_keep.append(corner_id)
+                
                 # Store refinement stage
                 refinement_stages.append((corner_id, [initial_pos, refined_pos], [window_size_px], [float(movement)]))
             
+            # Update arrays with only valid corners
+            if len(corners_to_keep) > 0:
+                final_corners_array = np.array(corners_to_keep, dtype=np.float32)
+                final_ids = np.array(ids_to_keep, dtype=np.int32).reshape(-1, 1)
+            else:
+                final_corners_array = None
+                final_ids = None
+            
             # Store refinement stages as an attribute for visualization
             self._last_refinement_stages = refinement_stages
+        
+        if final_corners_array is None or len(final_corners_array) == 0:
+            return False, None, None
         
         return True, final_corners_array, final_ids
     
