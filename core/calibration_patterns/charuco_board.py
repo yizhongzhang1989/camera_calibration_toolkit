@@ -402,6 +402,69 @@ class CharucoBoard(CalibrationPattern):
         final_ids = np.array(list(final_corners.keys()), dtype=np.int32).reshape(-1, 1)
         final_corners_array = np.array([final_corners[cid] for cid in final_ids.flatten()], dtype=np.float32).reshape(-1, 1, 2)
         
+        # Apply subpixel corner refinement for better accuracy
+        if len(final_corners_array) > 0:
+            # Build a map of all marker corner positions (matching OpenCV approach)
+            marker_corners_flat = []  # All marker corner positions
+            if len(corners_aruco) > 0:
+                for marker_corners in corners_aruco:
+                    corners_flat = marker_corners[0]
+                    for corner in corners_flat:
+                        marker_corners_flat.append(corner)
+            
+            # Define criteria for subpixel refinement
+            criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+            
+            # Store refinement stages for visualization
+            refinement_stages = []  # List of (corner_id, [initial, refined], [window], [movement])
+            
+            # Refine each corner
+            for i, corner in enumerate(final_corners_array):
+                corner_id = final_ids[i][0]
+                cx, cy = corner[0]
+                
+                # Store initial position
+                initial_pos = (float(cx), float(cy))
+                
+                # Find distance to nearest marker corner
+                min_dist_to_marker = float('inf')
+                if marker_corners_flat:
+                    for marker_corner in marker_corners_flat:
+                        dist = np.sqrt((cx - marker_corner[0])**2 + (cy - marker_corner[1])**2)
+                        if dist < min_dist_to_marker:
+                            min_dist_to_marker = dist
+                
+                # Window size is half the distance to nearest marker corner (matching OpenCV)
+                if min_dist_to_marker != float('inf'):
+                    window_size_px = int(min_dist_to_marker / 2.0)
+                    # Ensure window size is odd and at least 3
+                    window_size_px = max(3, window_size_px if window_size_px % 2 == 1 else window_size_px + 1)
+                else:
+                    window_size_px = 5
+                
+                # Store position before refinement
+                prev_cx, prev_cy = cx, cy
+                
+                # Adjust coordinates by -0.5 pixels before cornerSubPix (matching OpenCV)
+                corner_adjusted = np.float32([[cx - 0.5, cy - 0.5]])
+                cv2.cornerSubPix(gray, corner_adjusted, (window_size_px, window_size_px), (-1, -1), criteria)
+                
+                # Add back 0.5 pixels after refinement (matching OpenCV)
+                cx, cy = corner_adjusted[0] + np.float32([0.5, 0.5])
+                refined_pos = (float(cx), float(cy))
+                
+                # Calculate how much the corner moved
+                movement = np.sqrt((cx - prev_cx)**2 + (cy - prev_cy)**2)
+                
+                # Update corner position
+                corner[0] = [cx, cy]
+                
+                # Store refinement stage
+                refinement_stages.append((corner_id, [initial_pos, refined_pos], [window_size_px], [float(movement)]))
+            
+            # Store refinement stages as an attribute for visualization
+            self._last_refinement_stages = refinement_stages
+        
         return True, final_corners_array, final_ids
     
     def generate_object_points(self, point_ids: Optional[np.ndarray] = None) -> np.ndarray:
