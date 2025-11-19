@@ -1258,6 +1258,7 @@ class BaseCalibrator(ABC):
         min_error = np.min(all_errors)
         max_error = np.max(all_errors)
         mean_error = np.mean(all_errors)
+        rms_error = np.sqrt(np.mean(np.array(all_errors)**2))
         
         # Calculate error vector statistics for direction mapping
         all_error_vectors = np.array(all_error_vectors)
@@ -1315,16 +1316,18 @@ class BaseCalibrator(ABC):
                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
         
         # Add error statistics in bottom-left corner
-        stats_y_start = self.image_size[1] - 100
+        stats_y_start = self.image_size[1] - 120
         cv2.putText(error_img, f"Min Error: {min_error:.3f} px", (10, stats_y_start), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         cv2.putText(error_img, f"Max Error: {max_error:.3f} px", (10, stats_y_start + 20), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         cv2.putText(error_img, f"Mean Error: {mean_error:.3f} px", (10, stats_y_start + 40), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        cv2.putText(error_img, f"Total Points: {len(all_errors)}", (10, stats_y_start + 60), 
+        cv2.putText(error_img, f"RMS Error: {rms_error:.3f} px", (10, stats_y_start + 60), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        cv2.putText(error_img, f"Max X/Y Error: {max_abs_error:.3f} px", (10, stats_y_start + 80), 
+        cv2.putText(error_img, f"Total Points: {len(all_errors)}", (10, stats_y_start + 80), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        cv2.putText(error_img, f"Max X/Y Error: {max_abs_error:.3f} px", (10, stats_y_start + 100), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         
         # Add arrow legend in top-right corner
