@@ -234,8 +234,14 @@ class CharucoBoard(CalibrationPattern):
         if self.charuco_detector is not None:
             try:
                 # OpenCV 4.8+ method using CharucoDetector
+                # Configure detector to allow detection with just 1 marker
+                charuco_params = self.charuco_detector.getCharucoParameters()
+                charuco_params.minMarkers = 1
+                self.charuco_detector.setCharucoParameters(charuco_params)
+                
                 corners_charuco, ids_charuco, corners_aruco, ids_aruco = self.charuco_detector.detectBoard(gray)
                 
+                # CharucoDetector already includes refinement internally
                 if corners_charuco is not None and len(corners_charuco) > 0:
                     return True, corners_charuco, ids_charuco
                 else:
@@ -244,19 +250,32 @@ class CharucoBoard(CalibrationPattern):
                 # Fallback to older method
                 pass
         
-        # Fallback: Detect ArUco markers first, then interpolate ChArUco corners  
+        # Fallback: Detect ArUco markers first, then interpolate ChArUco corners
+        # First, detect ArUco markers
         try:
             # OpenCV 4.7+ method
             detector = cv2.aruco.ArucoDetector(self.aruco_dict, self.detector_params)
-            corners_aruco, ids_aruco, _ = detector.detectMarkers(gray)
+            corners_aruco, ids_aruco, rejected = detector.detectMarkers(gray)
         except AttributeError:
             # Older OpenCV method
-            corners_aruco, ids_aruco, _ = cv2.aruco.detectMarkers(
+            corners_aruco, ids_aruco, rejected = cv2.aruco.detectMarkers(
                 gray, self.aruco_dict, parameters=self.detector_params
             )
         
+        # Refine marker detection before interpolating ChArUco corners
+        if len(corners_aruco) > 0 and rejected is not None and len(rejected) > 0:
+            try:
+                # Try to recover rejected markers for better ChArUco corner detection
+                if hasattr(cv2.aruco, 'refineDetectedMarkers'):
+                    corners_aruco, ids_aruco, rejected, _ = cv2.aruco.refineDetectedMarkers(
+                        gray, self.charuco_board, corners_aruco, ids_aruco, rejected,
+                        self.aruco_dict, parameters=self.detector_params
+                    )
+            except Exception:
+                pass  # Refinement not available or failed, continue with original detections
+        
         if len(corners_aruco) > 0:
-            # Try to interpolate ChArUco corners using older API names
+            # Interpolate ChArUco corners from detected ArUco markers
             try:
                 # Try different possible function names for interpolation
                 interpolate_func = None
@@ -266,8 +285,10 @@ class CharucoBoard(CalibrationPattern):
                         break
                 
                 if interpolate_func:
+                    # Set minMarkers to 1 to allow detection with just one marker
+                    # Note: interpolateCornersCharuco already includes subpixel refinement internally
                     ret, corners_charuco, ids_charuco = interpolate_func(
-                        corners_aruco, ids_aruco, gray, self.charuco_board
+                        corners_aruco, ids_aruco, gray, self.charuco_board, minMarkers=1
                     )
                     if ret > 0:
                         return True, corners_charuco, ids_charuco
@@ -532,6 +553,15 @@ class CharucoBoard(CalibrationPattern):
                 for corner in corners:
                     x, y = corner.ravel().astype(int)
                     cv2.circle(result_image, (x, y), 5, (0, 0, 255), -1)
+            
+            # Draw single pixel markers for precise localization in blue
+            for corner in corners:
+                x, y = corner.ravel()
+                x, y = int(round(x)), int(round(y))
+                
+                # Draw single pixel in blue
+                if 0 <= x < result_image.shape[1] and 0 <= y < result_image.shape[0]:
+                    result_image[y, x] = (255, 0, 0)
             
             return result_image
         return image

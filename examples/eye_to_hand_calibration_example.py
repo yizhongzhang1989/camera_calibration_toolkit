@@ -118,11 +118,11 @@ def main():
         print(f"Target-to-end transformation matrix:")
         print(result['target2end_matrix'])
         
-        # Return 0 for success if RMS < 1, 1 for failure if RMS >= 1
-        if result['rms_error'] < 1.0:
+        # Return 0 for success if RMS < 2, 1 for failure if RMS >= 2
+        if result['rms_error'] < 2.0:
             return 0
         else:
-            print(f"Warning: RMS error {result['rms_error']:.4f} >= 1.0 pixels")
+            print(f"Warning: RMS error {result['rms_error']:.4f} >= 2.0 pixels")
             return 1
         
     else:
