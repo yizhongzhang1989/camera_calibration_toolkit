@@ -665,9 +665,11 @@ class EyeToHandCalibrator(HandEyeBaseCalibrator):
                         self.camera_matrix, 
                         self.distortion_coefficients)
                     
-                    # Calculate reprojection error for this image
-                    error = cv2.norm(self.image_points[i], projected_points, cv2.NORM_L2) / len(projected_points)
+                    # Calculate reprojection error for this image (RMS per image)
+                    error = cv2.norm(self.image_points[i], projected_points, cv2.NORM_L2) / np.sqrt(len(projected_points))
                     per_image_errors.append(error)
+                    
+                    # Accumulate squared errors for overall RMS calculation
                     total_error += error * error
                     valid_error_count += 1
                     
