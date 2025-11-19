@@ -110,13 +110,20 @@ class GridBoard(CalibrationPattern):
             except AttributeError:
                 raise ValueError("ArUco Grid boards are not supported in this OpenCV version")
         
-        # Detector parameters
+        # Detector parameters with corner refinement enabled
         try:
             # OpenCV 4.7+ method
             self.detector_params = cv2.aruco.DetectorParameters()
+            # Enable corner refinement for better accuracy
+            self.detector_params.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
         except AttributeError:
             # Older OpenCV method
             self.detector_params = cv2.aruco.DetectorParameters_create()
+            try:
+                # Enable corner refinement if available
+                self.detector_params.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+            except AttributeError:
+                pass  # Corner refinement not available in this OpenCV version
         
     @classmethod
     def get_configuration_schema(cls):
