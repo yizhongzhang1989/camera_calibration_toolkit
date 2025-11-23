@@ -664,15 +664,17 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
                         self.camera_matrix, 
                         self.distortion_coefficients)
                     
+                    # Calculate norm once and use it for both per-image error and accumulation
+                    norm_L2 = cv2.norm(self.image_points[i], projected_points, cv2.NORM_L2)
+                    num_points = len(projected_points)
+                    
                     # Calculate reprojection error for this image (RMS per image)
-                    error = cv2.norm(self.image_points[i], projected_points, cv2.NORM_L2) / np.sqrt(len(projected_points))
+                    error = norm_L2 / np.sqrt(num_points)
                     per_image_errors.append(error)
                     
                     # Accumulate squared norm for overall RMS calculation
-                    # Use squared norm directly, not squared RMS
-                    squared_norm = cv2.norm(self.image_points[i], projected_points, cv2.NORM_L2) ** 2
-                    total_error += squared_norm
-                    valid_error_count += len(projected_points)
+                    total_error += norm_L2 ** 2
+                    valid_error_count += num_points
                     
                     if verbose:
                         print(f"   Image {i}: Reprojection error = {error:.4f} pixels")
