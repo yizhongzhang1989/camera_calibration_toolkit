@@ -1439,15 +1439,34 @@ class BaseCalibrator(ABC):
         for category, abs_path in subdirs.items():
             rel_subdirs[category] = os.path.relpath(abs_path, html_dir)
         
-        # Generate list of image filenames for each category
+        # Generate list of image filenames for each category based on how they were saved
         image_lists = {}
-        for category, subdir_path in subdirs.items():
+        
+        # For original_images, pattern_detection, undistorted, and reprojection:
+        # Use the same naming pattern as when saving
+        for category in ['original_images', 'pattern_detection', 'undistorted', 'reprojection']:
             image_files = []
-            if os.path.exists(subdir_path):
-                for filename in sorted(os.listdir(subdir_path)):
-                    if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
-                        image_files.append(filename)
+            count = image_counts.get(category, 0)
+            
+            for i in range(count):
+                # Get filename from filename manager or use default pattern
+                if self.filename_manager:
+                    filename = self.filename_manager.get_unique_filename(i)
+                else:
+                    filename = f"image_{i:03d}"
+                image_files.append(f"{filename}.jpg")
+            
             image_lists[category] = image_files
+        
+        # For analysis images, use fixed filenames
+        analysis_files = []
+        if image_counts.get('analysis', 0) > 0:
+            # Point distribution is always first if present
+            analysis_files.append('point_distribution.jpg')
+            # Reprojection error heatmap is second if present
+            if image_counts.get('analysis', 0) > 1:
+                analysis_files.append('reprojection_error_heatmap.jpg')
+        image_lists['analysis'] = analysis_files
         
         # Get calibration summary data
         rms_error = getattr(self, 'rms_error', 'N/A')

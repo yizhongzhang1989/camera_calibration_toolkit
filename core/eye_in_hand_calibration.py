@@ -664,13 +664,17 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
                         self.camera_matrix, 
                         self.distortion_coefficients)
                     
+                    # Calculate norm once and use it for both per-image error and accumulation
+                    norm_L2 = cv2.norm(self.image_points[i], projected_points, cv2.NORM_L2)
+                    num_points = len(projected_points)
+                    
                     # Calculate reprojection error for this image (RMS per image)
-                    error = cv2.norm(self.image_points[i], projected_points, cv2.NORM_L2) / np.sqrt(len(projected_points))
+                    error = norm_L2 / np.sqrt(num_points)
                     per_image_errors.append(error)
                     
-                    # Accumulate squared errors for overall RMS calculation
-                    total_error += error * error
-                    valid_error_count += 1
+                    # Accumulate squared norm for overall RMS calculation
+                    total_error += norm_L2 ** 2
+                    valid_error_count += num_points
                     
                     if verbose:
                         print(f"   Image {i}: Reprojection error = {error:.4f} pixels")
@@ -687,8 +691,9 @@ class EyeInHandCalibrator(HandEyeBaseCalibrator):
         # Calculate RMS error
         if valid_error_count > 0:
             rms_error = np.sqrt(total_error / valid_error_count)
+            num_valid_images = len([e for e in per_image_errors if e != float('inf')])
             if verbose:
-                print(f"   Overall RMS reprojection error: {rms_error:.4f} pixels ({valid_error_count} valid images)")
+                print(f"   Overall RMS reprojection error: {rms_error:.4f} pixels ({num_valid_images} valid images, {valid_error_count} total points)")
         else:
             rms_error = float('inf')
             if verbose:
