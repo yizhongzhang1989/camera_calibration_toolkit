@@ -12,8 +12,7 @@ PyYAML>=6.0
 Flask>=2.0.0
 Werkzeug>=2.0.0
 
-# Optimization (for eye-in-hand calibration)
-nlopt>=2.7.0
+# Optimization (for eye-in-hand calibration) - scipy is already listed above
 
 # File handling and data processing
 Pillow>=8.0.0

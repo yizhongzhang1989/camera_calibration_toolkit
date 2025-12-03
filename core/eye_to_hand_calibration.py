@@ -27,14 +27,8 @@ import json
 import numpy as np
 import cv2
 from typing import Tuple, List, Optional, Dict, Any
-
-# Optional import for optimization
-try:
-    import nlopt
-    HAS_NLOPT = True
-except ImportError:
-    nlopt = None
-    HAS_NLOPT = False
+# Import scipy for optimization
+from scipy.optimize import minimize
 
 from .hand_eye_base_calibration import HandEyeBaseCalibrator
 from .calibration_patterns import CalibrationPattern
@@ -238,46 +232,43 @@ class EyeToHandCalibrator(HandEyeBaseCalibrator):
             
             # Attempt optimization if nlopt is available
             optimized_results = initial_results.copy()
-            if HAS_NLOPT:
-                if verbose:
-                    print(f"\n🔧 Attempting optimization...")
+            # Attempt optimization using scipy
+            if verbose:
+                print(f"\n🔧 Attempting optimization...")
+            
+            try:
+                # Perform optimization
+                initial_error, optimized_rms = self.optimize_calibration(ftol_rel=1e-6, verbose=verbose)
                 
-                try:
-                    # Perform optimization
-                    initial_error, optimized_rms = self.optimize_calibration(ftol_rel=1e-6, verbose=verbose)
+                # Check if optimization actually improved the error
+                improvement = initial_error - optimized_rms
+                improvement_pct = (improvement / initial_error) * 100 if initial_error > 0 else 0
+                
+                if optimized_rms < initial_error:
+                    # Optimization improved - store optimized results
+                    optimized_results.update({
+                        'base2cam_matrix': self.base2cam_matrix.copy(),
+                        'target2end_matrix': self.target2end_matrix.copy(),
+                        'rms_error': optimized_rms,
+                    })
                     
-                    # Check if optimization actually improved the error
-                    improvement = initial_error - optimized_rms
-                    improvement_pct = (improvement / initial_error) * 100 if initial_error > 0 else 0
-                    
-                    if optimized_rms < initial_error:
-                        # Optimization improved - store optimized results
-                        optimized_results.update({
-                            'base2cam_matrix': self.base2cam_matrix.copy(),
-                            'target2end_matrix': self.target2end_matrix.copy(),
-                            'rms_error': optimized_rms,
-                        })
-                        
-                        if verbose:
-                            print(f"✅ Optimization completed!")
-                            print(f"   Initial RMS error: {initial_error:.4f} pixels")
-                            print(f"   Optimized RMS error: {optimized_rms:.4f} pixels") 
-                            print(f"   Improvement: {improvement:.4f} pixels ({improvement_pct:.1f}%)")
-                    else:
-                        # Optimization didn't improve or made it worse - keep initial results
-                        if verbose:
-                            print(f"⚠️ Optimization did not improve results")
-                            print(f"   Initial RMS error: {initial_results['rms_error']:.4f} pixels")
-                            print(f"   Optimized RMS error: {optimized_rms:.4f} pixels")
-                            print(f"   Keeping initial calibration results")
-                        
-                except Exception as e:
                     if verbose:
-                        print(f"⚠️ Optimization failed: {e}")
-                        print(f"   Returning initial calibration results")
-            else:
+                        print(f"✅ Optimization completed!")
+                        print(f"   Initial RMS error: {initial_error:.4f} pixels")
+                        print(f"   Optimized RMS error: {optimized_rms:.4f} pixels") 
+                        print(f"   Improvement: {improvement:.4f} pixels ({improvement_pct:.1f}%)")
+                else:
+                    # Optimization didn't improve or made it worse - keep initial results
+                    if verbose:
+                        print(f"⚠️ Optimization did not improve results")
+                        print(f"   Initial RMS error: {initial_results['rms_error']:.4f} pixels")
+                        print(f"   Optimized RMS error: {optimized_rms:.4f} pixels")
+                        print(f"   Keeping initial calibration results")
+                        
+            except Exception as e:
                 if verbose:
-                    print(f"⚠️ nlopt not available, skipping optimization")
+                    print(f"⚠️ Optimization failed: {e}")
+                    print(f"   Returning initial calibration results")
             
             # Add both initial and optimized results to the return dictionary
             optimized_results['before_opt'] = initial_results
@@ -799,11 +790,6 @@ class EyeToHandCalibrator(HandEyeBaseCalibrator):
         if not hasattr(self, 'base2cam_matrix') or self.base2cam_matrix is None:
             raise ValueError("Initial calibration must be completed before optimization. Call calibrate() first.")
             
-        if not HAS_NLOPT:
-            if verbose:
-                print("⚠️ nlopt library not available, skipping optimization")
-            return self.rms_error, self.rms_error
-            
         if verbose:
             print(f"🔧 Starting eye-to-hand optimization...")
             print(f"   Initial RMS error: {self.rms_error:.4f} pixels")
@@ -876,142 +862,130 @@ class EyeToHandCalibrator(HandEyeBaseCalibrator):
         Returns:
             tuple: (optimized_base2cam, optimized_target2end, initial_error, final_error)
         """
-        try:
-            import nlopt
-            
-            # Define matrix configuration based on optimization mode
-            # matrices: [initial_matrices, optimize_flags, matrix_names]
-            initial_matrices = [initial_base2cam, initial_target2end]
-            matrix_names = ["base2cam", "target2end"]
-            
-            if fix_primary_matrix:
-                # Only optimize secondary matrix (target2end)
-                optimize_flags = [False, True]  # [base2cam_fixed, target2end_optimized]
-                opt_description = "target2end matrix (base2cam fixed)"
-            else:
-                # Optimize both matrices
-                optimize_flags = [True, True]   # [base2cam_optimized, target2end_optimized]
-                opt_description = "both base2cam and target2end matrices"
-            
-            # Calculate parameter count and create index mapping
-            optimize_indices = [i for i, flag in enumerate(optimize_flags) if flag]
-            param_count = len(optimize_indices) * 6  # 6 parameters per matrix (xyz + rpy)
-            initial_delta_params = np.zeros(param_count)
-            
-            if verbose:
-                print(f"   Optimizing {opt_description}")
-            
-            # Setup joint optimization
-            opt = nlopt.opt(nlopt.LN_NELDERMEAD, param_count)
-            
-            def joint_objective(delta_params, grad):
-                """Unified objective function using index-based parameter mapping."""
-                try:
-                    # Initialize result matrices with originals
-                    result_matrices = [matrix.copy() for matrix in initial_matrices]
-                    
-                    # Apply delta transformations only to matrices being optimized
-                    param_offset = 0
-                    for i, should_optimize in enumerate(optimize_flags):
-                        if should_optimize:
-                            # Extract 6 parameters for this matrix
-                            matrix_delta_params = delta_params[param_offset:param_offset + 6]
-                            delta_matrix = xyz_rpy_to_matrix(matrix_delta_params)
-                            
-                            # Apply delta transformation: optimized = original @ delta
-                            result_matrices[i] = initial_matrices[i] @ delta_matrix
-                            param_offset += 6
-                    
-                    # Calculate error using the result matrices
-                    rms_error, _ = self.calculate_reprojection_errors(result_matrices[0], result_matrices[1], verbose=False)
-                    
-                    # Validate result
-                    if not np.isfinite(rms_error):
-                        return 1e6  # Large penalty for invalid error
-                        
-                    return rms_error
-                except Exception:
-                    return 1e6  # Large penalty for any computation errors
-            
-            opt.set_min_objective(joint_objective)
-            opt.set_ftol_rel(ftol_rel)
-            
-            # Set bounds for delta parameters (small perturbations)
-            # Translation deltas: ±0.1 meters, rotation deltas: ±0.2 radians (~11 degrees)
-            single_matrix_bounds_low = np.array([-0.1, -0.1, -0.1, -0.2, -0.2, -0.2])
-            single_matrix_bounds_high = np.array([0.1, 0.1, 0.1, 0.2, 0.2, 0.2])
-            
-            # Create bounds array based on number of matrices being optimized
-            delta_bounds_low = np.tile(single_matrix_bounds_low, len(optimize_indices))
-            delta_bounds_high = np.tile(single_matrix_bounds_high, len(optimize_indices))
-            
-            opt.set_lower_bounds(delta_bounds_low)
-            opt.set_upper_bounds(delta_bounds_high)
-            
-            # Optimize delta parameters
+        # Define matrix configuration based on optimization mode
+        # matrices: [initial_matrices, optimize_flags, matrix_names]
+        initial_matrices = [initial_base2cam, initial_target2end]
+        matrix_names = ["base2cam", "target2end"]
+        
+        if fix_primary_matrix:
+            # Only optimize secondary matrix (target2end)
+            optimize_flags = [False, True]  # [base2cam_fixed, target2end_optimized]
+            opt_description = "target2end matrix (base2cam fixed)"
+        else:
+            # Optimize both matrices
+            optimize_flags = [True, True]   # [base2cam_optimized, target2end_optimized]
+            opt_description = "both base2cam and target2end matrices"
+        
+        # Calculate parameter count and create index mapping
+        optimize_indices = [i for i, flag in enumerate(optimize_flags) if flag]
+        param_count = len(optimize_indices) * 6  # 6 parameters per matrix (xyz + rpy)
+        initial_delta_params = np.zeros(param_count)
+        
+        if verbose:
+            print(f"   Optimizing {opt_description}")
+        
+        # Setup joint optimization using scipy
+        def joint_objective(delta_params):
+            """Unified objective function using index-based parameter mapping."""
             try:
-                optimized_delta_params = opt.optimize(initial_delta_params)
-                
-                # Apply optimized deltas to get final matrices using the same unified approach
+                # Initialize result matrices with originals
                 result_matrices = [matrix.copy() for matrix in initial_matrices]
+                
+                # Apply delta transformations only to matrices being optimized
                 param_offset = 0
                 for i, should_optimize in enumerate(optimize_flags):
                     if should_optimize:
-                        matrix_delta_params = optimized_delta_params[param_offset:param_offset + 6]
+                        # Extract 6 parameters for this matrix
+                        matrix_delta_params = delta_params[param_offset:param_offset + 6]
                         delta_matrix = xyz_rpy_to_matrix(matrix_delta_params)
+                        
+                        # Apply delta transformation: optimized = original @ delta
                         result_matrices[i] = initial_matrices[i] @ delta_matrix
                         param_offset += 6
                 
-                # Check if optimization actually improved the result
-                initial_error = joint_objective(initial_delta_params, None)
-                final_error = joint_objective(optimized_delta_params, None)
+                # Calculate error using the result matrices
+                rms_error, _ = self.calculate_reprojection_errors(result_matrices[0], result_matrices[1], verbose=False)
                 
-                if final_error < initial_error:
-                    # Optimization improved - return optimized matrices
-                    if verbose:
-                        opt_type = "Secondary-only" if fix_primary_matrix else "Joint"
-                        print(f"   {opt_type} delta optimization: {initial_error:.4f} -> {final_error:.4f} pixels")
-                        improvement = (initial_error - final_error) / initial_error * 100
-                        print(f"   Improvement: {improvement:.1f}%")
-                        
-                        # Print delta information for optimized matrices
-                        param_offset = 0
-                        delta_info = []
-                        for i, should_optimize in enumerate(optimize_flags):
-                            if should_optimize:
-                                matrix_delta_params = optimized_delta_params[param_offset:param_offset + 6]
-                                trans_delta = np.max(np.abs(matrix_delta_params[:3]))
-                                rot_delta = np.max(np.abs(matrix_delta_params[3:]))
-                                delta_info.append(f"{matrix_names[i]}: translation {trans_delta:.4f}m, rotation {rot_delta:.4f}rad")
-                                param_offset += 6
-                        
-                        if len(delta_info) == 1:
-                            print(f"   Max {delta_info[0]}")
-                        else:
-                            print(f"   Max deltas - {' | '.join(delta_info)}")
-                            
-                    return result_matrices[0], result_matrices[1], initial_error, final_error
-                else:
-                    # Optimization didn't improve or made it worse - return initial matrices
-                    if verbose:
-                        opt_type = "Secondary-only" if fix_primary_matrix else "Joint"
-                        print(f"   {opt_type} delta optimization did not improve: {initial_error:.4f} -> {final_error:.4f} pixels")
-                        print(f"   Keeping initial matrices")
-                    return initial_base2cam, initial_target2end, initial_error, initial_error
-                
-            except Exception as opt_e:
-                if verbose:
-                    print(f"   Delta optimization failed: {opt_e}")
-                # Calculate initial error for return value
-                initial_error = joint_objective(initial_delta_params, None)
-                return initial_base2cam, initial_target2end, initial_error, initial_error
-                
-        except ImportError:
-            if verbose:
-                print("   nlopt not available, skipping delta optimization")
-            # Calculate initial error for return value
-            def joint_objective_fallback(delta_params, grad):
-                rms_error, _ = self.calculate_reprojection_errors(initial_base2cam, initial_target2end, verbose=False)
+                # Validate result
+                if not np.isfinite(rms_error):
+                    return 1e6  # Large penalty for invalid error
+                    
                 return rms_error
-            initial_error = joint_objective_fallback(np.zeros(6), None)
+            except Exception:
+                return 1e6  # Large penalty for any computation errors
+        
+        # Set bounds for delta parameters (small perturbations)
+        # Translation deltas: ±0.1 meters, rotation deltas: ±0.2 radians (~11 degrees)
+        single_matrix_bounds_low = np.array([-0.1, -0.1, -0.1, -0.2, -0.2, -0.2])
+        single_matrix_bounds_high = np.array([0.1, 0.1, 0.1, 0.2, 0.2, 0.2])
+        
+        # Create bounds array based on number of matrices being optimized
+        delta_bounds_low = np.tile(single_matrix_bounds_low, len(optimize_indices))
+        delta_bounds_high = np.tile(single_matrix_bounds_high, len(optimize_indices))
+        
+        # Create bounds in scipy format
+        bounds = [(low, high) for low, high in zip(delta_bounds_low, delta_bounds_high)]
+        
+        # Optimize delta parameters using scipy
+        try:
+            result = minimize(
+                joint_objective,
+                initial_delta_params,
+                method='Nelder-Mead',
+                options={'ftol': ftol_rel, 'disp': False}
+            )
+            optimized_delta_params = result.x
+            
+            # Apply optimized deltas to get final matrices using the same unified approach
+            result_matrices = [matrix.copy() for matrix in initial_matrices]
+            param_offset = 0
+            for i, should_optimize in enumerate(optimize_flags):
+                if should_optimize:
+                    matrix_delta_params = optimized_delta_params[param_offset:param_offset + 6]
+                    delta_matrix = xyz_rpy_to_matrix(matrix_delta_params)
+                    result_matrices[i] = initial_matrices[i] @ delta_matrix
+                    param_offset += 6
+            
+            # Check if optimization actually improved the result
+            initial_error = joint_objective(initial_delta_params)
+            final_error = joint_objective(optimized_delta_params)
+            
+            if final_error < initial_error:
+                # Optimization improved - return optimized matrices
+                if verbose:
+                    opt_type = "Secondary-only" if fix_primary_matrix else "Joint"
+                    print(f"   {opt_type} delta optimization: {initial_error:.4f} -> {final_error:.4f} pixels")
+                    improvement = (initial_error - final_error) / initial_error * 100
+                    print(f"   Improvement: {improvement:.1f}%")
+                    
+                    # Print delta information for optimized matrices
+                    param_offset = 0
+                    delta_info = []
+                    for i, should_optimize in enumerate(optimize_flags):
+                        if should_optimize:
+                            matrix_delta_params = optimized_delta_params[param_offset:param_offset + 6]
+                            trans_delta = np.max(np.abs(matrix_delta_params[:3]))
+                            rot_delta = np.max(np.abs(matrix_delta_params[3:]))
+                            delta_info.append(f"{matrix_names[i]}: translation {trans_delta:.4f}m, rotation {rot_delta:.4f}rad")
+                            param_offset += 6
+                    
+                    if len(delta_info) == 1:
+                        print(f"   Max {delta_info[0]}")
+                    else:
+                        print(f"   Max deltas - {' | '.join(delta_info)}")
+                        
+                return result_matrices[0], result_matrices[1], initial_error, final_error
+            else:
+                # Optimization didn't improve or made it worse - return initial matrices
+                if verbose:
+                    opt_type = "Secondary-only" if fix_primary_matrix else "Joint"
+                    print(f"   {opt_type} delta optimization did not improve: {initial_error:.4f} -> {final_error:.4f} pixels")
+                    print(f"   Keeping initial matrices")
+                return initial_base2cam, initial_target2end, initial_error, initial_error
+            
+        except Exception as opt_e:
+            if verbose:
+                print(f"   Delta optimization failed: {opt_e}")
+            # Calculate initial error for return value
+            initial_error = joint_objective(initial_delta_params)
             return initial_base2cam, initial_target2end, initial_error, initial_error
