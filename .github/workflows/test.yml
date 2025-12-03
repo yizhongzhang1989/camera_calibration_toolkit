@@ -75,7 +75,7 @@ jobs:
           -w /workspace \
           python:${{ matrix.python-version }}-slim \
           bash -c "
-            apt-get update && apt-get install -y libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev && \
+            apt-get update && apt-get install -y libgl1 libglib2.0-0 libgomp1 && \
             python -m pip install --upgrade pip && \
             python -c \"
             with open('requirements.txt', 'r') as f:
