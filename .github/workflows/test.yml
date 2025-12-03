@@ -14,32 +14,92 @@ jobs:
     runs-on: ${{ matrix.os }}
     
     strategy:
+      fail-fast: false  # Continue running other jobs even if one fails
       matrix:
         include:
-          # Ubuntu testing - comprehensive Python versions
+          # Ubuntu testing - comprehensive Python versions (x86_64)
           - os: ubuntu-latest
             python-version: "3.8"
+            arch: "x64"
           - os: ubuntu-latest  
             python-version: "3.9"
+            arch: "x64"
           - os: ubuntu-latest
             python-version: "3.10"
+            arch: "x64"
           - os: ubuntu-latest
             python-version: "3.11"
-          # Windows testing - key versions only
+            arch: "x64"
+          # Windows testing - key versions only (x86_64)
           - os: windows-latest
             python-version: "3.9"
+            arch: "x64"
           - os: windows-latest
             python-version: "3.11"
+            arch: "x64"
+          # ARM64 testing on Ubuntu - key versions
+          - os: ubuntu-latest
+            python-version: "3.9"
+            arch: "aarch64"
+          - os: ubuntu-latest
+            python-version: "3.11"
+            arch: "aarch64"
+          # macOS ARM (M1/M2) testing
+          - os: macos-14  # macOS 14 runs on Apple Silicon (ARM64)
+            python-version: "3.11"
+            arch: "arm64"
     
     steps:
     - uses: actions/checkout@v4
     
+    # Set up QEMU for ARM64 emulation on x64 runners
+    - name: Set up QEMU
+      if: matrix.arch == 'aarch64'
+      uses: docker/setup-qemu-action@v3
+      with:
+        platforms: linux/arm64
+    
     - name: Set up Python ${{ matrix.python-version }}
+      if: matrix.arch != 'aarch64'
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
+        architecture: ${{ matrix.arch }}
+    
+    # For ARM64 on Ubuntu, run tests in ARM64 container
+    - name: Run ARM64 tests in container
+      if: matrix.arch == 'aarch64'
+      run: |
+        docker run --rm --platform linux/arm64 \
+          -v ${{ github.workspace }}:/workspace \
+          -w /workspace \
+          python:${{ matrix.python-version }}-slim \
+          bash -c "
+            apt-get update && apt-get install -y libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev && \
+            python -m pip install --upgrade pip && \
+            python -c \"
+            with open('requirements.txt', 'r') as f:
+                lines = f.readlines()
+            filtered_lines = [line.strip() for line in lines if not line.strip().startswith('#') and line.strip() and 'opencv-contrib-python>=' not in line]
+            with open('requirements_ci.txt', 'w') as f:
+                f.write('\n'.join(filtered_lines))
+            \" && \
+            pip install -r requirements_ci.txt && \
+            pip install opencv-contrib-python-headless>=4.8.0 && \
+            echo '=== Verification ===' && \
+            python --version && \
+            python -c 'import platform; print(f\"Architecture: {platform.machine()}\")' && \
+            python -c 'import numpy; print(f\"NumPy: {numpy.__version__}\")' && \
+            python -c 'import cv2; print(f\"OpenCV: {cv2.__version__}\")' && \
+            python -c 'import scipy; print(f\"SciPy: {scipy.__version__}\")' && \
+            echo '=== Running Tests ===' && \
+            python test_runner.py --check && \
+            python test_runner.py --tests && \
+            python test_runner.py --examples
+          "
     
     - name: Install dependencies
+      if: matrix.arch != 'aarch64'
       run: |
         python -m pip install --upgrade pip
         # Create requirements without opencv-contrib-python for CI (use headless version instead)
@@ -54,8 +114,10 @@ jobs:
         pip install opencv-contrib-python-headless>=4.8.0
     
     - name: Verify installation
+      if: matrix.arch != 'aarch64'
       run: |
         python --version
+        python -c "import platform; print(f'Architecture: {platform.machine()}')"
         python -c "import numpy; print(f'NumPy: {numpy.__version__}')"
         python -c "import cv2; print(f'OpenCV: {cv2.__version__}')" 
         python -c "import scipy; print(f'SciPy: {scipy.__version__}')"
@@ -68,17 +130,20 @@ jobs:
         python -c "import plotly; print(f'Plotly: {plotly.__version__}')"
     
     - name: Check environment
+      if: matrix.arch != 'aarch64'
       run: |
         python test_runner.py --check
     
     # Run unit tests for core functionality
     - name: Run unit tests
+      if: matrix.arch != 'aarch64'
       timeout-minutes: 15
       run: |
         python test_runner.py --tests
     
     # Validate example scripts work correctly
     - name: Run examples validation
+      if: matrix.arch != 'aarch64'
       timeout-minutes: 30
       run: |
         python test_runner.py --examples
