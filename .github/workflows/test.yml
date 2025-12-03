@@ -77,13 +77,9 @@ jobs:
           bash -c "
             apt-get update && apt-get install -y libgl1 libglib2.0-0 libgomp1 && \
             python -m pip install --upgrade pip && \
-            python -c \"
-            with open('requirements.txt', 'r') as f:
-                lines = f.readlines()
-            filtered_lines = [line.strip() for line in lines if not line.strip().startswith('#') and line.strip() and 'opencv-contrib-python>=' not in line]
-            with open('requirements_ci.txt', 'w') as f:
-                f.write('\n'.join(filtered_lines))
-            \" && \
+            python -c \"with open('requirements.txt', 'r') as f: lines = f.readlines()
+filtered_lines = [line.strip() for line in lines if not line.strip().startswith('#') and line.strip() and 'opencv-contrib-python>=' not in line]
+with open('requirements_ci.txt', 'w') as f: f.write('\n'.join(filtered_lines))\" && \
             pip install -r requirements_ci.txt && \
             pip install opencv-contrib-python-headless>=4.8.0 && \
             echo '=== Verification ===' && \
