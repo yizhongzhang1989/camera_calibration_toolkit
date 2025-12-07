@@ -188,19 +188,29 @@ chessboard = StandardChessboard(width=11, height=8, square_size=0.020)
 
 ### ChArUco Board (More Robust)
 
-<img src="sample_data\intrinsic_calib_charuco_test_images\20250818_065551594_iOS.jpg" alt="Robot Diagram" width="300">
+<img src="sample_data\intrinsic_calib_charuco_test_images\20250818_065551594_iOS.jpg" alt="ChArUco Board" width="300"> <img src="sample_data\custom_charuco_test_images\0.jpg" alt="ChArUco Board White First" width="300">
 
-ChArUco patterns combine chessboard and ArUco markers for better detection:
+ChArUco patterns combine chessboard and ArUco markers for better detection. Supports both OpenCV standard pattern (black square first) and non-standard pattern (white square first):
 
 ```python
 from core.calibration_patterns import CharucoBoard
 
-# Create 8x6 ChArUco board  
+# Create 8x6 ChArUco board (OpenCV standard: black square first)
 charuco = CharucoBoard(
     width=8, height=6,
     square_size=0.040,      # 40mm squares
     marker_size=0.020,      # 20mm ArUco markers
-    dictionary_id=1         # DICT_4X4_50
+    dictionary_id=1,        # DICT_4X4_50
+    first_square_white=False  # Default: black square in top-left
+)
+
+# Create ChArUco board with white square first (non-OpenCV standard)
+charuco_custom = CharucoBoard(
+    width=9, height=4,
+    square_size=0.1148,     # 114.8mm squares
+    marker_size=0.090,      # 90mm ArUco markers
+    dictionary_id=1,        # DICT_4X4_50
+    first_square_white=True  # White square in top-left
 )
 ```
 
