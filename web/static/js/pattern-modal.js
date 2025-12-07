@@ -911,8 +911,14 @@ class PatternSelectionModal {
         for (const [key, value] of Object.entries(parameters)) {
             const input = document.querySelector(`#pattern-config-container input[name="${key}"], #pattern-config-container select[name="${key}"]`);
             if (input) {
-                input.value = value;
-                console.log(`✓ Set ${key} = ${value}`);
+                // For checkboxes, set the checked property instead of value
+                if (input.type === 'checkbox') {
+                    input.checked = value === true || value === 'true';
+                    console.log(`✓ Set ${key} checkbox = ${input.checked}`);
+                } else {
+                    input.value = value;
+                    console.log(`✓ Set ${key} = ${value}`);
+                }
                 
                 // Trigger change event to update any dependent fields
                 input.dispatchEvent(new Event('change', { bubbles: true }));

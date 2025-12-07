@@ -343,15 +343,10 @@ class CharucoBoard(CalibrationPattern):
         # Total number of markers we expect
         max_expected_marker_id = marker_id - 1
         
-        # Calculate scaling factor to extrapolate from marker corners to square corners
-        # The marker is centered in the square and is smaller
-        # scale factor = square_size / marker_size
-        scale_factor = self.square_size / self.marker_size
-        
         # Collect corners with averaging for shared corners
         corner_accumulator = {}  # corner_id -> list of positions
         
-        # For each detected marker, calculate its surrounding chessboard corners
+        # For each detected marker, calculate the 4 chessboard corners around it
         for i, marker_id in enumerate(ids_aruco.flatten()):
             # Skip markers that are out of range (false positives)
             if marker_id not in marker_positions or marker_id > max_expected_marker_id:
@@ -360,56 +355,105 @@ class CharucoBoard(CalibrationPattern):
             row, col = marker_positions[marker_id]
             marker_corners = corners_aruco[i][0]  # 4 corners: [TL, TR, BR, BL]
             
-            # Calculate marker center
-            marker_center = np.mean(marker_corners, axis=0)
+            # The marker is centered in the square with known relative size
+            # marker_size and square_size define the geometry
+            # We need to compute a homography from marker space to square space
             
-            # Extrapolate each marker corner to the corresponding square corner
-            # Marker corners are ordered: [top-left, top-right, bottom-right, bottom-left]
-            square_corners = []
-            for mc in marker_corners:
-                # Vector from center to marker corner
-                vec = mc - marker_center
-                # Extrapolate to square corner
-                sc = marker_center + vec * scale_factor
-                square_corners.append(sc)
+            # Define the marker corners in normalized marker coordinate system (0,0) to (1,1)
+            marker_points_norm = np.array([
+                [0, 0],  # Top-left
+                [1, 0],  # Top-right
+                [1, 1],  # Bottom-right
+                [0, 1],  # Bottom-left
+            ], dtype=np.float32)
             
-            # Map square corners to chessboard corner IDs
-            # The square at (row, col) has its corners at these grid intersections:
-            # - Top-left corner at grid position (row, col)
-            # - Top-right corner at grid position (row, col+1)
-            # - Bottom-right corner at grid position (row+1, col+1)
-            # - Bottom-left corner at grid position (row+1, col)
+            # Define the square corners in normalized square coordinate system (0,0) to (1,1)
+            # The marker is centered in the square, so we need to calculate its position
+            # marker_size / square_size gives the ratio
+            ratio = self.marker_size / self.square_size
+            margin = (1.0 - ratio) / 2.0  # Space on each side of marker
             
-            # Chessboard corner ID = row_in_corners * (width-1) + col_in_corners
-            # But corners start at (0,0) which is the intersection between squares
+            # Marker occupies [margin, margin] to [margin+ratio, margin+ratio] in square space
+            # We want to map from this to full square [0, 0] to [1, 1]
+            square_points_norm = np.array([
+                [0, 0],  # Top-left corner of square
+                [1, 0],  # Top-right corner of square
+                [1, 1],  # Bottom-right corner of square
+                [0, 1],  # Bottom-left corner of square
+            ], dtype=np.float32)
             
-            # Top-left square corner -> grid intersection at (row, col)
-            if row > 0 and col > 0:
-                corner_id = (row - 1) * (self.width - 1) + (col - 1)
-                if corner_id not in corner_accumulator:
-                    corner_accumulator[corner_id] = []
-                corner_accumulator[corner_id].append(square_corners[0])
+            # The marker corners in square coordinate system
+            marker_in_square = np.array([
+                [margin, margin],                    # TL marker in square space
+                [margin + ratio, margin],            # TR marker in square space
+                [margin + ratio, margin + ratio],    # BR marker in square space
+                [margin, margin + ratio],            # BL marker in square space
+            ], dtype=np.float32)
             
-            # Top-right square corner -> grid intersection at (row, col+1)
-            if row > 0 and col < self.width - 1:
-                corner_id = (row - 1) * (self.width - 1) + col
-                if corner_id not in corner_accumulator:
-                    corner_accumulator[corner_id] = []
-                corner_accumulator[corner_id].append(square_corners[1])
+            # Compute homography from marker corners (in image) to square corners (in image)
+            # We have: marker_corners (image space) corresponds to marker_in_square (normalized square space)
+            # We want: square corners in image space
+            # So we compute H: marker_in_square -> marker_corners (image)
+            # Then use H to transform square_points_norm to get square corners in image
             
-            # Bottom-right square corner -> grid intersection at (row+1, col+1)
-            if row < self.height - 1 and col < self.width - 1:
-                corner_id = row * (self.width - 1) + col
-                if corner_id not in corner_accumulator:
-                    corner_accumulator[corner_id] = []
-                corner_accumulator[corner_id].append(square_corners[2])
+            try:
+                # Compute homography from normalized marker-in-square coords to detected marker image coords
+                H, _ = cv2.findHomography(marker_in_square, marker_corners)
+                
+                if H is not None:
+                    # Transform the square corner positions to image space
+                    square_corners_homog = cv2.perspectiveTransform(
+                        square_points_norm.reshape(1, -1, 2), H
+                    )
+                    square_corners = square_corners_homog[0]  # Shape: (4, 2)
+                else:
+                    # Fallback: use simple scaling from center
+                    marker_center = np.mean(marker_corners, axis=0)
+                    square_corners = []
+                    for mc in marker_corners:
+                        vec = mc - marker_center
+                        sc = marker_center + vec / ratio
+                        square_corners.append(sc)
+                    square_corners = np.array(square_corners)
+            except:
+                # Fallback: use simple scaling from center
+                marker_center = np.mean(marker_corners, axis=0)
+                square_corners = []
+                for mc in marker_corners:
+                    vec = mc - marker_center
+                    sc = marker_center + vec / ratio
+                    square_corners.append(sc)
+                square_corners = np.array(square_corners)
             
-            # Bottom-left square corner -> grid intersection at (row+1, col)
-            if row < self.height - 1 and col > 0:
-                corner_id = row * (self.width - 1) + (col - 1)
-                if corner_id not in corner_accumulator:
-                    corner_accumulator[corner_id] = []
-                corner_accumulator[corner_id].append(square_corners[3])
+            # Map the 4 corners of each detected marker to their corresponding chessboard corner IDs
+            # Each marker is located in a square at position (row, col)
+            # ChArUco boards have interior corners only (like standard chessboards)
+            # Total corners = (width-1) * (height-1)
+            # 
+            # Corner ID mapping:
+            # - A square at (row, col) has 4 corners at grid intersections
+            # - These intersections are at positions (row, col), (row, col+1), (row+1, col+1), (row+1, col)
+            # - Only interior intersections are valid ChArUco corners
+            # - Interior means: 0 < intersection_row < height and 0 < intersection_col < width
+            # - Corner ID for intersection (r, c) = (r-1) * (width-1) + (c-1)
+            
+            corner_infos = [
+                # (square_corner_index, intersection_row, intersection_col)
+                (0, row, col),           # Top-left corner of square
+                (1, row, col + 1),       # Top-right corner of square
+                (2, row + 1, col + 1),   # Bottom-right corner of square
+                (3, row + 1, col),       # Bottom-left corner of square
+            ]
+            
+            for sc_idx, int_row, int_col in corner_infos:
+                # Check if this intersection is an interior corner (not on board boundary)
+                if 0 < int_row < self.height and 0 < int_col < self.width:
+                    # Calculate the ChArUco corner ID (0-indexed from interior corners)
+                    corner_id = (int_row - 1) * (self.width - 1) + (int_col - 1)
+                    
+                    if corner_id not in corner_accumulator:
+                        corner_accumulator[corner_id] = []
+                    corner_accumulator[corner_id].append(square_corners[sc_idx])
         
         if len(corner_accumulator) == 0:
             return False, None, None
@@ -732,5 +776,6 @@ class CharucoBoard(CalibrationPattern):
             square_size=params.get('square_size', 0.025),
             marker_size=params.get('marker_size', 0.015),
             dictionary_id=params.get('dictionary_id', cv2.aruco.DICT_6X6_250),
+            is_planar=json_data.get('is_planar', True),
             first_square_white=params.get('first_square_white', False)
         )

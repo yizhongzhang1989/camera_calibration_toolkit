@@ -1,0 +1,14 @@
+{
+  "pattern_id": "charuco_board",
+  "name": "ChArUco Board",
+  "description": "Chessboard pattern with ArUco markers for robust detection",
+  "is_planar": true,
+  "parameters": {
+    "width": 9,
+    "height": 4,
+    "square_size": 0.1148,
+    "marker_size": 0.09,
+    "dictionary_id": 1,
+    "first_square_white": true
+  }
+}
