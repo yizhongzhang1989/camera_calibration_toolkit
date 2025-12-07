@@ -434,6 +434,201 @@ class TestCharucoWhiteFirst(unittest.TestCase):
                 self.assertIsNotNone(corners)
                 self.assertGreater(len(corners), 0)
 
+    def test_partial_board_left_visible_right_cropped(self):
+        """Test corner detection with left border visible but right side cropped."""
+        # Create a 9x4 board as specified in the original issue
+        board = self.manager.create_pattern(
+            'charuco_board',
+            width=9,
+            height=4,
+            square_size=0.1148,
+            marker_size=0.09,
+            dictionary_id=cv2.aruco.DICT_4X4_100,
+            first_square_white=True
+        )
+        
+        # Generate full board image
+        full_image = board.generate_pattern_image(pixel_per_square=100, border_pixels=50)
+        h, w = full_image.shape[:2]
+        
+        # Crop to keep left 60% (left border visible, right cropped)
+        cropped_image = full_image[:, :int(w*0.6)]
+        
+        # Detect corners
+        success, corners, ids = board.detect_corners(cropped_image)
+        
+        # Should successfully detect corners
+        self.assertTrue(success, "Should detect corners on partially visible board")
+        self.assertIsNotNone(corners)
+        self.assertGreater(len(corners), 0, "Should detect at least some corners")
+        
+        # Critical test: corners should NOT be shifted to image boundaries
+        corner_positions = corners.reshape(-1, 2)
+        crop_h, crop_w = cropped_image.shape[:2]
+        
+        # Check corners near left boundary (should be properly positioned, not at x=0)
+        boundary_threshold = 30
+        near_left = np.sum(corner_positions[:, 0] < boundary_threshold)
+        
+        # With proper homography-based detection, corners should not cluster at boundaries
+        # Allow at most 1-2 corners near boundary (these would be actual board edge corners)
+        self.assertLessEqual(near_left, 2, 
+                           f"Too many corners ({near_left}) near left boundary - corners may be shifting to border")
+        
+        # Verify corner IDs are consistent (should be sequential interior corners)
+        detected_ids = sorted(ids.flatten().tolist())
+        self.assertGreater(len(detected_ids), 5, "Should detect multiple corners on partial board")
+
+    def test_partial_board_various_crops(self):
+        """Test corner detection with various crop scenarios."""
+        board = self.manager.create_pattern(
+            'charuco_board',
+            width=9,
+            height=6,
+            square_size=self.test_square_size,
+            marker_size=self.test_marker_size,
+            dictionary_id=self.test_dict,
+            first_square_white=True
+        )
+        
+        # Generate full board
+        full_image = board.generate_pattern_image(pixel_per_square=80, border_pixels=50)
+        h, w = full_image.shape[:2]
+        
+        crop_scenarios = [
+            ("left_and_top", full_image[int(h*0.3):, int(w*0.3):], "Left & top cropped"),
+            ("right_and_bottom", full_image[:int(h*0.7), :int(w*0.7)], "Right & bottom cropped"),
+            ("center_crop", full_image[int(h*0.2):int(h*0.8), int(w*0.2):int(w*0.8)], "Center crop"),
+        ]
+        
+        for scenario_name, cropped, description in crop_scenarios:
+            with self.subTest(scenario=scenario_name):
+                # Detect corners
+                success, corners, ids = board.detect_corners(cropped)
+                
+                # Should detect corners successfully
+                self.assertTrue(success, f"Detection should succeed for {description}")
+                self.assertIsNotNone(corners)
+                self.assertGreater(len(corners), 0, f"Should detect corners for {description}")
+                
+                # Verify no corners are shifted to boundaries
+                corner_positions = corners.reshape(-1, 2)
+                crop_h, crop_w = cropped.shape[:2]
+                boundary_threshold = 10
+                
+                near_boundary = np.sum(
+                    (corner_positions[:, 0] < boundary_threshold) |
+                    (corner_positions[:, 0] > crop_w - boundary_threshold) |
+                    (corner_positions[:, 1] < boundary_threshold) |
+                    (corner_positions[:, 1] > crop_h - boundary_threshold)
+                )
+                
+                # Should have very few or no corners at boundaries
+                corner_ratio = near_boundary / len(corners)
+                self.assertLess(corner_ratio, 0.2, 
+                              f"Too many corners ({near_boundary}/{len(corners)}) near boundaries for {description}")
+
+    def test_partial_board_corner_accuracy(self):
+        """Test that corners on partially visible boards are accurately positioned."""
+        board = self.manager.create_pattern(
+            'charuco_board',
+            width=7,
+            height=5,
+            square_size=self.test_square_size,
+            marker_size=self.test_marker_size,
+            dictionary_id=self.test_dict,
+            first_square_white=True
+        )
+        
+        # Generate full board with known parameters
+        pixel_per_square = 100
+        border_pixels = 50
+        full_image = board.generate_pattern_image(
+            pixel_per_square=pixel_per_square,
+            border_pixels=border_pixels
+        )
+        h, w = full_image.shape[:2]
+        
+        # Crop to partial view
+        partial_image = full_image[int(h*0.2):int(h*0.8), int(w*0.15):int(w*0.85)]
+        
+        # Detect corners on both full and partial
+        success_full, corners_full, ids_full = board.detect_corners(full_image)
+        success_partial, corners_partial, ids_partial = board.detect_corners(partial_image)
+        
+        self.assertTrue(success_full, "Full board detection should succeed")
+        self.assertTrue(success_partial, "Partial board detection should succeed")
+        
+        # Find corners that appear in both detections
+        common_ids = set(ids_full.flatten()) & set(ids_partial.flatten())
+        self.assertGreater(len(common_ids), 3, "Should have overlapping corners in both detections")
+        
+        # For common corners, positions should be relatively consistent
+        # (accounting for the crop offset)
+        crop_offset_x = int(w * 0.15)
+        crop_offset_y = int(h * 0.2)
+        
+        for corner_id in list(common_ids)[:5]:  # Check first 5 common corners
+            # Find positions in full image
+            idx_full = np.where(ids_full.flatten() == corner_id)[0][0]
+            pos_full = corners_full[idx_full][0]
+            
+            # Find positions in partial image
+            idx_partial = np.where(ids_partial.flatten() == corner_id)[0][0]
+            pos_partial = corners_partial[idx_partial][0]
+            
+            # Adjust partial position for crop offset
+            pos_partial_adjusted = pos_partial + np.array([crop_offset_x, crop_offset_y])
+            
+            # Calculate error
+            error = np.linalg.norm(pos_full - pos_partial_adjusted)
+            
+            # Error should be small (within a few pixels)
+            self.assertLess(error, 3.0, 
+                          f"Corner {corner_id} position inconsistent between full and partial: {error:.2f} pixels")
+
+    def test_partial_board_minimal_markers(self):
+        """Test corner detection when only a few markers are visible."""
+        board = self.manager.create_pattern(
+            'charuco_board',
+            width=8,
+            height=6,
+            square_size=self.test_square_size,
+            marker_size=self.test_marker_size,
+            dictionary_id=self.test_dict,
+            first_square_white=True
+        )
+        
+        # Generate full board
+        full_image = board.generate_pattern_image(pixel_per_square=100, border_pixels=50)
+        h, w = full_image.shape[:2]
+        
+        # Aggressive crop to show only corner region (minimal markers)
+        corner_crop = full_image[:int(h*0.4), :int(w*0.4)]
+        
+        # Detect corners
+        success, corners, ids = board.detect_corners(corner_crop)
+        
+        # Even with few markers, detection should work
+        if success:
+            self.assertIsNotNone(corners)
+            self.assertGreater(len(corners), 0, "Should detect some corners even with minimal markers")
+            
+            # Verify corners are properly positioned (not at boundaries)
+            corner_positions = corners.reshape(-1, 2)
+            crop_h, crop_w = corner_crop.shape[:2]
+            
+            # Calculate average distance from boundaries
+            distances = []
+            for pos in corner_positions:
+                dist = min(pos[0], crop_w - pos[0], pos[1], crop_h - pos[1])
+                distances.append(dist)
+            
+            avg_boundary_dist = np.mean(distances)
+            # Average distance should be reasonable (corners not clustered at edges)
+            self.assertGreater(avg_boundary_dist, 5.0, 
+                             "Corners should not be clustered at image boundaries")
+
 
 if __name__ == '__main__':
     unittest.main()

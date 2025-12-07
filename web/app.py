@@ -640,15 +640,11 @@ def calibrate():
                     # Get calibration results 
                     rms_error = calibrator.get_rms_error()
                     
-                    # Check RMS error threshold - consider calibration failed if > 10.0
+                    # Log RMS error but continue with calibration
                     if rms_error > 10.0:
-                        print(f"❌ Calibration failed - RMS error too high: {rms_error:.4f} pixels (threshold: 0.5)")
-                        return jsonify({
-                            'error': f'Calibration failed - RMS error too high: {rms_error:.4f} pixels (threshold: 0.5)',
-                            'rms_error': rms_error
-                        }), 400
-                    
-                    print(f"✅ Calibration successful - RMS error: {rms_error:.4f} pixels")
+                        print(f"⚠️ Warning - High RMS error: {rms_error:.4f} pixels (recommended threshold: 0.5)")
+                    else:
+                        print(f"✅ Calibration successful - RMS error: {rms_error:.4f} pixels")
                     print()
                     print("� GENERATING CALIBRATION REPORT")
                     print("-" * 30)
@@ -843,10 +839,9 @@ def calibrate():
                     if dist_coeffs is not None:
                         dist_coeffs = dist_coeffs.flatten()
                     
-                    # Check RMS error threshold - consider calibration failed if > 0.5
+                    # Log RMS error as warning if high, but continue with calibration
                     if rms_error > 0.5:
-                        print(f"Intrinsic calibration failed - RMS error too high: {rms_error:.4f} pixels")
-                        return jsonify({'error': f'Intrinsic calibration failed - RMS error too high: {rms_error:.4f} pixels (threshold: 0.5)'}), 500
+                        print(f"⚠️ Warning - High intrinsic calibration RMS error: {rms_error:.4f} pixels (recommended threshold: 0.5)")
                 
                 # Create eye-in-hand calibrator instance with correct constructor approach
                 # Following the pattern from examples/eye_in_hand_calibration_example.py

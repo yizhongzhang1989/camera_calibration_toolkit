@@ -182,6 +182,65 @@ def test_gridboard_calibration():
         raise ValueError("GridBoard calibration failed")
 
 
+def test_custom_charuco_white_first_calibration():
+    print("=" * 50)
+    print("Test calibrate with custom ChArUco board (white first square), given image paths.")
+    print("=" * 50)
+    
+    # Load sample images with custom ChArUco board (white first square)
+    sample_dir = os.path.join("sample_data", "custom_charuco_test_images")
+    image_paths = glob.glob(os.path.join(sample_dir, '*.jpg'))
+    
+    # Load pattern configuration from JSON file
+    config_path = os.path.join(sample_dir, "chessboard_config.json")
+    with open(config_path, 'r') as f:
+        config_data = json.load(f)
+    pattern = load_pattern_from_json(config_data)
+    
+    print(f"Pattern configuration:")
+    print(f"  - Pattern ID: {pattern.pattern_id}")
+    print(f"  - Dimensions: {pattern.width}x{pattern.height}")
+    print(f"  - Square size: {pattern.square_size}m")
+    print(f"  - Marker size: {pattern.marker_size}m")
+    print(f"  - First square white: {pattern.first_square_white}")
+    print(f"  - Found {len(image_paths)} images")
+
+    # Create calibrator from image paths and calibration pattern
+    calibrator = IntrinsicCalibrator(
+        image_paths=image_paths,           # Member parameter set in constructor
+        calibration_pattern=pattern       # Member parameter set in constructor
+    )
+
+    # Pure OpenCV-style calibration with function parameters only
+    result = calibrator.calibrate(
+        cameraMatrix=None,           # Function parameter
+        distCoeffs=None,            # Function parameter  
+        flags=0,                    # Function parameter
+        criteria=None,              # Function parameter
+        verbose=True
+    )
+    
+    # Allow higher RMS threshold for custom boards with real-world images
+    if result['rms_error'] < 2.0:
+        print(f"\n✅ Calibration successful!")
+        print("camera_matrix:")
+        print(result['camera_matrix'])
+        print("distortion_coefficients")
+        print(result['distortion_coefficients'])
+        print("rms_error")
+        print(result['rms_error'])
+        
+        print("\n📄 Generating calibration report...")
+        report_result = calibrator.generate_calibration_report("data/results/intrinsic_calibration_custom_charuco")
+        if report_result:
+            print(f"   📄 HTML Report: {report_result['html_report']}")
+            print(f"   📊 JSON Data: {report_result['json_data']}")
+    else:
+        print(f"\n⚠️  Calibration completed but RMS error is high: {result['rms_error']:.4f}")
+        print("This may indicate issues with image quality or pattern detection.")
+        raise ValueError(f"Custom ChArUco calibration RMS error too high: {result['rms_error']:.4f}")
+
+
 def main():
     """Main function with proper error handling."""
     print("Intrinsic Camera Calibration Example")
@@ -190,7 +249,7 @@ def main():
     print()
     
     success_count = 0
-    total_tests = 3
+    total_tests = 4
     
     try:
         test_chessboard_calibration()
@@ -212,6 +271,13 @@ def main():
         print("✅ Grid Board calibration completed successfully\n")
     except Exception as e:
         print(f"❌ Grid Board calibration failed: {e}\n")
+    
+    try:
+        test_custom_charuco_white_first_calibration()
+        success_count += 1
+        print("✅ Custom ChArUco (white first) calibration completed successfully\n")
+    except Exception as e:
+        print(f"❌ Custom ChArUco calibration failed: {e}\n")
     
     print(f"📊 Results: {success_count}/{total_tests} calibrations successful")
     
