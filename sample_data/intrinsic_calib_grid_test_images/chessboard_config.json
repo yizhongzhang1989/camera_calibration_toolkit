@@ -4,10 +4,10 @@
   "description": "Grid of ArUco markers for robust camera calibration detection",
   "is_planar": true,
   "parameters": {
-    "markers_x": 6,
-    "markers_y": 4,
+    "width": 6,
+    "height": 4,
     "marker_size": 0.030863157,
-    "marker_separation": 0.007715789,
+    "marker_spacing": 0.007715789,
     "dictionary_id": 10
   }
 }

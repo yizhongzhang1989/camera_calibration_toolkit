@@ -186,10 +186,10 @@ def generate_patterns():
                 "description": "ArUco marker grid board pattern",
                 "is_planar": True,
                 "parameters": {
-                    "markers_x": 1,
-                    "markers_y": 1,
+                    "width": 1,
+                    "height": 1,
                     "marker_size": 0.04,
-                    "marker_separation": 0.01,
+                    "marker_spacing": 0.01,
                     "dictionary_id": cv2.aruco.DICT_4X4_50
                 }
             }
@@ -204,10 +204,10 @@ def generate_patterns():
                 "description": "ArUco marker grid board pattern",
                 "is_planar": True,
                 "parameters": {
-                    "markers_x": 5,
-                    "markers_y": 4,
+                    "width": 5,
+                    "height": 4,
                     "marker_size": 0.04,
-                    "marker_separation": 0.01,
+                    "marker_spacing": 0.01,
                     "dictionary_id": cv2.aruco.DICT_4X4_50
                 }
             }
@@ -279,9 +279,9 @@ def generate_patterns():
                 f.write(f"Type: {pattern_id.replace('_', ' ').title()}\n")
                 
                 if pattern_id == 'grid_board':
-                    f.write(f"Grid Size: {pattern_params['markers_x']}×{pattern_params['markers_y']} markers\n")
+                    f.write(f"Grid Size: {pattern_params['width']}×{pattern_params['height']} markers\n")
                     f.write(f"Marker Size: {pattern_params['marker_size']*1000:.1f}mm\n")
-                    f.write(f"Marker Separation: {pattern_params['marker_separation']*1000:.1f}mm\n")
+                    f.write(f"Marker Spacing: {pattern_params['marker_spacing']*1000:.1f}mm\n")
                     dict_name = [name for name, val in vars(cv2.aruco).items() 
                                if name.startswith('DICT_') and val == pattern_params['dictionary_id']][0]
                     f.write(f"Dictionary: {dict_name}\n")

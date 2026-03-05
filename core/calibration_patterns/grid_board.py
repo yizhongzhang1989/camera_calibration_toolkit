@@ -26,11 +26,11 @@ class GridBoard(CalibrationPattern):
                 'parameter_relationships': [
                     {
                         'param1': 'marker_size',
-                        'param2': 'marker_separation', 
+                        'param2': 'marker_spacing', 
                         'constraint': 'greater_than',
                         'fix_values': {
                             'marker_size': 0.04,        # 40mm
-                            'marker_separation': 0.01   # 10mm
+                            'marker_spacing': 0.01   # 10mm
                         }
                     }
                 ],
@@ -40,12 +40,12 @@ class GridBoard(CalibrationPattern):
                         'max': 20,
                         'default_value': 10
                     },
-                    'markers_x': {
+                    'width': {
                         'min': 1,
                         'max': 20,
                         'default_value': 5
                     },
-                    'markers_y': {
+                    'height': {
                         'min': 1, 
                         'max': 20,
                         'default_value': 7
@@ -54,23 +54,23 @@ class GridBoard(CalibrationPattern):
                 'default_corrections': {
                     'dictionary_id': 10,           # DICT_6X6_250
                     'marker_size': 0.04,
-                    'marker_separation': 0.01
+                    'marker_spacing': 0.01
                 }
             }
         }
     }
     
-    def __init__(self, markers_x: int, markers_y: int, marker_size: float, 
-                 marker_separation: float, dictionary_id: int = cv2.aruco.DICT_6X6_250, 
+    def __init__(self, width: int, height: int, marker_size: float, 
+                 marker_spacing: float, dictionary_id: int = cv2.aruco.DICT_6X6_250, 
                  is_planar: bool = True):
         """
         Initialize ArUco Grid Board.
         
         Args:
-            markers_x: Number of markers along X-axis
-            markers_y: Number of markers along Y-axis  
+            width: Number of markers along X-axis
+            height: Number of markers along Y-axis  
             marker_size: Physical size of each marker in meters
-            marker_separation: Physical separation between markers in meters
+            marker_spacing: Physical spacing between markers in meters
             dictionary_id: ArUco dictionary to use
             is_planar: Whether the pattern lies in a plane (True) or has 3D structure (False)
         """
@@ -82,14 +82,14 @@ class GridBoard(CalibrationPattern):
         )
         
         # Use base class validation - allow 1x1 grids
-        self.validate_dimensions(markers_x, markers_y, min_size=1)
+        self.validate_dimensions(width, height, min_size=1)
         self.validate_physical_size(marker_size, "marker_size")
-        self.validate_physical_size(marker_separation, "marker_separation")
+        self.validate_physical_size(marker_spacing, "marker_spacing")
         
-        self.markers_x = markers_x
-        self.markers_y = markers_y
+        self.width = width
+        self.height = height
         self.marker_size = marker_size
-        self.marker_separation = marker_separation
+        self.marker_spacing = marker_spacing
         self.dictionary_id = dictionary_id
         
         # Create ArUco dictionary and Grid board
@@ -99,13 +99,13 @@ class GridBoard(CalibrationPattern):
         try:
             # OpenCV 4.7+ method
             self.grid_board = cv2.aruco.GridBoard(
-                (markers_x, markers_y), marker_size, marker_separation, self.aruco_dict
+                (width, height), marker_size, marker_spacing, self.aruco_dict
             )
         except (AttributeError, TypeError):
             try:
                 # Older OpenCV method
                 self.grid_board = cv2.aruco.GridBoard_create(
-                    markers_x, markers_y, marker_size, marker_separation, self.aruco_dict
+                    width, height, marker_size, marker_spacing, self.aruco_dict
                 )
             except AttributeError:
                 raise ValueError("ArUco Grid boards are not supported in this OpenCV version")
@@ -139,7 +139,7 @@ class GridBoard(CalibrationPattern):
             "icon": "🎲",
             "parameters": [
                 {
-                    "name": "markers_x",
+                    "name": "width",
                     "label": "Markers (X-axis)",
                     "type": "integer", 
                     "default": 5,
@@ -148,7 +148,7 @@ class GridBoard(CalibrationPattern):
                     "description": "Number of markers along X-axis"
                 },
                 {
-                    "name": "markers_y",
+                    "name": "height",
                     "label": "Markers (Y-axis)", 
                     "type": "integer",
                     "default": 7,
@@ -167,14 +167,14 @@ class GridBoard(CalibrationPattern):
                     "description": "Physical size of each ArUco marker in meters"
                 },
                 {
-                    "name": "marker_separation",
-                    "label": "Marker Separation (meters)",
+                    "name": "marker_spacing",
+                    "label": "Marker Spacing (meters)",
                     "type": "float",
                     "default": 0.010,
                     "min": 0.001,
                     "max": 1.0,
                     "step": 0.001,
-                    "description": "Physical separation between markers in meters"
+                    "description": "Physical spacing between markers in meters"
                 },
                 {
                     "name": "dictionary_id",
@@ -310,16 +310,16 @@ class GridBoard(CalibrationPattern):
     
     def _generate_manual_object_points(self) -> np.ndarray:
         """Generate object points manually for grid board."""
-        total_markers = self.markers_x * self.markers_y
+        total_markers = self.width * self.height
         # Each marker has 4 corners
         objp = np.zeros((total_markers * 4, 3), np.float32)
         
         marker_idx = 0
-        for j in range(self.markers_y):
-            for i in range(self.markers_x):
+        for j in range(self.height):
+            for i in range(self.width):
                 # Calculate marker center position
-                center_x = i * (self.marker_size + self.marker_separation)
-                center_y = j * (self.marker_size + self.marker_separation)
+                center_x = i * (self.marker_size + self.marker_spacing)
+                center_y = j * (self.marker_size + self.marker_spacing)
                 
                 # Calculate 4 corners of the marker (clockwise from top-left)
                 half_size = self.marker_size / 2
@@ -345,12 +345,12 @@ class GridBoard(CalibrationPattern):
         
         for idx, marker_id in enumerate(point_ids.flatten()):
             # Calculate marker position from ID
-            i = marker_id % self.markers_x
-            j = marker_id // self.markers_x
+            i = marker_id % self.width
+            j = marker_id // self.width
             
             # Calculate marker center position
-            center_x = i * (self.marker_size + self.marker_separation)
-            center_y = j * (self.marker_size + self.marker_separation)
+            center_x = i * (self.marker_size + self.marker_spacing)
+            center_y = j * (self.marker_size + self.marker_spacing)
             
             # Calculate 4 corners of the marker
             half_size = self.marker_size / 2
@@ -369,7 +369,7 @@ class GridBoard(CalibrationPattern):
     
     def get_pattern_size(self) -> Tuple[int, int]:
         """Get pattern size (number of markers)."""
-        return (self.markers_x, self.markers_y)
+        return (self.width, self.height)
     
     def draw_corners(self, image: np.ndarray, corners: np.ndarray, 
                     point_ids: Optional[np.ndarray] = None) -> np.ndarray:
@@ -473,11 +473,11 @@ class GridBoard(CalibrationPattern):
             # Direct approach: use pixel_per_square directly as marker size in pixels
             marker_size_px = pixel_per_square
             # Scale separation proportionally
-            marker_separation_px = int(self.marker_separation * pixels_per_meter)
+            marker_spacing_px = int(self.marker_spacing * pixels_per_meter)
         else:
             # Traditional approach using pixels_per_meter
             marker_size_px = int(self.marker_size * pixels_per_meter)
-            marker_separation_px = int(self.marker_separation * pixels_per_meter)
+            marker_spacing_px = int(self.marker_spacing * pixels_per_meter)
         
         # Ensure minimum marker size for OpenCV ArUco generation (at least 20 pixels)
         min_marker_size = 20
@@ -485,15 +485,15 @@ class GridBoard(CalibrationPattern):
             print(f"Warning: Marker size {marker_size_px}px too small, using {min_marker_size}px")
             marker_size_px = min_marker_size
         
-        # Ensure minimum separation (at least 2 pixels)
-        if marker_separation_px < 2:
-            marker_separation_px = 2
+        # Ensure minimum spacing (at least 2 pixels)
+        if marker_spacing_px < 2:
+            marker_spacing_px = 2
         
         # Calculate total pattern dimensions
-        pattern_width_px = (self.markers_x * marker_size_px + 
-                           (self.markers_x - 1) * marker_separation_px)
-        pattern_height_px = (self.markers_y * marker_size_px + 
-                            (self.markers_y - 1) * marker_separation_px)
+        pattern_width_px = (self.width * marker_size_px + 
+                           (self.width - 1) * marker_spacing_px)
+        pattern_height_px = (self.height * marker_size_px + 
+                            (self.height - 1) * marker_spacing_px)
         
         # Calculate total image dimensions with borders
         img_width = pattern_width_px + 2 * border_pixels
@@ -542,13 +542,13 @@ class GridBoard(CalibrationPattern):
         """
         # Calculate marker size and separation in pixels
         marker_size_px = int(self.marker_size * pixels_per_meter)
-        marker_separation_px = int(self.marker_separation * pixels_per_meter)
+        marker_spacing_px = int(self.marker_spacing * pixels_per_meter)
         
         # Calculate total pattern dimensions
-        pattern_width_px = (self.markers_x * marker_size_px + 
-                           (self.markers_x - 1) * marker_separation_px)
-        pattern_height_px = (self.markers_y * marker_size_px + 
-                            (self.markers_y - 1) * marker_separation_px)
+        pattern_width_px = (self.width * marker_size_px + 
+                           (self.width - 1) * marker_spacing_px)
+        pattern_height_px = (self.height * marker_size_px + 
+                            (self.height - 1) * marker_spacing_px)
         
         # Calculate total image dimensions with borders
         img_width = pattern_width_px + 2 * border_pixels
@@ -559,11 +559,11 @@ class GridBoard(CalibrationPattern):
         
         # Generate individual markers and place them
         marker_id = 0
-        for j in range(self.markers_y):
-            for i in range(self.markers_x):
+        for j in range(self.height):
+            for i in range(self.width):
                 # Calculate marker position
-                x = border_pixels + i * (marker_size_px + marker_separation_px)
-                y = border_pixels + j * (marker_size_px + marker_separation_px)
+                x = border_pixels + i * (marker_size_px + marker_spacing_px)
+                y = border_pixels + j * (marker_size_px + marker_spacing_px)
                 
                 # Generate marker image
                 try:
@@ -591,12 +591,12 @@ class GridBoard(CalibrationPattern):
     def _get_parameters_dict(self) -> Dict[str, Any]:
         """Get pattern parameters for JSON serialization."""
         return {
-            'markers_x': self.markers_x,
-            'markers_y': self.markers_y,
+            'width': self.width,
+            'height': self.height,
             'marker_size': self.marker_size,
-            'marker_separation': self.marker_separation,
+            'marker_spacing': self.marker_spacing,
             'dictionary_id': self.dictionary_id,
-            'total_markers': self.markers_x * self.markers_y
+            'total_markers': self.width * self.height
         }
     
     @classmethod
@@ -604,9 +604,9 @@ class GridBoard(CalibrationPattern):
         """Create GridBoard from JSON data."""
         params = json_data.get('parameters', {})
         return cls(
-            markers_x=params.get('markers_x', 5),
-            markers_y=params.get('markers_y', 7),
+            width=params.get('width', 5),
+            height=params.get('height', 7),
             marker_size=params.get('marker_size', 0.04),
-            marker_separation=params.get('marker_separation', 0.01),
+            marker_spacing=params.get('marker_spacing', 0.01),
             dictionary_id=params.get('dictionary_id', cv2.aruco.DICT_6X6_250)
         )
