@@ -276,6 +276,15 @@ class GridBoard(CalibrationPattern):
                     all_corners.append(corner)
             
             image_points = np.array(all_corners, dtype=np.float32)
+            
+            # When symm corners are enabled, each marker corner has a chessboard-like
+            # saddle point pattern. Use cornerSubPix to refine to sub-pixel accuracy.
+            if self.enable_symm_corners:
+                criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+                image_points = cv2.cornerSubPix(
+                    gray, image_points, winSize=(5, 5), zeroZone=(-1, -1), criteria=criteria
+                )
+            
             marker_ids = sorted_ids
             
             return True, image_points, marker_ids
