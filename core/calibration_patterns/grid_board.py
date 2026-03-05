@@ -62,7 +62,8 @@ class GridBoard(CalibrationPattern):
     
     def __init__(self, width: int, height: int, marker_size: float, 
                  marker_spacing: float, dictionary_id: int = cv2.aruco.DICT_6X6_250, 
-                 border_bits: int = 1, is_planar: bool = True):
+                 border_bits: int = 1, enable_symm_corners: bool = False,
+                 is_planar: bool = True):
         """
         Initialize ArUco Grid Board.
         
@@ -73,6 +74,8 @@ class GridBoard(CalibrationPattern):
             marker_spacing: Physical spacing between markers in meters
             dictionary_id: ArUco dictionary to use
             border_bits: Number of bits for the marker border (default: 1)
+            enable_symm_corners: If True, fill corner gap cells with black to create
+                symmetric chessboard corners at marker junctions (AprilTag/Kalibr style)
             is_planar: Whether the pattern lies in a plane (True) or has 3D structure (False)
         """
         super().__init__(
@@ -93,6 +96,7 @@ class GridBoard(CalibrationPattern):
         self.marker_spacing = marker_spacing
         self.dictionary_id = dictionary_id
         self.border_bits = border_bits
+        self.enable_symm_corners = enable_symm_corners
         
         # Create ArUco dictionary and Grid board
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(dictionary_id)
@@ -189,6 +193,13 @@ class GridBoard(CalibrationPattern):
                     "min": 1,
                     "max": 5,
                     "description": "Number of bits for the marker border"
+                },
+                {
+                    "name": "enable_symm_corners",
+                    "label": "Enable Symmetric Corners",
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Fill corner gap cells with black to create symmetric chessboard corners (AprilTag/Kalibr style)"
                 },
                 {
                     "name": "dictionary_id",
@@ -547,6 +558,9 @@ class GridBoard(CalibrationPattern):
         if len(board_image.shape) == 2:
             board_image = cv2.cvtColor(board_image, cv2.COLOR_GRAY2BGR)
         
+        if self.enable_symm_corners:
+            self._apply_symm_corners(board_image, border_pixels, marker_size_px, marker_spacing_px)
+        
         return board_image
     
     def _generate_manual_grid_pattern(self, pixels_per_meter: int = 1000, 
@@ -600,7 +614,34 @@ class GridBoard(CalibrationPattern):
                 
                 marker_id += 1
         
+        if self.enable_symm_corners:
+            self._apply_symm_corners(image, border_pixels, marker_size_px, marker_spacing_px)
+        
         return image
+    
+    def _apply_symm_corners(self, image: np.ndarray, border_pixels: int,
+                            marker_size_px: int, marker_spacing_px: int) -> None:
+        """Fill corner gap cells with black to create symmetric chessboard corners.
+        
+        At each marker corner, a marker_spacing x marker_spacing square is placed
+        diagonally opposite to the marker. This covers all (W+1)x(H+1) vertex
+        positions including boundary corners that extend into the border area,
+        creating symmetric chessboard corners (AprilTag/Kalibr style) at every
+        marker corner for reliable subpixel refinement.
+        """
+        step = marker_size_px + marker_spacing_px
+        img_h, img_w = image.shape[:2]
+        for gj in range(self.height + 1):
+            for gi in range(self.width + 1):
+                gx = border_pixels + gi * step - marker_spacing_px
+                gy = border_pixels + gj * step - marker_spacing_px
+                # Clip to image bounds for boundary squares
+                x0 = max(0, gx)
+                y0 = max(0, gy)
+                x1 = min(img_w, gx + marker_spacing_px)
+                y1 = min(img_h, gy + marker_spacing_px)
+                if x0 < x1 and y0 < y1:
+                    image[y0:y1, x0:x1] = 0
     
     def _get_parameters_dict(self) -> Dict[str, Any]:
         """Get pattern parameters for JSON serialization."""
@@ -611,6 +652,7 @@ class GridBoard(CalibrationPattern):
             'marker_spacing': self.marker_spacing,
             'dictionary_id': self.dictionary_id,
             'border_bits': self.border_bits,
+            'enable_symm_corners': self.enable_symm_corners,
             'total_markers': self.width * self.height
         }
     
@@ -624,5 +666,6 @@ class GridBoard(CalibrationPattern):
             marker_size=params.get('marker_size', 0.04),
             marker_spacing=params.get('marker_spacing', 0.01),
             dictionary_id=params.get('dictionary_id', cv2.aruco.DICT_6X6_250),
-            border_bits=params.get('border_bits', 1)
+            border_bits=params.get('border_bits', 1),
+            enable_symm_corners=params.get('enable_symm_corners', False)
         )

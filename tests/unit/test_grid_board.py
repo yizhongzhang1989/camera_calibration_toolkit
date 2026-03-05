@@ -34,6 +34,7 @@ class TestGridBoardCreation(unittest.TestCase):
         self.assertEqual(gb.marker_spacing, 0.01)
         self.assertEqual(gb.dictionary_id, cv2.aruco.DICT_6X6_250)
         self.assertEqual(gb.border_bits, 1)
+        self.assertFalse(gb.enable_symm_corners)
         self.assertTrue(gb.is_planar)
         self.assertEqual(gb.pattern_id, "grid_board")
 
@@ -104,6 +105,7 @@ class TestGridBoardSchema(unittest.TestCase):
         self.assertIn("marker_size", param_names)
         self.assertIn("marker_spacing", param_names)
         self.assertIn("border_bits", param_names)
+        self.assertIn("enable_symm_corners", param_names)
         self.assertIn("dictionary_id", param_names)
 
     def test_schema_parameter_types(self):
@@ -155,6 +157,7 @@ class TestGridBoardSerialization(unittest.TestCase):
         self.assertEqual(params["marker_size"], 0.04)
         self.assertEqual(params["marker_spacing"], 0.01)
         self.assertEqual(params["border_bits"], 2)
+        self.assertFalse(params["enable_symm_corners"])
         self.assertEqual(params["total_markers"], 20)
 
     def test_from_json(self):
@@ -185,6 +188,7 @@ class TestGridBoardSerialization(unittest.TestCase):
         self.assertEqual(gb.marker_size, 0.04)
         self.assertEqual(gb.marker_spacing, 0.01)
         self.assertEqual(gb.border_bits, 1)
+        self.assertFalse(gb.enable_symm_corners)
 
     def test_roundtrip(self):
         """Test that serialize → deserialize preserves all parameters."""
@@ -199,6 +203,7 @@ class TestGridBoardSerialization(unittest.TestCase):
         self.assertEqual(restored.marker_spacing, original.marker_spacing)
         self.assertEqual(restored.dictionary_id, original.dictionary_id)
         self.assertEqual(restored.border_bits, original.border_bits)
+        self.assertEqual(restored.enable_symm_corners, original.enable_symm_corners)
 
     def test_json_string_roundtrip(self):
         """Test roundtrip through actual JSON string encoding."""
@@ -232,6 +237,7 @@ class TestGridBoardSerialization(unittest.TestCase):
         self.assertIn("marker_size", info)
         self.assertIn("marker_spacing", info)
         self.assertIn("border_bits", info)
+        self.assertIn("enable_symm_corners", info)
 
     def test_get_display_name(self):
         """Test get_display_name returns a readable string."""
@@ -361,18 +367,21 @@ class TestGridBoardDetection(unittest.TestCase):
         self.assertIsNone(corners)
         self.assertIsNone(ids)
 
-    def test_detect_with_different_border_bits(self):
-        """Test that detection works with border_bits 1, 2, and 3."""
+    def test_detect_with_border_bits_and_symm_corners(self):
+        """Test detection with all border_bits and symm_corners combinations."""
         for bb in [1, 2, 3]:
-            with self.subTest(border_bits=bb):
-                gb = GridBoard(
-                    width=3, height=2, marker_size=0.04, marker_spacing=0.01,
-                    dictionary_id=cv2.aruco.DICT_4X4_50, border_bits=bb
-                )
-                img = gb.generate_pattern_image(pixel_per_square=120, border_pixels=50)
-                success, corners, ids = gb.detect_corners(img)
-                self.assertTrue(success, f"Detection failed with border_bits={bb}")
-                self.assertEqual(len(ids), 6)
+            for sc in [False, True]:
+                with self.subTest(border_bits=bb, enable_symm_corners=sc):
+                    gb = GridBoard(
+                        width=3, height=2, marker_size=0.04, marker_spacing=0.01,
+                        dictionary_id=cv2.aruco.DICT_4X4_50,
+                        border_bits=bb, enable_symm_corners=sc
+                    )
+                    img = gb.generate_pattern_image(pixel_per_square=120, border_pixels=50)
+                    success, corners, ids = gb.detect_corners(img)
+                    self.assertTrue(success,
+                        f"Detection failed with border_bits={bb}, symm_corners={sc}")
+                    self.assertEqual(len(ids), 6)
 
 
 class TestGridBoardDrawCorners(unittest.TestCase):
@@ -409,6 +418,94 @@ class TestGridBoardDrawCorners(unittest.TestCase):
         img = np.ones((100, 100, 3), dtype=np.uint8) * 128
         result = gb.draw_corners(img, None)
         np.testing.assert_array_equal(result, img)
+
+
+class TestGridBoardSymmCorners(unittest.TestCase):
+    """Test GridBoard symmetric corners (AprilTag/Kalibr style)."""
+
+    def test_enable_symm_corners_creation(self):
+        """Test creating a GridBoard with enable_symm_corners=True."""
+        gb = GridBoard(width=3, height=2, marker_size=0.04, marker_spacing=0.01,
+                       enable_symm_corners=True)
+        self.assertTrue(gb.enable_symm_corners)
+
+    def test_symm_corners_json_roundtrip(self):
+        """Test that enable_symm_corners survives JSON roundtrip."""
+        original = GridBoard(width=3, height=2, marker_size=0.04, marker_spacing=0.01,
+                             enable_symm_corners=True)
+        restored = GridBoard.from_json(original.to_json())
+        self.assertTrue(restored.enable_symm_corners)
+
+    def test_symm_corners_from_json_true(self):
+        """Test from_json with enable_symm_corners=True."""
+        json_data = {
+            "pattern_id": "grid_board",
+            "parameters": {
+                "width": 3, "height": 2,
+                "marker_size": 0.04, "marker_spacing": 0.01,
+                "enable_symm_corners": True
+            }
+        }
+        gb = GridBoard.from_json(json_data)
+        self.assertTrue(gb.enable_symm_corners)
+
+    def test_corner_gaps_filled_black(self):
+        """Test that all corner gap cells are black when enable_symm_corners=True."""
+        pps = 100  # pixels per square (marker)
+        border = 30
+        gb = GridBoard(width=3, height=2, marker_size=0.04, marker_spacing=0.01,
+                       enable_symm_corners=True)
+        img = gb.generate_pattern_image(pixel_per_square=pps, border_pixels=border)
+        spacing_px = int(0.01 * int(pps / 0.04))
+        step = pps + spacing_px
+        # All (W+1)*(H+1) vertex gap cells should be black
+        for gj in range(3):  # height + 1
+            for gi in range(4):  # width + 1
+                gx = border + gi * step - spacing_px
+                gy = border + gj * step - spacing_px
+                x0, y0 = max(0, gx), max(0, gy)
+                x1 = min(img.shape[1], gx + spacing_px)
+                y1 = min(img.shape[0], gy + spacing_px)
+                cell = img[y0:y1, x0:x1]
+                self.assertTrue(np.all(cell == 0),
+                    f"Corner gap ({gi},{gj}) should be black")
+
+    def test_corner_gaps_white_when_disabled(self):
+        """Test that corner gap cells are white when enable_symm_corners=False."""
+        pps = 100
+        border = 20
+        gb = GridBoard(width=3, height=2, marker_size=0.04, marker_spacing=0.01,
+                       enable_symm_corners=False)
+        img = gb.generate_pattern_image(pixel_per_square=pps, border_pixels=border)
+        spacing_px = int(0.01 * int(pps / 0.04))
+        for j in range(1):
+            for i in range(2):
+                gx = border + i * (pps + spacing_px) + pps
+                gy = border + j * (pps + spacing_px) + pps
+                cell = img[gy:gy + spacing_px, gx:gx + spacing_px]
+                self.assertTrue(np.all(cell == 255),
+                    f"Corner gap ({i},{j}) should be white when disabled")
+
+    def test_symm_corners_1x1_has_corner_squares(self):
+        """Test that a 1x1 grid with symm corners gets 4 corner squares."""
+        gb_on = GridBoard(width=1, height=1, marker_size=0.04, marker_spacing=0.01,
+                          enable_symm_corners=True)
+        gb_off = GridBoard(width=1, height=1, marker_size=0.04, marker_spacing=0.01,
+                           enable_symm_corners=False)
+        img_on = gb_on.generate_pattern_image(pixel_per_square=80, border_pixels=30)
+        img_off = gb_off.generate_pattern_image(pixel_per_square=80, border_pixels=30)
+        # With boundary corners, symm_corners should differ even for 1x1
+        self.assertFalse(np.array_equal(img_on, img_off))
+
+    def test_symm_corners_differ_from_standard(self):
+        """Test that symm_corners image differs from standard image."""
+        kwargs = dict(width=3, height=2, marker_size=0.04, marker_spacing=0.01)
+        gb_on = GridBoard(enable_symm_corners=True, **kwargs)
+        gb_off = GridBoard(enable_symm_corners=False, **kwargs)
+        img_on = gb_on.generate_pattern_image(pixel_per_square=80, border_pixels=20)
+        img_off = gb_off.generate_pattern_image(pixel_per_square=80, border_pixels=20)
+        self.assertEqual(img_on.shape, img_off.shape)
+        self.assertFalse(np.array_equal(img_on, img_off))
 
 
 if __name__ == '__main__':

@@ -13,6 +13,7 @@ Generated Patterns:
 - ChArUco 12×9 (DICT_6X6_250, 20mm squares, 10mm markers, 50px border) - black first & white first
 - ArUco Grid Board 1×1 (DICT_4X4_50, 40mm markers, 10mm separation)
 - ArUco Grid Board 5×4 (DICT_4X4_50, 40mm markers, 10mm separation)
+- ArUco Grid Board 5×4 with symmetric corners (AprilTag/Kalibr style)
 
 Usage:
     conda activate camcalib
@@ -248,6 +249,25 @@ def generate_patterns():
                     "marker_spacing": 0.01,
                     "dictionary_id": cv2.aruco.DICT_4X4_50,
                     "border_bits": 3
+                }
+            }
+        },
+        {
+            'name': 'gridboard_5x4_symm_corners',
+            'description': 'ArUco Grid Board 5×4 with symmetric corners (AprilTag/Kalibr style)',
+            'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
+            'pattern_config': {
+                "pattern_id": "grid_board",
+                "name": "Grid Board",
+                "description": "ArUco marker grid board pattern with symmetric corners",
+                "is_planar": True,
+                "parameters": {
+                    "width": 5,
+                    "height": 4,
+                    "marker_size": 0.04,
+                    "marker_spacing": 0.01,
+                    "dictionary_id": cv2.aruco.DICT_4X4_50,
+                    "enable_symm_corners": True
                 }
             }
         }
