@@ -62,7 +62,7 @@ class GridBoard(CalibrationPattern):
     
     def __init__(self, width: int, height: int, marker_size: float, 
                  marker_spacing: float, dictionary_id: int = cv2.aruco.DICT_6X6_250, 
-                 is_planar: bool = True):
+                 border_bits: int = 1, is_planar: bool = True):
         """
         Initialize ArUco Grid Board.
         
@@ -72,6 +72,7 @@ class GridBoard(CalibrationPattern):
             marker_size: Physical size of each marker in meters
             marker_spacing: Physical spacing between markers in meters
             dictionary_id: ArUco dictionary to use
+            border_bits: Number of bits for the marker border (default: 1)
             is_planar: Whether the pattern lies in a plane (True) or has 3D structure (False)
         """
         super().__init__(
@@ -91,6 +92,7 @@ class GridBoard(CalibrationPattern):
         self.marker_size = marker_size
         self.marker_spacing = marker_spacing
         self.dictionary_id = dictionary_id
+        self.border_bits = border_bits
         
         # Create ArUco dictionary and Grid board
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(dictionary_id)
@@ -124,6 +126,9 @@ class GridBoard(CalibrationPattern):
                 self.detector_params.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
             except AttributeError:
                 pass  # Corner refinement not available in this OpenCV version
+        
+        # Set border bits so the detector matches the generated markers
+        self.detector_params.markerBorderBits = self.border_bits
         
     @classmethod
     def get_configuration_schema(cls):
@@ -175,6 +180,15 @@ class GridBoard(CalibrationPattern):
                     "max": 1.0,
                     "step": 0.001,
                     "description": "Physical spacing between markers in meters"
+                },
+                {
+                    "name": "border_bits",
+                    "label": "Border Bits",
+                    "type": "integer",
+                    "default": 1,
+                    "min": 1,
+                    "max": 5,
+                    "description": "Number of bits for the marker border"
                 },
                 {
                     "name": "dictionary_id",
@@ -507,7 +521,7 @@ class GridBoard(CalibrationPattern):
                 board_image = self.grid_board.generateImage(
                     (img_width, img_height), 
                     marginSize=border_pixels, 
-                    borderBits=1
+                    borderBits=self.border_bits
                 )
             else:
                 # Method 2: Try legacy drawPlanarBoard method
@@ -518,7 +532,7 @@ class GridBoard(CalibrationPattern):
                         (img_width, img_height), 
                         board_image, 
                         marginSize=border_pixels, 
-                        borderBits=1
+                        borderBits=self.border_bits
                     )
                 except AttributeError:
                     # Method 3: Manual fallback
@@ -568,7 +582,7 @@ class GridBoard(CalibrationPattern):
                 # Generate marker image
                 try:
                     marker_img = cv2.aruco.generateImageMarker(
-                        self.aruco_dict, marker_id, marker_size_px
+                        self.aruco_dict, marker_id, marker_size_px, borderBits=self.border_bits
                     )
                     # Convert to BGR if needed
                     if len(marker_img.shape) == 2:
@@ -596,6 +610,7 @@ class GridBoard(CalibrationPattern):
             'marker_size': self.marker_size,
             'marker_spacing': self.marker_spacing,
             'dictionary_id': self.dictionary_id,
+            'border_bits': self.border_bits,
             'total_markers': self.width * self.height
         }
     
@@ -608,5 +623,6 @@ class GridBoard(CalibrationPattern):
             height=params.get('height', 7),
             marker_size=params.get('marker_size', 0.04),
             marker_spacing=params.get('marker_spacing', 0.01),
-            dictionary_id=params.get('dictionary_id', cv2.aruco.DICT_6X6_250)
+            dictionary_id=params.get('dictionary_id', cv2.aruco.DICT_6X6_250),
+            border_bits=params.get('border_bits', 1)
         )

@@ -178,7 +178,7 @@ def generate_patterns():
         },
         {
             'name': 'gridboard_1x1_dict10',
-            'description': 'ArUco Grid Board 1×1 with DICT_4X4_50, 40mm markers, 10mm separation',
+            'description': 'ArUco Grid Board 1×1 with DICT_4X4_50, 40mm markers, 10mm spacing',
             'generate_params': {'pixel_per_square': 150, 'border_pixels': 100},
             'pattern_config': {
                 "pattern_id": "grid_board",
@@ -195,8 +195,8 @@ def generate_patterns():
             }
         },
         {
-            'name': 'gridboard_5x4_dict10',
-            'description': 'ArUco Grid Board 5×4 with DICT_4X4_50, 40mm markers, 10mm separation',
+            'name': 'gridboard_5x4_border1',
+            'description': 'ArUco Grid Board 5×4 with DICT_4X4_50, border_bits=1',
             'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
             'pattern_config': {
                 "pattern_id": "grid_board",
@@ -208,7 +208,46 @@ def generate_patterns():
                     "height": 4,
                     "marker_size": 0.04,
                     "marker_spacing": 0.01,
-                    "dictionary_id": cv2.aruco.DICT_4X4_50
+                    "dictionary_id": cv2.aruco.DICT_4X4_50,
+                    "border_bits": 1
+                }
+            }
+        },
+        {
+            'name': 'gridboard_5x4_border2',
+            'description': 'ArUco Grid Board 5×4 with DICT_4X4_50, border_bits=2',
+            'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
+            'pattern_config': {
+                "pattern_id": "grid_board",
+                "name": "Grid Board",
+                "description": "ArUco marker grid board pattern",
+                "is_planar": True,
+                "parameters": {
+                    "width": 5,
+                    "height": 4,
+                    "marker_size": 0.04,
+                    "marker_spacing": 0.01,
+                    "dictionary_id": cv2.aruco.DICT_4X4_50,
+                    "border_bits": 2
+                }
+            }
+        },
+        {
+            'name': 'gridboard_5x4_border3',
+            'description': 'ArUco Grid Board 5×4 with DICT_4X4_50, border_bits=3',
+            'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
+            'pattern_config': {
+                "pattern_id": "grid_board",
+                "name": "Grid Board",
+                "description": "ArUco marker grid board pattern",
+                "is_planar": True,
+                "parameters": {
+                    "width": 5,
+                    "height": 4,
+                    "marker_size": 0.04,
+                    "marker_spacing": 0.01,
+                    "dictionary_id": cv2.aruco.DICT_4X4_50,
+                    "border_bits": 3
                 }
             }
         }
