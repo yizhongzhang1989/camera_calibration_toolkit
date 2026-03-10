@@ -216,7 +216,12 @@ charuco_custom = CharucoBoard(
 
 ### Grid Board
 
-<img src="sample_data\intrinsic_calib_grid_test_images\snapshot_20250822_145040.jpg" alt="Robot Diagram" width="300">
+<p>
+    <img src="sample_data/intrinsic_calib_grid_test_images/snapshot_20250822_145040.jpg" alt="Grid board sample" width="300">
+    <img src="sample_data/apriltag_test_images/tag36H11_6x6_1.jpg" alt="AprilTag or Kalibr style grid board with symmetric corners" width="300">
+</p>
+
+Boards generated with `enable_symm_corners=True` are commonly referred to as AprilTag-style or Kalibr-style boards. In this toolkit, set `reverse_x=True` for this board style to match OpenCV marker ordering.
 
 ```python
 from core.calibration_patterns import GridBoard
