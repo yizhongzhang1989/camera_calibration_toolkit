@@ -22,6 +22,27 @@ from core.calibration_patterns.grid_board import GridBoard
 from core.calibration_patterns import get_pattern_manager, create_pattern_from_json
 
 
+def _get_supported_aruco_dictionary_ids():
+    """Return all predefined ArUco dictionary IDs supported by this OpenCV build."""
+    dict_ids = {}
+    for name in dir(cv2.aruco):
+        if not name.startswith("DICT_"):
+            continue
+
+        value = getattr(cv2.aruco, name)
+        if not isinstance(value, int):
+            continue
+
+        try:
+            cv2.aruco.getPredefinedDictionary(value)
+            dict_ids[value] = name
+        except Exception:
+            # Skip aliases or constants not usable as predefined dictionary IDs.
+            continue
+
+    return sorted(dict_ids.items(), key=lambda item: item[0])
+
+
 class TestGridBoardCreation(unittest.TestCase):
     """Test GridBoard creation and parameter validation."""
 
@@ -329,6 +350,26 @@ class TestGridBoardObjectPoints(unittest.TestCase):
 
 class TestGridBoardDetection(unittest.TestCase):
     """Test GridBoard corner detection on generated images."""
+
+    def test_detect_on_generated_image_all_supported_dictionaries(self):
+        """Test detection succeeds for all OpenCV-supported ArUco dictionaries."""
+        dict_items = _get_supported_aruco_dictionary_ids()
+        self.assertGreater(len(dict_items), 0, "No supported ArUco dictionaries found")
+
+        for dict_id, dict_name in dict_items:
+            with self.subTest(dictionary_id=dict_id, dictionary_name=dict_name):
+                gb = GridBoard(
+                    width=3, height=2, marker_size=0.04, marker_spacing=0.01,
+                    dictionary_id=dict_id
+                )
+                img = gb.generate_pattern_image(pixel_per_square=100, border_pixels=50)
+                success, corners, ids = gb.detect_corners(img)
+
+                self.assertTrue(success, f"Detection failed for dictionary {dict_name} ({dict_id})")
+                self.assertIsNotNone(corners)
+                self.assertIsNotNone(ids)
+                self.assertEqual(len(ids), 6)
+                self.assertEqual(corners.shape, (24, 2))
 
     def test_detect_on_generated_image(self):
         """Test that markers can be detected on a generated grid board image."""
