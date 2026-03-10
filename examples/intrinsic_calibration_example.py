@@ -9,6 +9,8 @@ camera intrinsic parameter calibration using different calibration patterns:
 1. Standard chessboard pattern (using image file paths)
 2. ChArUco board pattern (using loaded images)  
 3. ArUco grid board pattern (using image file paths)
+4. Custom ChArUco board with white first square
+5. AprilTag-style grid board with symmetric corners
 
 Each example shows a clean, simple workflow focused on the essential
 calibration steps without extra complexity.
@@ -241,6 +243,62 @@ def test_custom_charuco_white_first_calibration():
         raise ValueError(f"Custom ChArUco calibration RMS error too high: {result['rms_error']:.4f}")
 
 
+def test_apriltag_gridboard_calibration():
+    print("=" * 50)
+    print("Test calibrate with AprilTag-style grid board (symm corners, border_bits=2).")
+    print("=" * 50)
+
+    sample_dir = os.path.join("sample_data", "apriltag_test_images")
+    image_paths = glob.glob(os.path.join(sample_dir, '*.jpg'))
+
+    config_path = os.path.join(sample_dir, "chessboard_config.json")
+    with open(config_path, 'r') as f:
+        config_data = json.load(f)
+    pattern = load_pattern_from_json(config_data)
+
+    print(f"Pattern configuration:")
+    print(f"  - Pattern ID: {pattern.pattern_id}")
+    print(f"  - Grid: {pattern.width}x{pattern.height}")
+    print(f"  - Marker size: {pattern.marker_size}m")
+    print(f"  - Marker spacing: {pattern.marker_spacing}m")
+    print(f"  - Border bits: {pattern.border_bits}")
+    print(f"  - Symmetric corners: {pattern.enable_symm_corners}")
+    print(f"  - Reverse X: {pattern.reverse_x}")
+    print(f"  - Reverse Y: {pattern.reverse_y}")
+    print(f"  - Found {len(image_paths)} images")
+
+    calibrator = IntrinsicCalibrator(
+        image_paths=image_paths,
+        calibration_pattern=pattern
+    )
+
+    result = calibrator.calibrate(
+        cameraMatrix=None,
+        distCoeffs=None,
+        flags=0,
+        criteria=None,
+        verbose=True
+    )
+
+    if result['rms_error'] < 1.0:
+        print(f"\n✅ Calibration successful!")
+        print("camera_matrix:")
+        print(result['camera_matrix'])
+        print("distortion_coefficients")
+        print(result['distortion_coefficients'])
+        print("rms_error")
+        print(result['rms_error'])
+
+        print("\n📄 Generating calibration report...")
+        report_result = calibrator.generate_calibration_report("data/results/intrinsic_calibration_apriltag_gridboard")
+        if report_result:
+            print(f"   📄 HTML Report: {report_result['html_report']}")
+            print(f"   📊 JSON Data: {report_result['json_data']}")
+    else:
+        print(f"\n⚠️  Calibration completed but RMS error is high: {result['rms_error']:.4f}")
+        raise ValueError(f"AprilTag grid board calibration RMS error too high: {result['rms_error']:.4f} (expected < 1.0)")
+
+
 def main():
     """Main function with proper error handling."""
     print("Intrinsic Camera Calibration Example")
@@ -249,7 +307,7 @@ def main():
     print()
     
     success_count = 0
-    total_tests = 4
+    total_tests = 5
     
     try:
         test_chessboard_calibration()
@@ -278,6 +336,13 @@ def main():
         print("✅ Custom ChArUco (white first) calibration completed successfully\n")
     except Exception as e:
         print(f"❌ Custom ChArUco calibration failed: {e}\n")
+    
+    try:
+        test_apriltag_gridboard_calibration()
+        success_count += 1
+        print("✅ AprilTag grid board calibration completed successfully\n")
+    except Exception as e:
+        print(f"❌ AprilTag grid board calibration failed: {e}\n")
     
     print(f"📊 Results: {success_count}/{total_tests} calibrations successful")
     

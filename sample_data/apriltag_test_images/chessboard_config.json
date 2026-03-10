@@ -1,0 +1,17 @@
+{
+  "pattern_id": "grid_board",
+  "name": "ArUco Grid Board",
+  "description": "Grid of ArUco markers for robust camera calibration detection",
+  "is_planar": true,
+  "parameters": {
+    "width": 6,
+    "height": 6,
+    "marker_size": 0.022,
+    "marker_spacing": 0.0066,
+    "border_bits": 2,
+    "enable_symm_corners": true,
+    "reverse_x": true,
+    "reverse_y": false,
+    "dictionary_id": 20
+  }
+}

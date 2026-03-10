@@ -383,6 +383,26 @@ class TestGridBoardDetection(unittest.TestCase):
                         f"Detection failed with border_bits={bb}, symm_corners={sc}")
                     self.assertEqual(len(ids), 6)
 
+    def test_detect_all_combinations(self):
+        """Test detection with all combinations of border_bits, symm_corners, reverse_x, reverse_y."""
+        for bb in [1, 2]:
+            for sc in [False, True]:
+                for rx in [False, True]:
+                    for ry in [False, True]:
+                        with self.subTest(border_bits=bb, symm=sc, rev_x=rx, rev_y=ry):
+                            gb = GridBoard(
+                                width=3, height=2, marker_size=0.04, marker_spacing=0.01,
+                                dictionary_id=cv2.aruco.DICT_4X4_50,
+                                border_bits=bb, enable_symm_corners=sc,
+                                reverse_x=rx, reverse_y=ry
+                            )
+                            img = gb.generate_pattern_image(pixel_per_square=120, border_pixels=50)
+                            success, corners, ids = gb.detect_corners(img)
+                            self.assertTrue(success,
+                                f"Detection failed: bb={bb}, symm={sc}, rx={rx}, ry={ry}")
+                            self.assertEqual(len(ids), 6,
+                                f"Expected 6 markers: bb={bb}, symm={sc}, rx={rx}, ry={ry}")
+
 
 class TestGridBoardDrawCorners(unittest.TestCase):
     """Test GridBoard corner drawing."""
@@ -506,6 +526,151 @@ class TestGridBoardSymmCorners(unittest.TestCase):
         img_off = gb_off.generate_pattern_image(pixel_per_square=80, border_pixels=20)
         self.assertEqual(img_on.shape, img_off.shape)
         self.assertFalse(np.array_equal(img_on, img_off))
+
+
+class TestGridBoardReverseXY(unittest.TestCase):
+    """Test GridBoard reverse_x and reverse_y parameters."""
+
+    def test_default_no_reverse(self):
+        """Test that defaults are False."""
+        gb = GridBoard(width=3, height=2, marker_size=0.04, marker_spacing=0.01)
+        self.assertFalse(gb.reverse_x)
+        self.assertFalse(gb.reverse_y)
+
+    def test_reverse_x_creation(self):
+        """Test creating with reverse_x=True."""
+        gb = GridBoard(width=3, height=2, marker_size=0.04, marker_spacing=0.01,
+                       reverse_x=True)
+        self.assertTrue(gb.reverse_x)
+        self.assertFalse(gb.reverse_y)
+
+    def test_reverse_y_creation(self):
+        """Test creating with reverse_y=True."""
+        gb = GridBoard(width=3, height=2, marker_size=0.04, marker_spacing=0.01,
+                       reverse_y=True)
+        self.assertFalse(gb.reverse_x)
+        self.assertTrue(gb.reverse_y)
+
+    def test_reverse_both_creation(self):
+        """Test creating with both reverse_x and reverse_y True."""
+        gb = GridBoard(width=3, height=2, marker_size=0.04, marker_spacing=0.01,
+                       reverse_x=True, reverse_y=True)
+        self.assertTrue(gb.reverse_x)
+        self.assertTrue(gb.reverse_y)
+
+    def test_json_roundtrip(self):
+        """Test that reverse_x/reverse_y survive JSON roundtrip."""
+        original = GridBoard(width=3, height=2, marker_size=0.04, marker_spacing=0.01,
+                             reverse_x=True, reverse_y=True)
+        restored = GridBoard.from_json(original.to_json())
+        self.assertTrue(restored.reverse_x)
+        self.assertTrue(restored.reverse_y)
+
+    def test_from_json_defaults(self):
+        """Test that from_json defaults reverse_x/reverse_y to False."""
+        json_data = {"pattern_id": "grid_board", "parameters": {}}
+        gb = GridBoard.from_json(json_data)
+        self.assertFalse(gb.reverse_x)
+        self.assertFalse(gb.reverse_y)
+
+    def test_to_json_contains_reverse(self):
+        """Test that to_json includes reverse_x and reverse_y."""
+        gb = GridBoard(width=3, height=2, marker_size=0.04, marker_spacing=0.01,
+                       reverse_x=True)
+        data = gb.to_json()
+        self.assertTrue(data["parameters"]["reverse_x"])
+        self.assertFalse(data["parameters"]["reverse_y"])
+
+    def test_reverse_x_marker_layout(self):
+        """Test that reverse_x puts last column ID at left side of image."""
+        gb = GridBoard(width=3, height=2, marker_size=0.04, marker_spacing=0.01,
+                       dictionary_id=cv2.aruco.DICT_4X4_50, reverse_x=True)
+        img = gb.generate_pattern_image(pixel_per_square=100, border_pixels=50)
+        success, corners, ids = gb.detect_corners(img)
+        self.assertTrue(success)
+        self.assertEqual(len(ids), 6)
+        # Group corners by marker ID and find centers
+        centers = {}
+        for i, mid in enumerate(ids):
+            marker_corners = corners[i*4:(i+1)*4]
+            centers[mid] = marker_corners.mean(axis=0)
+        # ID 2 (rightmost in normal, col=2) should be at left (smallest x)
+        # ID 0 (leftmost in normal, col=0) should be at right (largest x)
+        self.assertLess(centers[2][0], centers[0][0])
+
+    def test_reverse_y_marker_layout(self):
+        """Test that reverse_y puts last row ID at top of image."""
+        gb = GridBoard(width=3, height=2, marker_size=0.04, marker_spacing=0.01,
+                       dictionary_id=cv2.aruco.DICT_4X4_50, reverse_y=True)
+        img = gb.generate_pattern_image(pixel_per_square=100, border_pixels=50)
+        success, corners, ids = gb.detect_corners(img)
+        self.assertTrue(success)
+        centers = {}
+        for i, mid in enumerate(ids):
+            centers[mid] = corners[i*4:(i+1)*4].mean(axis=0)
+        # ID 3 (row 1 in normal) should be at top (smallest y) in reversed image
+        # ID 0 (row 0 in normal) should be at bottom (largest y) in reversed image
+        self.assertLess(centers[3][1], centers[0][1])
+
+    def test_reverse_both_marker_layout(self):
+        """Test that reverse_x + reverse_y puts ID W*H-1 at top-left."""
+        gb = GridBoard(width=3, height=2, marker_size=0.04, marker_spacing=0.01,
+                       dictionary_id=cv2.aruco.DICT_4X4_50,
+                       reverse_x=True, reverse_y=True)
+        img = gb.generate_pattern_image(pixel_per_square=100, border_pixels=50)
+        success, corners, ids = gb.detect_corners(img)
+        self.assertTrue(success)
+        centers = {}
+        for i, mid in enumerate(ids):
+            centers[mid] = corners[i*4:(i+1)*4].mean(axis=0)
+        # ID 5 (last marker) should be at top-left (smallest x and y)
+        # ID 0 (first marker) should be at bottom-right (largest x and y)
+        self.assertLess(centers[5][0], centers[0][0])
+        self.assertLess(centers[5][1], centers[0][1])
+
+    def test_reverse_x_object_points(self):
+        """Test that object points reflect the reversed x positions."""
+        gb_normal = GridBoard(width=3, height=1, marker_size=0.04, marker_spacing=0.01)
+        gb_rev = GridBoard(width=3, height=1, marker_size=0.04, marker_spacing=0.01,
+                           reverse_x=True)
+        objp_normal = gb_normal.generate_object_points()
+        objp_rev = gb_rev.generate_object_points()
+        # In reversed x: ID 0 should be at the position where ID 2 was in normal
+        # ID 0 corners in normal are at x ~ 0, in reversed at x ~ 0.1
+        self.assertGreater(objp_rev[0, 0], objp_normal[0, 0])
+
+    def test_reverse_y_object_points(self):
+        """Test that object points reflect the reversed y positions."""
+        gb_normal = GridBoard(width=1, height=2, marker_size=0.04, marker_spacing=0.01)
+        gb_rev = GridBoard(width=1, height=2, marker_size=0.04, marker_spacing=0.01,
+                           reverse_y=True)
+        objp_normal = gb_normal.generate_object_points()
+        objp_rev = gb_rev.generate_object_points()
+        # In reversed y: ID 0 should be at the position where ID 1 was in normal
+        self.assertGreater(objp_rev[0, 1], objp_normal[0, 1])
+
+    def test_detect_with_reverse_and_symm_corners(self):
+        """Test detection works with reverse + symm_corners combinations."""
+        for rx, ry in [(True, False), (False, True), (True, True)]:
+            for sc in [False, True]:
+                with self.subTest(reverse_x=rx, reverse_y=ry, symm_corners=sc):
+                    gb = GridBoard(
+                        width=3, height=2, marker_size=0.04, marker_spacing=0.01,
+                        dictionary_id=cv2.aruco.DICT_4X4_50,
+                        reverse_x=rx, reverse_y=ry, enable_symm_corners=sc
+                    )
+                    img = gb.generate_pattern_image(pixel_per_square=120, border_pixels=50)
+                    success, corners, ids = gb.detect_corners(img)
+                    self.assertTrue(success,
+                        f"Detection failed: reverse_x={rx}, reverse_y={ry}, symm={sc}")
+                    self.assertEqual(len(ids), 6)
+
+    def test_schema_has_reverse_params(self):
+        """Test that schema includes reverse_x and reverse_y."""
+        schema = GridBoard.get_configuration_schema()
+        param_names = [p["name"] for p in schema["parameters"]]
+        self.assertIn("reverse_x", param_names)
+        self.assertIn("reverse_y", param_names)
 
 
 if __name__ == '__main__':

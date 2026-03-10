@@ -270,6 +270,64 @@ def generate_patterns():
                     "enable_symm_corners": True
                 }
             }
+        },
+        {
+            'name': 'gridboard_5x4_reverse_x',
+            'description': 'ArUco Grid Board 5×4 with reverse_x (right-to-left marker order)',
+            'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
+            'pattern_config': {
+                "pattern_id": "grid_board",
+                "name": "Grid Board",
+                "description": "ArUco marker grid board pattern with reverse_x",
+                "is_planar": True,
+                "parameters": {
+                    "width": 5,
+                    "height": 4,
+                    "marker_size": 0.04,
+                    "marker_spacing": 0.01,
+                    "dictionary_id": cv2.aruco.DICT_4X4_50,
+                    "reverse_x": True
+                }
+            }
+        },
+        {
+            'name': 'gridboard_5x4_reverse_y',
+            'description': 'ArUco Grid Board 5×4 with reverse_y (bottom-to-top marker order)',
+            'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
+            'pattern_config': {
+                "pattern_id": "grid_board",
+                "name": "Grid Board",
+                "description": "ArUco marker grid board pattern with reverse_y",
+                "is_planar": True,
+                "parameters": {
+                    "width": 5,
+                    "height": 4,
+                    "marker_size": 0.04,
+                    "marker_spacing": 0.01,
+                    "dictionary_id": cv2.aruco.DICT_4X4_50,
+                    "reverse_y": True
+                }
+            }
+        },
+        {
+            'name': 'gridboard_5x4_reverse_both',
+            'description': 'ArUco Grid Board 5×4 with reverse_x + reverse_y',
+            'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
+            'pattern_config': {
+                "pattern_id": "grid_board",
+                "name": "Grid Board",
+                "description": "ArUco marker grid board pattern with both axes reversed",
+                "is_planar": True,
+                "parameters": {
+                    "width": 5,
+                    "height": 4,
+                    "marker_size": 0.04,
+                    "marker_spacing": 0.01,
+                    "dictionary_id": cv2.aruco.DICT_4X4_50,
+                    "reverse_x": True,
+                    "reverse_y": True
+                }
+            }
         }
     ]
     
