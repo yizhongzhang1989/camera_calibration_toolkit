@@ -128,10 +128,10 @@ class TestPatternSerialization(unittest.TestCase):
         # Create a grid board pattern
         original_pattern = self.manager.create_pattern(
             'grid_board',
-            markers_x=5,
-            markers_y=4,
+            width=5,
+            height=4,
             marker_size=0.04,
-            marker_separation=0.01,
+            marker_spacing=0.01,
             dictionary_id=cv2.aruco.DICT_6X6_250
         )
 
@@ -144,10 +144,10 @@ class TestPatternSerialization(unittest.TestCase):
         
         # Verify parameters
         params = pattern_dict['parameters']
-        self.assertEqual(params['markers_x'], 5)
-        self.assertEqual(params['markers_y'], 4)
+        self.assertEqual(params['width'], 5)
+        self.assertEqual(params['height'], 4)
         self.assertEqual(params['marker_size'], 0.04)
-        self.assertEqual(params['marker_separation'], 0.01)
+        self.assertEqual(params['marker_spacing'], 0.01)
         self.assertEqual(params['dictionary_id'], cv2.aruco.DICT_6X6_250)
         self.assertIn('total_markers', params)
         self.assertEqual(params['total_markers'], 5 * 4)
@@ -157,10 +157,10 @@ class TestPatternSerialization(unittest.TestCase):
         
         # Verify restored pattern
         self.assertEqual(restored_pattern.pattern_id, original_pattern.pattern_id)
-        self.assertEqual(restored_pattern.markers_x, original_pattern.markers_x)
-        self.assertEqual(restored_pattern.markers_y, original_pattern.markers_y)
+        self.assertEqual(restored_pattern.width, original_pattern.width)
+        self.assertEqual(restored_pattern.height, original_pattern.height)
         self.assertEqual(restored_pattern.marker_size, original_pattern.marker_size)
-        self.assertEqual(restored_pattern.marker_separation, original_pattern.marker_separation)
+        self.assertEqual(restored_pattern.marker_spacing, original_pattern.marker_spacing)
         self.assertEqual(restored_pattern.dictionary_id, original_pattern.dictionary_id)
 
     def test_json_string_serialization(self):
@@ -200,8 +200,8 @@ class TestPatternSerialization(unittest.TestCase):
                 'marker_size': 0.02, 'dictionary_id': cv2.aruco.DICT_5X5_250
             }),
             ('grid_board', {
-                'markers_x': 3, 'markers_y': 2, 'marker_size': 0.05,
-                'marker_separation': 0.015, 'dictionary_id': cv2.aruco.DICT_4X4_50
+                'width': 3, 'height': 2, 'marker_size': 0.05,
+                'marker_spacing': 0.015, 'dictionary_id': cv2.aruco.DICT_4X4_50
             })
         ]
 
@@ -230,10 +230,10 @@ class TestPatternSerialization(unittest.TestCase):
                     self.assertEqual(restored_pattern.dictionary_id, original_pattern.dictionary_id)
                 
                 if pattern_id == 'grid_board':
-                    self.assertEqual(restored_pattern.markers_x, original_pattern.markers_x)
-                    self.assertEqual(restored_pattern.markers_y, original_pattern.markers_y)
+                    self.assertEqual(restored_pattern.width, original_pattern.width)
+                    self.assertEqual(restored_pattern.height, original_pattern.height)
                     self.assertEqual(restored_pattern.marker_size, original_pattern.marker_size)
-                    self.assertEqual(restored_pattern.marker_separation, original_pattern.marker_separation)
+                    self.assertEqual(restored_pattern.marker_spacing, original_pattern.marker_spacing)
                     self.assertEqual(restored_pattern.dictionary_id, original_pattern.dictionary_id)
 
     def test_invalid_json_handling(self):

@@ -13,6 +13,7 @@ Generated Patterns:
 - ChArUco 12×9 (DICT_6X6_250, 20mm squares, 10mm markers, 50px border) - black first & white first
 - ArUco Grid Board 1×1 (DICT_4X4_50, 40mm markers, 10mm separation)
 - ArUco Grid Board 5×4 (DICT_4X4_50, 40mm markers, 10mm separation)
+- ArUco Grid Board 5×4 with symmetric corners (AprilTag/Kalibr style)
 
 Usage:
     conda activate camcalib
@@ -178,7 +179,7 @@ def generate_patterns():
         },
         {
             'name': 'gridboard_1x1_dict10',
-            'description': 'ArUco Grid Board 1×1 with DICT_4X4_50, 40mm markers, 10mm separation',
+            'description': 'ArUco Grid Board 1×1 with DICT_4X4_50, 40mm markers, 10mm spacing',
             'generate_params': {'pixel_per_square': 150, 'border_pixels': 100},
             'pattern_config': {
                 "pattern_id": "grid_board",
@@ -186,17 +187,17 @@ def generate_patterns():
                 "description": "ArUco marker grid board pattern",
                 "is_planar": True,
                 "parameters": {
-                    "markers_x": 1,
-                    "markers_y": 1,
+                    "width": 1,
+                    "height": 1,
                     "marker_size": 0.04,
-                    "marker_separation": 0.01,
+                    "marker_spacing": 0.01,
                     "dictionary_id": cv2.aruco.DICT_4X4_50
                 }
             }
         },
         {
-            'name': 'gridboard_5x4_dict10',
-            'description': 'ArUco Grid Board 5×4 with DICT_4X4_50, 40mm markers, 10mm separation',
+            'name': 'gridboard_5x4_border1',
+            'description': 'ArUco Grid Board 5×4 with DICT_4X4_50, border_bits=1',
             'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
             'pattern_config': {
                 "pattern_id": "grid_board",
@@ -204,11 +205,127 @@ def generate_patterns():
                 "description": "ArUco marker grid board pattern",
                 "is_planar": True,
                 "parameters": {
-                    "markers_x": 5,
-                    "markers_y": 4,
+                    "width": 5,
+                    "height": 4,
                     "marker_size": 0.04,
-                    "marker_separation": 0.01,
-                    "dictionary_id": cv2.aruco.DICT_4X4_50
+                    "marker_spacing": 0.01,
+                    "dictionary_id": cv2.aruco.DICT_4X4_50,
+                    "border_bits": 1
+                }
+            }
+        },
+        {
+            'name': 'gridboard_5x4_border2',
+            'description': 'ArUco Grid Board 5×4 with DICT_4X4_50, border_bits=2',
+            'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
+            'pattern_config': {
+                "pattern_id": "grid_board",
+                "name": "Grid Board",
+                "description": "ArUco marker grid board pattern",
+                "is_planar": True,
+                "parameters": {
+                    "width": 5,
+                    "height": 4,
+                    "marker_size": 0.04,
+                    "marker_spacing": 0.01,
+                    "dictionary_id": cv2.aruco.DICT_4X4_50,
+                    "border_bits": 2
+                }
+            }
+        },
+        {
+            'name': 'gridboard_5x4_border3',
+            'description': 'ArUco Grid Board 5×4 with DICT_4X4_50, border_bits=3',
+            'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
+            'pattern_config': {
+                "pattern_id": "grid_board",
+                "name": "Grid Board",
+                "description": "ArUco marker grid board pattern",
+                "is_planar": True,
+                "parameters": {
+                    "width": 5,
+                    "height": 4,
+                    "marker_size": 0.04,
+                    "marker_spacing": 0.01,
+                    "dictionary_id": cv2.aruco.DICT_4X4_50,
+                    "border_bits": 3
+                }
+            }
+        },
+        {
+            'name': 'gridboard_5x4_symm_corners',
+            'description': 'ArUco Grid Board 5×4 with symmetric corners (AprilTag/Kalibr style)',
+            'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
+            'pattern_config': {
+                "pattern_id": "grid_board",
+                "name": "Grid Board",
+                "description": "ArUco marker grid board pattern with symmetric corners",
+                "is_planar": True,
+                "parameters": {
+                    "width": 5,
+                    "height": 4,
+                    "marker_size": 0.04,
+                    "marker_spacing": 0.01,
+                    "dictionary_id": cv2.aruco.DICT_4X4_50,
+                    "enable_symm_corners": True
+                }
+            }
+        },
+        {
+            'name': 'gridboard_5x4_reverse_x',
+            'description': 'ArUco Grid Board 5×4 with reverse_x (right-to-left marker order)',
+            'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
+            'pattern_config': {
+                "pattern_id": "grid_board",
+                "name": "Grid Board",
+                "description": "ArUco marker grid board pattern with reverse_x",
+                "is_planar": True,
+                "parameters": {
+                    "width": 5,
+                    "height": 4,
+                    "marker_size": 0.04,
+                    "marker_spacing": 0.01,
+                    "dictionary_id": cv2.aruco.DICT_4X4_50,
+                    "reverse_x": True
+                }
+            }
+        },
+        {
+            'name': 'gridboard_5x4_reverse_y',
+            'description': 'ArUco Grid Board 5×4 with reverse_y (bottom-to-top marker order)',
+            'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
+            'pattern_config': {
+                "pattern_id": "grid_board",
+                "name": "Grid Board",
+                "description": "ArUco marker grid board pattern with reverse_y",
+                "is_planar": True,
+                "parameters": {
+                    "width": 5,
+                    "height": 4,
+                    "marker_size": 0.04,
+                    "marker_spacing": 0.01,
+                    "dictionary_id": cv2.aruco.DICT_4X4_50,
+                    "reverse_y": True
+                }
+            }
+        },
+        {
+            'name': 'gridboard_5x4_reverse_both',
+            'description': 'ArUco Grid Board 5×4 with reverse_x + reverse_y',
+            'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
+            'pattern_config': {
+                "pattern_id": "grid_board",
+                "name": "Grid Board",
+                "description": "ArUco marker grid board pattern with both axes reversed",
+                "is_planar": True,
+                "parameters": {
+                    "width": 5,
+                    "height": 4,
+                    "marker_size": 0.04,
+                    "marker_spacing": 0.01,
+                    "dictionary_id": cv2.aruco.DICT_4X4_50,
+                    "reverse_x": True,
+                    "reverse_y": True
                 }
             }
         }
@@ -279,9 +396,9 @@ def generate_patterns():
                 f.write(f"Type: {pattern_id.replace('_', ' ').title()}\n")
                 
                 if pattern_id == 'grid_board':
-                    f.write(f"Grid Size: {pattern_params['markers_x']}×{pattern_params['markers_y']} markers\n")
+                    f.write(f"Grid Size: {pattern_params['width']}×{pattern_params['height']} markers\n")
                     f.write(f"Marker Size: {pattern_params['marker_size']*1000:.1f}mm\n")
-                    f.write(f"Marker Separation: {pattern_params['marker_separation']*1000:.1f}mm\n")
+                    f.write(f"Marker Spacing: {pattern_params['marker_spacing']*1000:.1f}mm\n")
                     dict_name = [name for name, val in vars(cv2.aruco).items() 
                                if name.startswith('DICT_') and val == pattern_params['dictionary_id']][0]
                     f.write(f"Dictionary: {dict_name}\n")

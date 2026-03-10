@@ -26,11 +26,11 @@ class GridBoard(CalibrationPattern):
                 'parameter_relationships': [
                     {
                         'param1': 'marker_size',
-                        'param2': 'marker_separation', 
+                        'param2': 'marker_spacing', 
                         'constraint': 'greater_than',
                         'fix_values': {
                             'marker_size': 0.04,        # 40mm
-                            'marker_separation': 0.01   # 10mm
+                            'marker_spacing': 0.01   # 10mm
                         }
                     }
                 ],
@@ -40,12 +40,12 @@ class GridBoard(CalibrationPattern):
                         'max': 20,
                         'default_value': 10
                     },
-                    'markers_x': {
+                    'width': {
                         'min': 1,
                         'max': 20,
                         'default_value': 5
                     },
-                    'markers_y': {
+                    'height': {
                         'min': 1, 
                         'max': 20,
                         'default_value': 7
@@ -54,24 +54,31 @@ class GridBoard(CalibrationPattern):
                 'default_corrections': {
                     'dictionary_id': 10,           # DICT_6X6_250
                     'marker_size': 0.04,
-                    'marker_separation': 0.01
+                    'marker_spacing': 0.01
                 }
             }
         }
     }
     
-    def __init__(self, markers_x: int, markers_y: int, marker_size: float, 
-                 marker_separation: float, dictionary_id: int = cv2.aruco.DICT_6X6_250, 
+    def __init__(self, width: int, height: int, marker_size: float, 
+                 marker_spacing: float, dictionary_id: int = cv2.aruco.DICT_6X6_250, 
+                 border_bits: int = 1, enable_symm_corners: bool = False,
+                 reverse_x: bool = False, reverse_y: bool = False,
                  is_planar: bool = True):
         """
         Initialize ArUco Grid Board.
         
         Args:
-            markers_x: Number of markers along X-axis
-            markers_y: Number of markers along Y-axis  
+            width: Number of markers along X-axis
+            height: Number of markers along Y-axis  
             marker_size: Physical size of each marker in meters
-            marker_separation: Physical separation between markers in meters
+            marker_spacing: Physical spacing between markers in meters
             dictionary_id: ArUco dictionary to use
+            border_bits: Number of bits for the marker border (default: 1)
+            enable_symm_corners: If True, fill corner gap cells with black to create
+                symmetric chessboard corners at marker junctions (AprilTag/Kalibr style)
+            reverse_x: If True, markers are arranged right-to-left along X-axis
+            reverse_y: If True, markers are arranged bottom-to-top along Y-axis
             is_planar: Whether the pattern lies in a plane (True) or has 3D structure (False)
         """
         super().__init__(
@@ -82,30 +89,42 @@ class GridBoard(CalibrationPattern):
         )
         
         # Use base class validation - allow 1x1 grids
-        self.validate_dimensions(markers_x, markers_y, min_size=1)
+        self.validate_dimensions(width, height, min_size=1)
         self.validate_physical_size(marker_size, "marker_size")
-        self.validate_physical_size(marker_separation, "marker_separation")
+        self.validate_physical_size(marker_spacing, "marker_spacing")
         
-        self.markers_x = markers_x
-        self.markers_y = markers_y
+        self.width = width
+        self.height = height
         self.marker_size = marker_size
-        self.marker_separation = marker_separation
+        self.marker_spacing = marker_spacing
         self.dictionary_id = dictionary_id
+        self.border_bits = border_bits
+        self.enable_symm_corners = enable_symm_corners
+        self.reverse_x = reverse_x
+        self.reverse_y = reverse_y
         
         # Create ArUco dictionary and Grid board
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(dictionary_id)
         
+        # Build custom ID array when reverse_x or reverse_y is set
+        ids_array = self._build_ids_array() if (reverse_x or reverse_y) else None
+        
         # Try different Grid board creation methods for different OpenCV versions
         try:
             # OpenCV 4.7+ method
-            self.grid_board = cv2.aruco.GridBoard(
-                (markers_x, markers_y), marker_size, marker_separation, self.aruco_dict
-            )
+            if ids_array is not None:
+                self.grid_board = cv2.aruco.GridBoard(
+                    (width, height), marker_size, marker_spacing, self.aruco_dict, ids_array
+                )
+            else:
+                self.grid_board = cv2.aruco.GridBoard(
+                    (width, height), marker_size, marker_spacing, self.aruco_dict
+                )
         except (AttributeError, TypeError):
             try:
                 # Older OpenCV method
                 self.grid_board = cv2.aruco.GridBoard_create(
-                    markers_x, markers_y, marker_size, marker_separation, self.aruco_dict
+                    width, height, marker_size, marker_spacing, self.aruco_dict
                 )
             except AttributeError:
                 raise ValueError("ArUco Grid boards are not supported in this OpenCV version")
@@ -125,6 +144,35 @@ class GridBoard(CalibrationPattern):
             except AttributeError:
                 pass  # Corner refinement not available in this OpenCV version
         
+        # Set border bits so the detector matches the generated markers
+        self.detector_params.markerBorderBits = self.border_bits
+    
+    def _build_ids_array(self) -> np.ndarray:
+        """Build custom marker ID array based on reverse_x/reverse_y settings.
+        
+        The ID array maps grid position (row-major, top-left origin) to marker ID.
+        With reverse_x, columns are mirrored. With reverse_y, rows are mirrored.
+        """
+        ids = np.zeros(self.width * self.height, dtype=np.int32)
+        for row in range(self.height):
+            for col in range(self.width):
+                # Original ID for this grid position
+                orig_col = (self.width - 1 - col) if self.reverse_x else col
+                orig_row = (self.height - 1 - row) if self.reverse_y else row
+                marker_id = orig_row * self.width + orig_col
+                grid_idx = row * self.width + col
+                ids[grid_idx] = marker_id
+        return ids
+    
+    def _grid_position_for_id(self, marker_id: int):
+        """Return the (col, row) grid position for a given marker ID,
+        accounting for reverse_x / reverse_y."""
+        orig_col = marker_id % self.width
+        orig_row = marker_id // self.width
+        col = (self.width - 1 - orig_col) if self.reverse_x else orig_col
+        row = (self.height - 1 - orig_row) if self.reverse_y else orig_row
+        return col, row
+        
     @classmethod
     def get_configuration_schema(cls):
         """
@@ -139,7 +187,7 @@ class GridBoard(CalibrationPattern):
             "icon": "🎲",
             "parameters": [
                 {
-                    "name": "markers_x",
+                    "name": "width",
                     "label": "Markers (X-axis)",
                     "type": "integer", 
                     "default": 5,
@@ -148,7 +196,7 @@ class GridBoard(CalibrationPattern):
                     "description": "Number of markers along X-axis"
                 },
                 {
-                    "name": "markers_y",
+                    "name": "height",
                     "label": "Markers (Y-axis)", 
                     "type": "integer",
                     "default": 7,
@@ -167,14 +215,44 @@ class GridBoard(CalibrationPattern):
                     "description": "Physical size of each ArUco marker in meters"
                 },
                 {
-                    "name": "marker_separation",
-                    "label": "Marker Separation (meters)",
+                    "name": "marker_spacing",
+                    "label": "Marker Spacing (meters)",
                     "type": "float",
                     "default": 0.010,
                     "min": 0.001,
                     "max": 1.0,
                     "step": 0.001,
-                    "description": "Physical separation between markers in meters"
+                    "description": "Physical spacing between markers in meters"
+                },
+                {
+                    "name": "border_bits",
+                    "label": "Border Bits",
+                    "type": "integer",
+                    "default": 1,
+                    "min": 1,
+                    "max": 5,
+                    "description": "Number of bits for the marker border"
+                },
+                {
+                    "name": "enable_symm_corners",
+                    "label": "Enable Symmetric Corners",
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Fill corner gap cells with black to create symmetric chessboard corners (AprilTag/Kalibr style)"
+                },
+                {
+                    "name": "reverse_x",
+                    "label": "Reverse X",
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Arrange markers right-to-left along X-axis"
+                },
+                {
+                    "name": "reverse_y",
+                    "label": "Reverse Y",
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Arrange markers bottom-to-top along Y-axis"
                 },
                 {
                     "name": "dictionary_id",
@@ -251,6 +329,15 @@ class GridBoard(CalibrationPattern):
                     all_corners.append(corner)
             
             image_points = np.array(all_corners, dtype=np.float32)
+            
+            # When symm corners are enabled, each marker corner has a chessboard-like
+            # saddle point pattern. Use cornerSubPix to refine to sub-pixel accuracy.
+            if self.enable_symm_corners:
+                criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+                image_points = cv2.cornerSubPix(
+                    gray, image_points, winSize=(5, 5), zeroZone=(-1, -1), criteria=criteria
+                )
+            
             marker_ids = sorted_ids
             
             return True, image_points, marker_ids
@@ -259,24 +346,25 @@ class GridBoard(CalibrationPattern):
     
     def generate_object_points(self, point_ids: Optional[np.ndarray] = None) -> np.ndarray:
         """Generate 3D object points for ArUco Grid board."""
-        # Get Grid board corner positions
-        try:
-            # Try newer OpenCV method to get all marker corners
-            if hasattr(self.grid_board, 'getObjPoints'):
-                all_objp = self.grid_board.getObjPoints()
-                # Check if it's a tuple or array
-                if isinstance(all_objp, tuple):
-                    all_objp = all_objp[0]  # Take first element if it's a tuple
-                all_objp = np.array(all_objp, dtype=np.float32)
-            elif hasattr(self.grid_board, 'objPoints'):
-                all_objp = self.grid_board.objPoints
-                all_objp = np.array(all_objp, dtype=np.float32)
-            else:
-                # Manual generation as fallback
-                all_objp = self._generate_manual_object_points()
-        except AttributeError:
-            # Fallback for older OpenCV versions
+        # When reverse is active, OpenCV's getObjPoints doesn't know about the remapping,
+        # so always use manual generation which respects _grid_position_for_id.
+        if self.reverse_x or self.reverse_y:
             all_objp = self._generate_manual_object_points()
+        else:
+            # Get Grid board corner positions from OpenCV
+            try:
+                if hasattr(self.grid_board, 'getObjPoints'):
+                    all_objp = self.grid_board.getObjPoints()
+                    if isinstance(all_objp, tuple):
+                        all_objp = all_objp[0]
+                    all_objp = np.array(all_objp, dtype=np.float32)
+                elif hasattr(self.grid_board, 'objPoints'):
+                    all_objp = self.grid_board.objPoints
+                    all_objp = np.array(all_objp, dtype=np.float32)
+                else:
+                    all_objp = self._generate_manual_object_points()
+            except AttributeError:
+                all_objp = self._generate_manual_object_points()
         
         # For Grid board, we need to return only the object points corresponding to detected markers
         if point_ids is not None and len(point_ids) > 0:
@@ -310,31 +398,28 @@ class GridBoard(CalibrationPattern):
     
     def _generate_manual_object_points(self) -> np.ndarray:
         """Generate object points manually for grid board."""
-        total_markers = self.markers_x * self.markers_y
+        total_markers = self.width * self.height
         # Each marker has 4 corners
         objp = np.zeros((total_markers * 4, 3), np.float32)
         
-        marker_idx = 0
-        for j in range(self.markers_y):
-            for i in range(self.markers_x):
-                # Calculate marker center position
-                center_x = i * (self.marker_size + self.marker_separation)
-                center_y = j * (self.marker_size + self.marker_separation)
-                
-                # Calculate 4 corners of the marker (clockwise from top-left)
-                half_size = self.marker_size / 2
-                corners = [
-                    [center_x - half_size, center_y - half_size, 0],  # top-left
-                    [center_x + half_size, center_y - half_size, 0],  # top-right
-                    [center_x + half_size, center_y + half_size, 0],  # bottom-right
-                    [center_x - half_size, center_y + half_size, 0],  # bottom-left
-                ]
-                
-                # Add corners to object points
-                for k, corner in enumerate(corners):
-                    objp[marker_idx * 4 + k] = corner
-                
-                marker_idx += 1
+        step = self.marker_size + self.marker_spacing
+        half_size = self.marker_size / 2
+        
+        for marker_id in range(total_markers):
+            col, row = self._grid_position_for_id(marker_id)
+            center_x = col * step
+            center_y = row * step
+            
+            # 4 corners of the marker (clockwise from top-left)
+            corners = [
+                [center_x - half_size, center_y - half_size, 0],  # top-left
+                [center_x + half_size, center_y - half_size, 0],  # top-right
+                [center_x + half_size, center_y + half_size, 0],  # bottom-right
+                [center_x - half_size, center_y + half_size, 0],  # bottom-left
+            ]
+            
+            for k, corner in enumerate(corners):
+                objp[marker_id * 4 + k] = corner
         
         return objp
     
@@ -343,17 +428,14 @@ class GridBoard(CalibrationPattern):
         num_detected = len(point_ids)
         objp = np.zeros((num_detected * 4, 3), np.float32)
         
+        step = self.marker_size + self.marker_spacing
+        half_size = self.marker_size / 2
+        
         for idx, marker_id in enumerate(point_ids.flatten()):
-            # Calculate marker position from ID
-            i = marker_id % self.markers_x
-            j = marker_id // self.markers_x
+            col, row = self._grid_position_for_id(marker_id)
+            center_x = col * step
+            center_y = row * step
             
-            # Calculate marker center position
-            center_x = i * (self.marker_size + self.marker_separation)
-            center_y = j * (self.marker_size + self.marker_separation)
-            
-            # Calculate 4 corners of the marker
-            half_size = self.marker_size / 2
             corners = [
                 [center_x - half_size, center_y - half_size, 0],
                 [center_x + half_size, center_y - half_size, 0],
@@ -361,7 +443,6 @@ class GridBoard(CalibrationPattern):
                 [center_x - half_size, center_y + half_size, 0],
             ]
             
-            # Add corners to object points
             for k, corner in enumerate(corners):
                 objp[idx * 4 + k] = corner
         
@@ -369,7 +450,7 @@ class GridBoard(CalibrationPattern):
     
     def get_pattern_size(self) -> Tuple[int, int]:
         """Get pattern size (number of markers)."""
-        return (self.markers_x, self.markers_y)
+        return (self.width, self.height)
     
     def draw_corners(self, image: np.ndarray, corners: np.ndarray, 
                     point_ids: Optional[np.ndarray] = None) -> np.ndarray:
@@ -473,11 +554,11 @@ class GridBoard(CalibrationPattern):
             # Direct approach: use pixel_per_square directly as marker size in pixels
             marker_size_px = pixel_per_square
             # Scale separation proportionally
-            marker_separation_px = int(self.marker_separation * pixels_per_meter)
+            marker_spacing_px = int(self.marker_spacing * pixels_per_meter)
         else:
             # Traditional approach using pixels_per_meter
             marker_size_px = int(self.marker_size * pixels_per_meter)
-            marker_separation_px = int(self.marker_separation * pixels_per_meter)
+            marker_spacing_px = int(self.marker_spacing * pixels_per_meter)
         
         # Ensure minimum marker size for OpenCV ArUco generation (at least 20 pixels)
         min_marker_size = 20
@@ -485,15 +566,15 @@ class GridBoard(CalibrationPattern):
             print(f"Warning: Marker size {marker_size_px}px too small, using {min_marker_size}px")
             marker_size_px = min_marker_size
         
-        # Ensure minimum separation (at least 2 pixels)
-        if marker_separation_px < 2:
-            marker_separation_px = 2
+        # Ensure minimum spacing (at least 2 pixels)
+        if marker_spacing_px < 2:
+            marker_spacing_px = 2
         
         # Calculate total pattern dimensions
-        pattern_width_px = (self.markers_x * marker_size_px + 
-                           (self.markers_x - 1) * marker_separation_px)
-        pattern_height_px = (self.markers_y * marker_size_px + 
-                            (self.markers_y - 1) * marker_separation_px)
+        pattern_width_px = (self.width * marker_size_px + 
+                           (self.width - 1) * marker_spacing_px)
+        pattern_height_px = (self.height * marker_size_px + 
+                            (self.height - 1) * marker_spacing_px)
         
         # Calculate total image dimensions with borders
         img_width = pattern_width_px + 2 * border_pixels
@@ -507,7 +588,7 @@ class GridBoard(CalibrationPattern):
                 board_image = self.grid_board.generateImage(
                     (img_width, img_height), 
                     marginSize=border_pixels, 
-                    borderBits=1
+                    borderBits=self.border_bits
                 )
             else:
                 # Method 2: Try legacy drawPlanarBoard method
@@ -518,7 +599,7 @@ class GridBoard(CalibrationPattern):
                         (img_width, img_height), 
                         board_image, 
                         marginSize=border_pixels, 
-                        borderBits=1
+                        borderBits=self.border_bits
                     )
                 except AttributeError:
                     # Method 3: Manual fallback
@@ -533,6 +614,9 @@ class GridBoard(CalibrationPattern):
         if len(board_image.shape) == 2:
             board_image = cv2.cvtColor(board_image, cv2.COLOR_GRAY2BGR)
         
+        if self.enable_symm_corners:
+            self._apply_symm_corners(board_image, border_pixels, marker_size_px, marker_spacing_px)
+        
         return board_image
     
     def _generate_manual_grid_pattern(self, pixels_per_meter: int = 1000, 
@@ -542,13 +626,13 @@ class GridBoard(CalibrationPattern):
         """
         # Calculate marker size and separation in pixels
         marker_size_px = int(self.marker_size * pixels_per_meter)
-        marker_separation_px = int(self.marker_separation * pixels_per_meter)
+        marker_spacing_px = int(self.marker_spacing * pixels_per_meter)
         
         # Calculate total pattern dimensions
-        pattern_width_px = (self.markers_x * marker_size_px + 
-                           (self.markers_x - 1) * marker_separation_px)
-        pattern_height_px = (self.markers_y * marker_size_px + 
-                            (self.markers_y - 1) * marker_separation_px)
+        pattern_width_px = (self.width * marker_size_px + 
+                           (self.width - 1) * marker_spacing_px)
+        pattern_height_px = (self.height * marker_size_px + 
+                            (self.height - 1) * marker_spacing_px)
         
         # Calculate total image dimensions with borders
         img_width = pattern_width_px + 2 * border_pixels
@@ -558,17 +642,19 @@ class GridBoard(CalibrationPattern):
         image = np.ones((img_height, img_width, 3), dtype=np.uint8) * 255
         
         # Generate individual markers and place them
-        marker_id = 0
-        for j in range(self.markers_y):
-            for i in range(self.markers_x):
+        ids_array = self._build_ids_array() if (self.reverse_x or self.reverse_y) else None
+        grid_idx = 0
+        for j in range(self.height):
+            for i in range(self.width):
+                marker_id = ids_array[grid_idx] if ids_array is not None else grid_idx
                 # Calculate marker position
-                x = border_pixels + i * (marker_size_px + marker_separation_px)
-                y = border_pixels + j * (marker_size_px + marker_separation_px)
+                x = border_pixels + i * (marker_size_px + marker_spacing_px)
+                y = border_pixels + j * (marker_size_px + marker_spacing_px)
                 
                 # Generate marker image
                 try:
                     marker_img = cv2.aruco.generateImageMarker(
-                        self.aruco_dict, marker_id, marker_size_px
+                        self.aruco_dict, marker_id, marker_size_px, borderBits=self.border_bits
                     )
                     # Convert to BGR if needed
                     if len(marker_img.shape) == 2:
@@ -584,19 +670,50 @@ class GridBoard(CalibrationPattern):
                     cv2.putText(image, str(marker_id), (x+10, y+marker_size_px//2), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
                 
-                marker_id += 1
+                grid_idx += 1
+        
+        if self.enable_symm_corners:
+            self._apply_symm_corners(image, border_pixels, marker_size_px, marker_spacing_px)
         
         return image
+    
+    def _apply_symm_corners(self, image: np.ndarray, border_pixels: int,
+                            marker_size_px: int, marker_spacing_px: int) -> None:
+        """Fill corner gap cells with black to create symmetric chessboard corners.
+        
+        At each marker corner, a marker_spacing x marker_spacing square is placed
+        diagonally opposite to the marker. This covers all (W+1)x(H+1) vertex
+        positions including boundary corners that extend into the border area,
+        creating symmetric chessboard corners (AprilTag/Kalibr style) at every
+        marker corner for reliable subpixel refinement.
+        """
+        step = marker_size_px + marker_spacing_px
+        img_h, img_w = image.shape[:2]
+        for gj in range(self.height + 1):
+            for gi in range(self.width + 1):
+                gx = border_pixels + gi * step - marker_spacing_px
+                gy = border_pixels + gj * step - marker_spacing_px
+                # Clip to image bounds for boundary squares
+                x0 = max(0, gx)
+                y0 = max(0, gy)
+                x1 = min(img_w, gx + marker_spacing_px)
+                y1 = min(img_h, gy + marker_spacing_px)
+                if x0 < x1 and y0 < y1:
+                    image[y0:y1, x0:x1] = 0
     
     def _get_parameters_dict(self) -> Dict[str, Any]:
         """Get pattern parameters for JSON serialization."""
         return {
-            'markers_x': self.markers_x,
-            'markers_y': self.markers_y,
+            'width': self.width,
+            'height': self.height,
             'marker_size': self.marker_size,
-            'marker_separation': self.marker_separation,
+            'marker_spacing': self.marker_spacing,
             'dictionary_id': self.dictionary_id,
-            'total_markers': self.markers_x * self.markers_y
+            'border_bits': self.border_bits,
+            'enable_symm_corners': self.enable_symm_corners,
+            'reverse_x': self.reverse_x,
+            'reverse_y': self.reverse_y,
+            'total_markers': self.width * self.height
         }
     
     @classmethod
@@ -604,9 +721,13 @@ class GridBoard(CalibrationPattern):
         """Create GridBoard from JSON data."""
         params = json_data.get('parameters', {})
         return cls(
-            markers_x=params.get('markers_x', 5),
-            markers_y=params.get('markers_y', 7),
+            width=params.get('width', 5),
+            height=params.get('height', 7),
             marker_size=params.get('marker_size', 0.04),
-            marker_separation=params.get('marker_separation', 0.01),
-            dictionary_id=params.get('dictionary_id', cv2.aruco.DICT_6X6_250)
+            marker_spacing=params.get('marker_spacing', 0.01),
+            dictionary_id=params.get('dictionary_id', cv2.aruco.DICT_6X6_250),
+            border_bits=params.get('border_bits', 1),
+            enable_symm_corners=params.get('enable_symm_corners', False),
+            reverse_x=params.get('reverse_x', False),
+            reverse_y=params.get('reverse_y', False)
         )
