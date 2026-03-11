@@ -1,8 +1,8 @@
 """
-ArUco Grid Board Pattern
-========================
+Marker Grid Pattern
+===================
 
-ArUco grid board pattern for camera calibration using ArUco markers
+Marker grid pattern for camera calibration using ArUco markers
 arranged in a regular grid pattern.
 """
 
@@ -13,12 +13,12 @@ from .base import CalibrationPattern
 
 
 class GridBoard(CalibrationPattern):
-    """ArUco Grid Board pattern for camera calibration."""
+    """Marker Grid pattern for camera calibration."""
     
     # Pattern information for auto-discovery
     PATTERN_INFO = {
         'id': 'grid_board',
-        'name': 'ArUco Grid Board',
+        'name': 'Marker Grid',
         'icon': '🎲',
         'category': 'aruco',
         'metadata': {
@@ -66,7 +66,7 @@ class GridBoard(CalibrationPattern):
                  reverse_x: bool = False, reverse_y: bool = False,
                  is_planar: bool = True):
         """
-        Initialize ArUco Grid Board.
+        Initialize Marker Grid.
         
         Args:
             width: Number of markers along X-axis
@@ -83,7 +83,7 @@ class GridBoard(CalibrationPattern):
         """
         super().__init__(
             pattern_id="grid_board",
-            name="ArUco Grid Board",
+            name="Marker Grid",
             description="Grid of ArUco markers for robust camera calibration",
             is_planar=is_planar
         )
@@ -127,7 +127,7 @@ class GridBoard(CalibrationPattern):
                     width, height, marker_size, marker_spacing, self.aruco_dict
                 )
             except AttributeError:
-                raise ValueError("ArUco Grid boards are not supported in this OpenCV version")
+                raise ValueError("Marker Grid boards are not supported in this OpenCV version")
         
         # Detector parameters with corner refinement enabled
         try:
@@ -182,7 +182,7 @@ class GridBoard(CalibrationPattern):
             Dict containing the pattern configuration schema
         """
         return {
-            "name": "ArUco Grid Board",
+            "name": "Marker Grid",
             "description": "Grid of ArUco markers for robust camera calibration detection",
             "icon": "🎲",
             "parameters": [
@@ -278,15 +278,10 @@ class GridBoard(CalibrationPattern):
                         {"value": cv2.aruco.DICT_7X7_250, "label": "DICT_7X7_250"},
                         {"value": cv2.aruco.DICT_7X7_1000, "label": "DICT_7X7_1000"},
                         {"value": cv2.aruco.DICT_ARUCO_ORIGINAL, "label": "DICT_ARUCO_ORIGINAL"},
-                        {"value": cv2.aruco.DICT_APRILTAG_16h5, "label": "DICT_APRILTAG_16h5"},
                         {"value": cv2.aruco.DICT_APRILTAG_16H5, "label": "DICT_APRILTAG_16H5"},
-                        {"value": cv2.aruco.DICT_APRILTAG_25h9, "label": "DICT_APRILTAG_25h9"},
                         {"value": cv2.aruco.DICT_APRILTAG_25H9, "label": "DICT_APRILTAG_25H9"},
-                        {"value": cv2.aruco.DICT_APRILTAG_36h10, "label": "DICT_APRILTAG_36h10"},
                         {"value": cv2.aruco.DICT_APRILTAG_36H10, "label": "DICT_APRILTAG_36H10"},
-                        {"value": cv2.aruco.DICT_APRILTAG_36h11, "label": "DICT_APRILTAG_36h11"},
                         {"value": cv2.aruco.DICT_APRILTAG_36H11, "label": "DICT_APRILTAG_36H11"},
-                        {"value": cv2.aruco.DICT_ARUCO_MIP_36h12, "label": "DICT_ARUCO_MIP_36h12"},
                         {"value": cv2.aruco.DICT_ARUCO_MIP_36H12, "label": "DICT_ARUCO_MIP_36H12"}
                     ],
                     "description": "ArUco marker dictionary to use"
@@ -345,7 +340,7 @@ class GridBoard(CalibrationPattern):
         return False, None, None
     
     def generate_object_points(self, point_ids: Optional[np.ndarray] = None) -> np.ndarray:
-        """Generate 3D object points for ArUco Grid board."""
+        """Generate 3D object points for Marker Grid."""
         # When reverse is active, OpenCV's getObjPoints doesn't know about the remapping,
         # so always use manual generation which respects _grid_position_for_id.
         if self.reverse_x or self.reverse_y:
@@ -530,7 +525,7 @@ class GridBoard(CalibrationPattern):
                              border_pixels: int = 50, 
                              pixel_per_square: int = None) -> np.ndarray:
         """
-        Generate an ArUco Grid Board pattern image.
+        Generate a Marker Grid pattern image.
         
         Args:
             pixels_per_meter: Number of pixels per meter (default: 2000, i.e., 0.5mm = 1px)
@@ -538,7 +533,7 @@ class GridBoard(CalibrationPattern):
             pixel_per_square: Web app compatibility - pixels per square unit (overrides pixels_per_meter)
             
         Returns:
-            Generated ArUco Grid Board image as numpy array
+            Generated Marker Grid image as numpy array
         """
         # Handle web app compatibility - convert pixel_per_square to pixels_per_meter
         if pixel_per_square is not None:
@@ -576,9 +571,14 @@ class GridBoard(CalibrationPattern):
         pattern_height_px = (self.height * marker_size_px + 
                             (self.height - 1) * marker_spacing_px)
         
-        # Calculate total image dimensions with borders
-        img_width = pattern_width_px + 2 * border_pixels
-        img_height = pattern_height_px + 2 * border_pixels
+        # When symm corners are enabled, boundary squares extend marker_spacing_px
+        # beyond the pattern area on each side. Add padding so they are not clipped.
+        symm_padding = marker_spacing_px if self.enable_symm_corners else 0
+        effective_border = border_pixels + symm_padding
+        
+        # Calculate total image dimensions with borders and symm corner padding
+        img_width = pattern_width_px + 2 * effective_border
+        img_height = pattern_height_px + 2 * effective_border
         
         # Use OpenCV's built-in Grid board generation
         try:
@@ -587,7 +587,7 @@ class GridBoard(CalibrationPattern):
                 # Pass the full image dimensions (including border) to OpenCV
                 board_image = self.grid_board.generateImage(
                     (img_width, img_height), 
-                    marginSize=border_pixels, 
+                    marginSize=effective_border, 
                     borderBits=self.border_bits
                 )
             else:
@@ -598,7 +598,7 @@ class GridBoard(CalibrationPattern):
                         self.grid_board, 
                         (img_width, img_height), 
                         board_image, 
-                        marginSize=border_pixels, 
+                        marginSize=effective_border, 
                         borderBits=self.border_bits
                     )
                 except AttributeError:
@@ -615,7 +615,7 @@ class GridBoard(CalibrationPattern):
             board_image = cv2.cvtColor(board_image, cv2.COLOR_GRAY2BGR)
         
         if self.enable_symm_corners:
-            self._apply_symm_corners(board_image, border_pixels, marker_size_px, marker_spacing_px)
+            self._apply_symm_corners(board_image, effective_border, marker_size_px, marker_spacing_px)
         
         return board_image
     
@@ -634,9 +634,14 @@ class GridBoard(CalibrationPattern):
         pattern_height_px = (self.height * marker_size_px + 
                             (self.height - 1) * marker_spacing_px)
         
-        # Calculate total image dimensions with borders
-        img_width = pattern_width_px + 2 * border_pixels
-        img_height = pattern_height_px + 2 * border_pixels
+        # When symm corners are enabled, boundary squares extend marker_spacing_px
+        # beyond the pattern area on each side. Add padding so they are not clipped.
+        symm_padding = marker_spacing_px if self.enable_symm_corners else 0
+        effective_border = border_pixels + symm_padding
+        
+        # Calculate total image dimensions with borders and symm corner padding
+        img_width = pattern_width_px + 2 * effective_border
+        img_height = pattern_height_px + 2 * effective_border
         
         # Create blank white image
         image = np.ones((img_height, img_width, 3), dtype=np.uint8) * 255
@@ -648,8 +653,8 @@ class GridBoard(CalibrationPattern):
             for i in range(self.width):
                 marker_id = ids_array[grid_idx] if ids_array is not None else grid_idx
                 # Calculate marker position
-                x = border_pixels + i * (marker_size_px + marker_spacing_px)
-                y = border_pixels + j * (marker_size_px + marker_spacing_px)
+                x = effective_border + i * (marker_size_px + marker_spacing_px)
+                y = effective_border + j * (marker_size_px + marker_spacing_px)
                 
                 # Generate marker image
                 try:
@@ -673,7 +678,7 @@ class GridBoard(CalibrationPattern):
                 grid_idx += 1
         
         if self.enable_symm_corners:
-            self._apply_symm_corners(image, border_pixels, marker_size_px, marker_spacing_px)
+            self._apply_symm_corners(image, effective_border, marker_size_px, marker_spacing_px)
         
         return image
     

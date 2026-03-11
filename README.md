@@ -167,12 +167,12 @@ else:
 
 ### 4. Web (Under Development)
 
-If you start the web, you can open the web in browser http://localhost:5000. You can generate calibration pattern, upload images and perform calibration online. **Note: Functions of web are still under development.**
+If you start the web, you can open the web in browser http://localhost:5000. Currently the web provides quick visualization and generation of calibration patterns. Other functions such as image upload and online calibration are still under development.
 
 
 ## 🎯 Calibration Patterns
 
-Currently we support 3 kinds of chessboard: standard chessboard, ChArUCo chessboard and grid board. If you do not have a chessboard, you can generate the chessboard image using script, or on the web, then print the image. 
+Currently we support 3 kinds of chessboard: standard chessboard, ChArUCo chessboard and marker grid. If you do not have a chessboard, you can generate the chessboard image using script, or on the web, then print the image. 
 
 
 ### Standard Chessboard (Most Common)
@@ -214,7 +214,7 @@ charuco_custom = CharucoBoard(
 )
 ```
 
-### Grid Board
+### Marker Grid
 
 <p>
     <img src="sample_data/intrinsic_calib_grid_test_images/snapshot_20250822_145040.jpg" alt="Grid board sample" width="300">
@@ -270,6 +270,37 @@ pattern = load_pattern_from_json(pattern_config)
 # Use with any calibrator
 calibrator = IntrinsicCalibrator(image_paths, pattern)
 ```
+
+## 🏷️ ArUco Marker Dictionaries
+
+ChArUco boards and Marker Grids use ArUco markers from a predefined dictionary. The `dictionary_id` parameter selects which dictionary to use. Larger marker bit sizes improve detection robustness at distance, while smaller ones allow more compact boards. The capacity is the maximum number of unique markers available in that dictionary.
+
+| ID | Dictionary Name | Marker Bits | Capacity |
+|----|-----------------|-------------|----------|
+| 0 | DICT_4X4_50 | 4×4 | 50 |
+| 1 | DICT_4X4_100 | 4×4 | 100 |
+| 2 | DICT_4X4_250 | 4×4 | 250 |
+| 3 | DICT_4X4_1000 | 4×4 | 1000 |
+| 4 | DICT_5X5_50 | 5×5 | 50 |
+| 5 | DICT_5X5_100 | 5×5 | 100 |
+| 6 | DICT_5X5_250 | 5×5 | 250 |
+| 7 | DICT_5X5_1000 | 5×5 | 1000 |
+| 8 | DICT_6X6_50 | 6×6 | 50 |
+| 9 | DICT_6X6_100 | 6×6 | 100 |
+| 10 | DICT_6X6_250 | 6×6 | 250 |
+| 11 | DICT_6X6_1000 | 6×6 | 1000 |
+| 12 | DICT_7X7_50 | 7×7 | 50 |
+| 13 | DICT_7X7_100 | 7×7 | 100 |
+| 14 | DICT_7X7_250 | 7×7 | 250 |
+| 15 | DICT_7X7_1000 | 7×7 | 1000 |
+| 16 | DICT_ARUCO_ORIGINAL | 5×5 | 1024 |
+| 17 | DICT_APRILTAG_16H5 | 4×4 | 30 |
+| 18 | DICT_APRILTAG_25H9 | 5×5 | 35 |
+| 19 | DICT_APRILTAG_36H10 | 6×6 | 2320 |
+| 20 | DICT_APRILTAG_36H11 | 6×6 | 587 |
+| 21 | DICT_ARUCO_MIP_36H12 | 6×6 | 250 |
+
+> **Tip:** `DICT_6X6_250` (ID 10) is the default and a good general-purpose choice. AprilTag dictionaries (IDs 17–21) are optimized for long-range detection and lower inter-marker confusion.
 
 ## 📋 Data Formats
 

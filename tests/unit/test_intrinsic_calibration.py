@@ -692,7 +692,7 @@ class TestIntrinsicCalibrationPatternTypes(unittest.TestCase):
        - Robust against partial occlusion and perspective distortion
        - Provides both corner and marker-based feature detection
     
-    3. **ArUco Grid Board Pattern:**
+    3. **Marker Grid Pattern:**
        - Grid of ArUco markers without chessboard squares
        - Excellent for challenging lighting and perspective conditions
        - Marker-based detection with unique identification
@@ -843,7 +843,7 @@ class TestIntrinsicCalibrationPatternTypes(unittest.TestCase):
         print(f"  Calibration successful: ✅")
     
     def test_grid_board_calibration(self):
-        """Test calibration with ArUco grid board pattern."""
+        """Test calibration with Marker grid pattern."""
         if not self.has_gridboard_data:
             self.skipTest("Grid board test data not available")
         

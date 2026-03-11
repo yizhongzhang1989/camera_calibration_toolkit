@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Camera Calibration Toolkit</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <style>
         .calibration-selector {
@@ -95,6 +100,20 @@
         <p class="header-subtitle">Select the type of calibration you want to perform</p>
         
         <div class="calibration-cards">
+            <!-- Chessboard Generator Card -->
+            <div class="calibration-card" onclick="openChessboardModal()">
+                <div class="calibration-icon">♟️</div>
+                <h3>Chessboard Generator</h3>
+                <p>Configure and preview calibration patterns. Generate printable board images for standard chessboard, ChArUco, and marker grid patterns.</p>
+                <ul style="text-align: left; color: #666; margin: 1rem 0;">
+                    <li>🎯 Multiple pattern types</li>
+                    <li>🔧 Dynamic configuration</li>
+                    <li>📊 Real-time preview</li>
+                    <li>🖨️ Print-ready export</li>
+                </ul>
+                <button class="select-btn">Open Generator</button>
+            </div>
+
             <!-- Intrinsic Calibration Card -->
             <div class="calibration-card" onclick="selectCalibration('intrinsic')">
                 <div class="calibration-icon">📷</div>
@@ -155,7 +174,24 @@
         </div>
     </div>
 
+    <!-- Shared Chessboard Configuration Modal -->
+    {{ include_shared_template('chessboard-modal.html') | safe }}
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
+
+    <!-- Pattern Modal System -->
+    <script src="{{ url_for('static', filename='js/pattern-modal.js') }}?v=20250820"></script>
+
+    <!-- Chessboard configuration script -->
+    <script src="{{ url_for('static', filename='js/chessboard-config.js') }}?v=20250820"></script>
+
     <script>
+        function openChessboardModal() {
+            var modal = new bootstrap.Modal(document.getElementById('chessboard-config-modal'));
+            modal.show();
+        }
+
         function selectCalibration(type) {
             // Redirect to the specific calibration interface
             window.location.href = `/${type}`;

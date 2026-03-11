@@ -124,7 +124,7 @@ class TestPatternSerialization(unittest.TestCase):
         self.assertEqual(restored_pattern.dictionary_id, original_pattern.dictionary_id)
 
     def test_grid_board_serialization(self):
-        """Test serialization of ArUco grid board patterns."""
+        """Test serialization of Marker grid patterns."""
         # Create a grid board pattern
         original_pattern = self.manager.create_pattern(
             'grid_board',
