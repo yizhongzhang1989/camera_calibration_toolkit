@@ -167,7 +167,7 @@ else:
 
 ### 4. Web (Under Development)
 
-If you start the web, you can open the web in browser http://localhost:5000. You can generate calibration pattern, upload images and perform calibration online. **Note: Functions of web are still under development.**
+If you start the web, you can open the web in browser http://localhost:5000. Currently the web provides quick visualization and generation of calibration patterns. Other functions such as image upload and online calibration are still under development.
 
 
 ## 🎯 Calibration Patterns
