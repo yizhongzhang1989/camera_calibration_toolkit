@@ -272,6 +272,25 @@ def generate_patterns():
             }
         },
         {
+            'name': 'gridboard_5x4_symm_corners_no_border',
+            'description': 'Marker Grid 5×4 with symmetric corners and no border',
+            'generate_params': {'pixel_per_square': 80, 'border_pixels': 0},
+            'pattern_config': {
+                "pattern_id": "grid_board",
+                "name": "Grid Board",
+                "description": "ArUco marker grid board pattern with symmetric corners, no border",
+                "is_planar": True,
+                "parameters": {
+                    "width": 5,
+                    "height": 4,
+                    "marker_size": 0.04,
+                    "marker_spacing": 0.01,
+                    "dictionary_id": cv2.aruco.DICT_4X4_50,
+                    "enable_symm_corners": True
+                }
+            }
+        },
+        {
             'name': 'gridboard_5x4_reverse_x',
             'description': 'Marker Grid 5×4 with reverse_x (right-to-left marker order)',
             'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},

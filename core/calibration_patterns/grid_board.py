@@ -571,9 +571,14 @@ class GridBoard(CalibrationPattern):
         pattern_height_px = (self.height * marker_size_px + 
                             (self.height - 1) * marker_spacing_px)
         
-        # Calculate total image dimensions with borders
-        img_width = pattern_width_px + 2 * border_pixels
-        img_height = pattern_height_px + 2 * border_pixels
+        # When symm corners are enabled, boundary squares extend marker_spacing_px
+        # beyond the pattern area on each side. Add padding so they are not clipped.
+        symm_padding = marker_spacing_px if self.enable_symm_corners else 0
+        effective_border = border_pixels + symm_padding
+        
+        # Calculate total image dimensions with borders and symm corner padding
+        img_width = pattern_width_px + 2 * effective_border
+        img_height = pattern_height_px + 2 * effective_border
         
         # Use OpenCV's built-in Grid board generation
         try:
@@ -582,7 +587,7 @@ class GridBoard(CalibrationPattern):
                 # Pass the full image dimensions (including border) to OpenCV
                 board_image = self.grid_board.generateImage(
                     (img_width, img_height), 
-                    marginSize=border_pixels, 
+                    marginSize=effective_border, 
                     borderBits=self.border_bits
                 )
             else:
@@ -593,7 +598,7 @@ class GridBoard(CalibrationPattern):
                         self.grid_board, 
                         (img_width, img_height), 
                         board_image, 
-                        marginSize=border_pixels, 
+                        marginSize=effective_border, 
                         borderBits=self.border_bits
                     )
                 except AttributeError:
@@ -610,7 +615,7 @@ class GridBoard(CalibrationPattern):
             board_image = cv2.cvtColor(board_image, cv2.COLOR_GRAY2BGR)
         
         if self.enable_symm_corners:
-            self._apply_symm_corners(board_image, border_pixels, marker_size_px, marker_spacing_px)
+            self._apply_symm_corners(board_image, effective_border, marker_size_px, marker_spacing_px)
         
         return board_image
     
@@ -629,9 +634,14 @@ class GridBoard(CalibrationPattern):
         pattern_height_px = (self.height * marker_size_px + 
                             (self.height - 1) * marker_spacing_px)
         
-        # Calculate total image dimensions with borders
-        img_width = pattern_width_px + 2 * border_pixels
-        img_height = pattern_height_px + 2 * border_pixels
+        # When symm corners are enabled, boundary squares extend marker_spacing_px
+        # beyond the pattern area on each side. Add padding so they are not clipped.
+        symm_padding = marker_spacing_px if self.enable_symm_corners else 0
+        effective_border = border_pixels + symm_padding
+        
+        # Calculate total image dimensions with borders and symm corner padding
+        img_width = pattern_width_px + 2 * effective_border
+        img_height = pattern_height_px + 2 * effective_border
         
         # Create blank white image
         image = np.ones((img_height, img_width, 3), dtype=np.uint8) * 255
@@ -643,8 +653,8 @@ class GridBoard(CalibrationPattern):
             for i in range(self.width):
                 marker_id = ids_array[grid_idx] if ids_array is not None else grid_idx
                 # Calculate marker position
-                x = border_pixels + i * (marker_size_px + marker_spacing_px)
-                y = border_pixels + j * (marker_size_px + marker_spacing_px)
+                x = effective_border + i * (marker_size_px + marker_spacing_px)
+                y = effective_border + j * (marker_size_px + marker_spacing_px)
                 
                 # Generate marker image
                 try:
@@ -668,7 +678,7 @@ class GridBoard(CalibrationPattern):
                 grid_idx += 1
         
         if self.enable_symm_corners:
-            self._apply_symm_corners(image, border_pixels, marker_size_px, marker_spacing_px)
+            self._apply_symm_corners(image, effective_border, marker_size_px, marker_spacing_px)
         
         return image
     

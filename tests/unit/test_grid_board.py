@@ -519,11 +519,13 @@ class TestGridBoardSymmCorners(unittest.TestCase):
         img = gb.generate_pattern_image(pixel_per_square=pps, border_pixels=border)
         spacing_px = int(0.01 * int(pps / 0.04))
         step = pps + spacing_px
+        # effective_border includes symm_padding
+        effective_border = border + spacing_px
         # All (W+1)*(H+1) vertex gap cells should be black
         for gj in range(3):  # height + 1
             for gi in range(4):  # width + 1
-                gx = border + gi * step - spacing_px
-                gy = border + gj * step - spacing_px
+                gx = effective_border + gi * step - spacing_px
+                gy = effective_border + gj * step - spacing_px
                 x0, y0 = max(0, gx), max(0, gy)
                 x1 = min(img.shape[1], gx + spacing_px)
                 y1 = min(img.shape[0], gy + spacing_px)
@@ -565,8 +567,9 @@ class TestGridBoardSymmCorners(unittest.TestCase):
         gb_off = GridBoard(enable_symm_corners=False, **kwargs)
         img_on = gb_on.generate_pattern_image(pixel_per_square=80, border_pixels=20)
         img_off = gb_off.generate_pattern_image(pixel_per_square=80, border_pixels=20)
-        self.assertEqual(img_on.shape, img_off.shape)
-        self.assertFalse(np.array_equal(img_on, img_off))
+        # Symm corners image is larger due to padding for boundary squares
+        self.assertGreater(img_on.shape[0], img_off.shape[0])
+        self.assertGreater(img_on.shape[1], img_off.shape[1])
 
 
 class TestGridBoardReverseXY(unittest.TestCase):
