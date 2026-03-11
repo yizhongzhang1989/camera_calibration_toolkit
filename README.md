@@ -172,7 +172,7 @@ If you start the web, you can open the web in browser http://localhost:5000. You
 
 ## 🎯 Calibration Patterns
 
-Currently we support 3 kinds of chessboard: standard chessboard, ChArUCo chessboard and grid board. If you do not have a chessboard, you can generate the chessboard image using script, or on the web, then print the image. 
+Currently we support 3 kinds of chessboard: standard chessboard, ChArUCo chessboard and marker grid. If you do not have a chessboard, you can generate the chessboard image using script, or on the web, then print the image. 
 
 
 ### Standard Chessboard (Most Common)
@@ -214,7 +214,7 @@ charuco_custom = CharucoBoard(
 )
 ```
 
-### Grid Board
+### Marker Grid
 
 <p>
     <img src="sample_data/intrinsic_calib_grid_test_images/snapshot_20250822_145040.jpg" alt="Grid board sample" width="300">
@@ -273,7 +273,7 @@ calibrator = IntrinsicCalibrator(image_paths, pattern)
 
 ## 🏷️ ArUco Marker Dictionaries
 
-ChArUco boards and Grid boards use ArUco markers from a predefined dictionary. The `dictionary_id` parameter selects which dictionary to use. Larger marker bit sizes improve detection robustness at distance, while smaller ones allow more compact boards. The capacity is the maximum number of unique markers available in that dictionary.
+ChArUco boards and Marker Grids use ArUco markers from a predefined dictionary. The `dictionary_id` parameter selects which dictionary to use. Larger marker bit sizes improve detection robustness at distance, while smaller ones allow more compact boards. The capacity is the maximum number of unique markers available in that dictionary.
 
 | ID | Dictionary Name | Marker Bits | Capacity |
 |----|-----------------|-------------|----------|

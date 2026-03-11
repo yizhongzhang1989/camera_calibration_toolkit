@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Unit Tests for ArUco Grid Board Pattern
-========================================
+Unit Tests for Marker Grid Pattern
+===================================
 
 Tests for GridBoard calibration pattern creation, configuration,
 pattern image generation, corner detection, object point generation,

@@ -11,9 +11,9 @@ Generated Patterns:
 - Standard chessboard 9×6 (200px squares, 200px border)
 - ChArUco 8×6 (DICT_4X4_100, 20mm squares, 15mm markers) - black first & white first
 - ChArUco 12×9 (DICT_6X6_250, 20mm squares, 10mm markers, 50px border) - black first & white first
-- ArUco Grid Board 1×1 (DICT_4X4_50, 40mm markers, 10mm separation)
-- ArUco Grid Board 5×4 (DICT_4X4_50, 40mm markers, 10mm separation)
-- ArUco Grid Board 5×4 with symmetric corners (AprilTag/Kalibr style)
+- Marker Grid 1×1 (DICT_4X4_50, 40mm markers, 10mm separation)
+- Marker Grid 5×4 (DICT_4X4_50, 40mm markers, 10mm separation)
+- Marker Grid 5×4 with symmetric corners (AprilTag/Kalibr style)
 
 Usage:
     conda activate camcalib
@@ -179,7 +179,7 @@ def generate_patterns():
         },
         {
             'name': 'gridboard_1x1_dict10',
-            'description': 'ArUco Grid Board 1×1 with DICT_4X4_50, 40mm markers, 10mm spacing',
+            'description': 'Marker Grid 1×1 with DICT_4X4_50, 40mm markers, 10mm spacing',
             'generate_params': {'pixel_per_square': 150, 'border_pixels': 100},
             'pattern_config': {
                 "pattern_id": "grid_board",
@@ -197,7 +197,7 @@ def generate_patterns():
         },
         {
             'name': 'gridboard_5x4_border1',
-            'description': 'ArUco Grid Board 5×4 with DICT_4X4_50, border_bits=1',
+            'description': 'Marker Grid 5×4 with DICT_4X4_50, border_bits=1',
             'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
             'pattern_config': {
                 "pattern_id": "grid_board",
@@ -216,7 +216,7 @@ def generate_patterns():
         },
         {
             'name': 'gridboard_5x4_border2',
-            'description': 'ArUco Grid Board 5×4 with DICT_4X4_50, border_bits=2',
+            'description': 'Marker Grid 5×4 with DICT_4X4_50, border_bits=2',
             'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
             'pattern_config': {
                 "pattern_id": "grid_board",
@@ -235,7 +235,7 @@ def generate_patterns():
         },
         {
             'name': 'gridboard_5x4_border3',
-            'description': 'ArUco Grid Board 5×4 with DICT_4X4_50, border_bits=3',
+            'description': 'Marker Grid 5×4 with DICT_4X4_50, border_bits=3',
             'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
             'pattern_config': {
                 "pattern_id": "grid_board",
@@ -254,7 +254,7 @@ def generate_patterns():
         },
         {
             'name': 'gridboard_5x4_symm_corners',
-            'description': 'ArUco Grid Board 5×4 with symmetric corners (AprilTag/Kalibr style)',
+            'description': 'Marker Grid 5×4 with symmetric corners (AprilTag/Kalibr style)',
             'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
             'pattern_config': {
                 "pattern_id": "grid_board",
@@ -273,7 +273,7 @@ def generate_patterns():
         },
         {
             'name': 'gridboard_5x4_reverse_x',
-            'description': 'ArUco Grid Board 5×4 with reverse_x (right-to-left marker order)',
+            'description': 'Marker Grid 5×4 with reverse_x (right-to-left marker order)',
             'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
             'pattern_config': {
                 "pattern_id": "grid_board",
@@ -292,7 +292,7 @@ def generate_patterns():
         },
         {
             'name': 'gridboard_5x4_reverse_y',
-            'description': 'ArUco Grid Board 5×4 with reverse_y (bottom-to-top marker order)',
+            'description': 'Marker Grid 5×4 with reverse_y (bottom-to-top marker order)',
             'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
             'pattern_config': {
                 "pattern_id": "grid_board",
@@ -311,7 +311,7 @@ def generate_patterns():
         },
         {
             'name': 'gridboard_5x4_reverse_both',
-            'description': 'ArUco Grid Board 5×4 with reverse_x + reverse_y',
+            'description': 'Marker Grid 5×4 with reverse_x + reverse_y',
             'generate_params': {'pixel_per_square': 80, 'border_pixels': 50},
             'pattern_config': {
                 "pattern_id": "grid_board",

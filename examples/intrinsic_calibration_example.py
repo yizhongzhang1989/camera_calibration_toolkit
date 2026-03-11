@@ -8,7 +8,7 @@ camera intrinsic parameter calibration using different calibration patterns:
 
 1. Standard chessboard pattern (using image file paths)
 2. ChArUco board pattern (using loaded images)  
-3. ArUco grid board pattern (using image file paths)
+3. Marker grid pattern (using image file paths)
 4. Custom ChArUco board with white first square
 5. AprilTag-style grid board with symmetric corners
 
@@ -137,7 +137,7 @@ def test_charuco_calibration():
 
 def test_gridboard_calibration():
     print("=" * 50)
-    print("Test calibrate with ArUco grid board pattern, given image paths and calibration pattern, using rational camera model.")
+    print("Test calibrate with Marker grid pattern, given image paths and calibration pattern, using rational camera model.")
     print("=" * 50)
     
     # Load sample images with ArUco GridBoard

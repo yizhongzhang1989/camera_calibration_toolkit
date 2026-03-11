@@ -1,8 +1,8 @@
 """
-ArUco Grid Board Pattern
-========================
+Marker Grid Pattern
+===================
 
-ArUco grid board pattern for camera calibration using ArUco markers
+Marker grid pattern for camera calibration using ArUco markers
 arranged in a regular grid pattern.
 """
 
@@ -13,12 +13,12 @@ from .base import CalibrationPattern
 
 
 class GridBoard(CalibrationPattern):
-    """ArUco Grid Board pattern for camera calibration."""
+    """Marker Grid pattern for camera calibration."""
     
     # Pattern information for auto-discovery
     PATTERN_INFO = {
         'id': 'grid_board',
-        'name': 'ArUco Grid Board',
+        'name': 'Marker Grid',
         'icon': '🎲',
         'category': 'aruco',
         'metadata': {
@@ -66,7 +66,7 @@ class GridBoard(CalibrationPattern):
                  reverse_x: bool = False, reverse_y: bool = False,
                  is_planar: bool = True):
         """
-        Initialize ArUco Grid Board.
+        Initialize Marker Grid.
         
         Args:
             width: Number of markers along X-axis
@@ -83,7 +83,7 @@ class GridBoard(CalibrationPattern):
         """
         super().__init__(
             pattern_id="grid_board",
-            name="ArUco Grid Board",
+            name="Marker Grid",
             description="Grid of ArUco markers for robust camera calibration",
             is_planar=is_planar
         )
@@ -127,7 +127,7 @@ class GridBoard(CalibrationPattern):
                     width, height, marker_size, marker_spacing, self.aruco_dict
                 )
             except AttributeError:
-                raise ValueError("ArUco Grid boards are not supported in this OpenCV version")
+                raise ValueError("Marker Grid boards are not supported in this OpenCV version")
         
         # Detector parameters with corner refinement enabled
         try:
@@ -182,7 +182,7 @@ class GridBoard(CalibrationPattern):
             Dict containing the pattern configuration schema
         """
         return {
-            "name": "ArUco Grid Board",
+            "name": "Marker Grid",
             "description": "Grid of ArUco markers for robust camera calibration detection",
             "icon": "🎲",
             "parameters": [
@@ -340,7 +340,7 @@ class GridBoard(CalibrationPattern):
         return False, None, None
     
     def generate_object_points(self, point_ids: Optional[np.ndarray] = None) -> np.ndarray:
-        """Generate 3D object points for ArUco Grid board."""
+        """Generate 3D object points for Marker Grid."""
         # When reverse is active, OpenCV's getObjPoints doesn't know about the remapping,
         # so always use manual generation which respects _grid_position_for_id.
         if self.reverse_x or self.reverse_y:
@@ -525,7 +525,7 @@ class GridBoard(CalibrationPattern):
                              border_pixels: int = 50, 
                              pixel_per_square: int = None) -> np.ndarray:
         """
-        Generate an ArUco Grid Board pattern image.
+        Generate a Marker Grid pattern image.
         
         Args:
             pixels_per_meter: Number of pixels per meter (default: 2000, i.e., 0.5mm = 1px)
@@ -533,7 +533,7 @@ class GridBoard(CalibrationPattern):
             pixel_per_square: Web app compatibility - pixels per square unit (overrides pixels_per_meter)
             
         Returns:
-            Generated ArUco Grid Board image as numpy array
+            Generated Marker Grid image as numpy array
         """
         # Handle web app compatibility - convert pixel_per_square to pixels_per_meter
         if pixel_per_square is not None:
