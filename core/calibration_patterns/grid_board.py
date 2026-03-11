@@ -278,15 +278,10 @@ class GridBoard(CalibrationPattern):
                         {"value": cv2.aruco.DICT_7X7_250, "label": "DICT_7X7_250"},
                         {"value": cv2.aruco.DICT_7X7_1000, "label": "DICT_7X7_1000"},
                         {"value": cv2.aruco.DICT_ARUCO_ORIGINAL, "label": "DICT_ARUCO_ORIGINAL"},
-                        {"value": cv2.aruco.DICT_APRILTAG_16h5, "label": "DICT_APRILTAG_16h5"},
                         {"value": cv2.aruco.DICT_APRILTAG_16H5, "label": "DICT_APRILTAG_16H5"},
-                        {"value": cv2.aruco.DICT_APRILTAG_25h9, "label": "DICT_APRILTAG_25h9"},
                         {"value": cv2.aruco.DICT_APRILTAG_25H9, "label": "DICT_APRILTAG_25H9"},
-                        {"value": cv2.aruco.DICT_APRILTAG_36h10, "label": "DICT_APRILTAG_36h10"},
                         {"value": cv2.aruco.DICT_APRILTAG_36H10, "label": "DICT_APRILTAG_36H10"},
-                        {"value": cv2.aruco.DICT_APRILTAG_36h11, "label": "DICT_APRILTAG_36h11"},
                         {"value": cv2.aruco.DICT_APRILTAG_36H11, "label": "DICT_APRILTAG_36H11"},
-                        {"value": cv2.aruco.DICT_ARUCO_MIP_36h12, "label": "DICT_ARUCO_MIP_36h12"},
                         {"value": cv2.aruco.DICT_ARUCO_MIP_36H12, "label": "DICT_ARUCO_MIP_36H12"}
                     ],
                     "description": "ArUco marker dictionary to use"
