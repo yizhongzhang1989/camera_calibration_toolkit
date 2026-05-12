@@ -17,6 +17,7 @@ The factory supports current and future calibration types:
 from typing import Dict, Any, Optional
 from .intrinsic_calibration import IntrinsicCalibrator
 from .eye_in_hand_calibration import EyeInHandCalibrator
+from .eye_to_hand_calibration import EyeToHandCalibrator
 
 
 class CalibrationFactory:
@@ -31,9 +32,9 @@ class CalibrationFactory:
     _calibrator_registry = {
         'intrinsic': IntrinsicCalibrator,
         'eye_in_hand': EyeInHandCalibrator,
+        'eye_to_hand': EyeToHandCalibrator,
         # Future calibration types will be added here:
         # 'stereo': StereoCalibrator,
-        # 'hand_eye': HandEyeCalibrator,
         # 'multi_camera': MultiCameraCalibrator,
         # 'lidar_camera': LidarCameraCalibrator,
     }

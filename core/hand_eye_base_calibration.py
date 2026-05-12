@@ -26,8 +26,10 @@ import numpy as np
 import cv2
 from typing import Tuple, List, Optional, Union, Dict, Any
 from abc import ABC, abstractmethod
+from scipy.optimize import minimize
 from .base_calibrator import BaseCalibrator
 from .calibration_patterns import CalibrationPattern
+from .utils import xyz_rpy_to_matrix
 
 
 class HandEyeBaseCalibrator(BaseCalibrator):
@@ -40,8 +42,19 @@ class HandEyeBaseCalibrator(BaseCalibrator):
     - Common data structures and validation
     
     Specialized calibrators inherit from this class and implement calibration logic.
+
+    Subclasses are expected to set ``_primary_name`` and ``_secondary_name`` class
+    attributes (used for log/diagnostic messages) and implement three small math
+    hooks (``_compose_target2cam``, ``_solve_primary``, ``_compose_secondary_candidate``)
+    plus ``_build_result_dict``. Everything else (method sweep, per-image
+    reprojection error, two-stage joint optimization, JSON serialization, public
+    accessors) is shared in this base class.
     """
-    
+
+    # Names used in log strings; subclasses override them.
+    _primary_name: str = "primary"
+    _secondary_name: str = "secondary"
+
     def __init__(self, 
                  images: Optional[List[np.ndarray]] = None,
                  end2base_matrices: Optional[List[np.ndarray]] = None,
@@ -88,6 +101,11 @@ class HandEyeBaseCalibrator(BaseCalibrator):
         # Calibration result attributes
         self.best_method = None
         self.best_method_name = None
+
+        # Generic primary/secondary transformation slots. Subclasses expose them
+        # under domain-specific names via @property aliases (e.g. cam2end_matrix).
+        self._primary_matrix: Optional[np.ndarray] = None
+        self._secondary_matrix: Optional[np.ndarray] = None
         
         # Handle special case: if both image_paths and end2base_matrices are provided,
         # don't automatically load from JSON files to avoid overwriting the provided matrices
@@ -128,54 +146,230 @@ class HandEyeBaseCalibrator(BaseCalibrator):
         # Validation of input consistency
         self._validate_input_consistency()
     
-    @abstractmethod
     def calibrate(self, method: Optional[int] = None, verbose: bool = False) -> Optional[Dict[str, Any]]:
         """
         Perform hand-eye calibration using the specified method or find the best method.
-        
-        This is the main calibration interface that should be implemented by inheriting classes.
-        The function provides a unified interface for both eye-in-hand and eye-to-hand calibration.
-        
+
+        This shared template implementation drives the same calibration flow for
+        both eye-in-hand and eye-to-hand configurations. The subclass supplies the
+        three math hooks (``_solve_primary``, ``_compose_secondary_candidate``,
+        ``_compose_target2cam``) and ``_build_result_dict``; everything else
+        (method sweep, optimization, result packaging) is identical.
+
         Args:
-            method: Optional OpenCV calibration method constant. If None, all methods will be 
-                   tested and the best one (lowest reprojection error) will be selected.
-                   Valid methods depend on calibration type:
-                   - Eye-in-hand: cv2.CALIB_HAND_EYE_TSAI, cv2.CALIB_HAND_EYE_PARK, 
-                                  cv2.CALIB_HAND_EYE_HORAUD, cv2.CALIB_HAND_EYE_ANDREFF, 
-                                  cv2.CALIB_HAND_EYE_DANIILIDIS
-                   - Eye-to-hand: Same methods but different transformation relationships
-            verbose: Whether to print detailed calibration progress and results
-            
+            method: Optional OpenCV calibration method constant. If ``None`` or
+                invalid, every available method is tested and the one with the
+                lowest reprojection error is chosen.
+            verbose: Whether to print detailed calibration progress and results.
+
         Returns:
-            Optional[Dict[str, Any]]: Dictionary containing calibration results if successful, None if failed.
-            The result dictionary should contain at minimum:
-            - 'success': bool - True if calibration succeeded
-            - 'method': int - OpenCV method constant used
-            - 'method_name': str - Human-readable method name
-            - 'rms_error': float - Overall RMS reprojection error
-            - 'per_image_errors': List[float] - Per-image reprojection errors
-            - 'valid_images': int - Number of valid images used in calibration
-            - 'total_images': int - Total number of images processed
-            Additional keys specific to eye-in-hand or eye-to-hand should be included.
-            
-        Raises:
-            NotImplementedError: This is an abstract method that must be implemented by subclasses
-            ValueError: If required data is missing or invalid
-            
-        Note:
-            Before calling this method, ensure that:
-            1. Images and robot poses are loaded
-            2. Camera intrinsic parameters are available (via intrinsic calibration)
-            3. Calibration patterns are detected in images
-            4. Target-to-camera matrices are calculated
-            
-            After successful calibration:
-            - self.calibration_completed will be True
-            - self.best_method and self.best_method_name will contain the best method info
-            - Transformation matrices will be available via getter methods
-            - RMS error and per-image errors will be calculated
+            Optional[Dict[str, Any]]: Result dictionary on success, or ``None``
+            if no method succeeded. Exact keys (e.g. ``cam2end_matrix`` vs
+            ``base2cam_matrix``) are determined by the subclass via
+            ``_build_result_dict``.
         """
-        raise NotImplementedError("calibrate() method must be implemented by subclasses")
+        try:
+            # detect pattern points
+            self.detect_pattern_points(verbose=verbose)
+
+            # Calculate target2cam matrices
+            self._calculate_target2cam_matrices(verbose=verbose)
+
+            # Validate prerequisites
+            self._validate_calibration_prerequisites()
+
+            valid_images = len([p for p in self.image_points if p is not None])
+            total_images = len(self.image_points) if self.image_points else 0
+
+            kind = f"{self._primary_name}/{self._secondary_name}"
+            if verbose:
+                print(f"🤖 Running hand-eye calibration ({kind}) with {valid_images} image-pose pairs")
+
+            # Determine which methods to test
+            available_methods = self.get_available_methods()
+
+            if method is None or method not in available_methods:
+                methods_to_try = available_methods
+                if verbose:
+                    if method is None:
+                        print("🔍 No method specified, testing all available methods...")
+                    else:
+                        print(f"⚠️ Invalid method specified: {method}")
+                        print(f"🔍 Valid methods are: {list(available_methods.keys())}")
+                        print(f"🔍 Falling back to testing all available methods...")
+            else:
+                method_name = available_methods[method]
+                methods_to_try = {method: method_name}
+                if verbose:
+                    print(f"🎯 Using specified method: {method_name} ({method})")
+
+            best_method = None
+            best_method_name = None
+            best_rms_error = float('inf')
+            best_primary = None
+            best_secondary = None
+            best_per_image_errors = None
+
+            for test_method, method_name in methods_to_try.items():
+                if verbose and len(methods_to_try) > 1:
+                    print(f"\n🧪 Testing method: {method_name} ({test_method})")
+
+                try:
+                    success, primary_matrix, secondary_matrix, rms_error, per_image_errors = \
+                        self._perform_single_calibration(test_method, verbose=False)
+
+                    if success and rms_error < best_rms_error:
+                        best_method = test_method
+                        best_method_name = method_name
+                        best_rms_error = rms_error
+                        best_primary = primary_matrix.copy()
+                        best_secondary = secondary_matrix.copy()
+                        best_per_image_errors = per_image_errors.copy()
+
+                        if verbose and len(methods_to_try) > 1:
+                            print(f"   ✅ New best method: {method_name} with RMS error {rms_error:.4f}")
+                    elif success:
+                        if verbose and len(methods_to_try) > 1:
+                            print(f"   ✅ Method {method_name} succeeded with RMS error {rms_error:.4f}")
+                    else:
+                        if verbose:
+                            if len(methods_to_try) > 1:
+                                print(f"   ❌ Method {method_name} failed")
+                            else:
+                                print(f"❌ Hand-eye calibration failed with method {method_name}")
+                except Exception as e:
+                    if verbose:
+                        if len(methods_to_try) > 1:
+                            print(f"   ❌ Method {method_name} failed with error: {e}")
+                        else:
+                            print(f"❌ Hand-eye calibration failed with method {method_name}: {e}")
+                    continue
+
+            if best_method is None:
+                if verbose and len(methods_to_try) > 1:
+                    print("❌ All calibration methods failed")
+                return None
+
+            if verbose:
+                if len(methods_to_try) > 1:
+                    print(f"\n🎉 Best method selected: {best_method_name} with RMS error {best_rms_error:.4f}")
+                else:
+                    print(f"✅ Hand-eye calibration completed successfully!")
+                    print(f"RMS reprojection error: {best_rms_error:.4f} pixels")
+                print(f"{self._primary_name} transformation matrix:")
+                print(f"{best_primary}")
+
+            # Store the best results in generic slots
+            self._primary_matrix = best_primary
+            self._secondary_matrix = best_secondary
+            self.rms_error = best_rms_error
+            self.per_image_errors = best_per_image_errors
+            self.best_method = best_method
+            self.best_method_name = best_method_name
+
+            # Snapshot initial (pre-optimization) results for the caller
+            initial_results = self._build_result_dict(
+                best_primary, best_secondary, best_rms_error, before_opt=None
+            )
+
+            optimized_results = initial_results.copy()
+            if verbose:
+                print(f"\n🔧 Attempting optimization...")
+
+            try:
+                initial_error, optimized_rms = self.optimize_calibration(ftol_rel=1e-6, verbose=verbose)
+
+                improvement = initial_error - optimized_rms
+                improvement_pct = (improvement / initial_error) * 100 if initial_error > 0 else 0
+
+                if optimized_rms < initial_error:
+                    # ``optimize_calibration`` has already updated self._primary_matrix /
+                    # self._secondary_matrix / self.rms_error in place when it improved.
+                    optimized_results = self._build_result_dict(
+                        self._primary_matrix, self._secondary_matrix, self.rms_error,
+                        before_opt=None,
+                    )
+                    if verbose:
+                        print(f"✅ Optimization completed!")
+                        print(f"   Initial RMS error: {initial_error:.4f} pixels")
+                        print(f"   Optimized RMS error: {optimized_rms:.4f} pixels")
+                        print(f"   Improvement: {improvement:.4f} pixels ({improvement_pct:.1f}%)")
+                else:
+                    if verbose:
+                        print(f"⚠️ Optimization did not improve results")
+                        print(f"   Initial RMS error: {initial_results['rms_error']:.4f} pixels")
+                        print(f"   Optimized RMS error: {optimized_rms:.4f} pixels")
+                        print(f"   Keeping initial calibration results")
+            except Exception as e:
+                if verbose:
+                    print(f"⚠️ Optimization failed: {e}")
+                    print(f"   Returning initial calibration results")
+
+            optimized_results['before_opt'] = initial_results
+
+            self.calibration_completed = True
+            return optimized_results
+
+        except Exception as e:
+            if verbose:
+                print(f"❌ Hand-eye calibration failed: {e}")
+            self.calibration_completed = False
+            return None
+
+    # ------------------------------------------------------------------
+    # Abstract math hooks — subclasses must implement these tiny kernels.
+    # Everything else is shared.
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    def _compose_target2cam(self,
+                            primary_matrix: np.ndarray,
+                            secondary_matrix: np.ndarray,
+                            end2base_matrix: np.ndarray) -> np.ndarray:
+        """
+        Compose the target→camera transformation for one image from the primary
+        matrix, the secondary matrix and that image's end→base transformation.
+
+        Eye-in-hand: ``inv(cam2end) @ inv(end2base) @ target2base``
+        Eye-to-hand: ``base2cam @ end2base @ target2end``
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def _solve_primary(self,
+                       end2base_matrices_valid: List[np.ndarray],
+                       target2cam_matrices_valid: List[np.ndarray],
+                       method: int) -> np.ndarray:
+        """
+        Run ``cv2.calibrateHandEye`` with subclass-specific argument ordering
+        and return the 4×4 primary transformation matrix.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def _compose_secondary_candidate(self,
+                                     primary_matrix: np.ndarray,
+                                     end2base_matrix: np.ndarray,
+                                     target2cam_matrix: np.ndarray) -> np.ndarray:
+        """
+        Build one candidate secondary matrix from a single image's measurements.
+
+        Eye-in-hand: ``end2base @ cam2end @ target2cam``  (gives target2base)
+        Eye-to-hand: ``inv(end2base) @ inv(base2cam) @ target2cam``  (gives target2end)
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def _build_result_dict(self,
+                           primary_matrix: np.ndarray,
+                           secondary_matrix: np.ndarray,
+                           rms_error: float,
+                           before_opt: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Build the subclass-specific result dictionary (e.g. with the keys
+        ``cam2end_matrix`` / ``target2base_matrix`` for eye-in-hand).
+        """
+        raise NotImplementedError
 
     def to_json(self) -> dict:
         """
@@ -754,6 +948,469 @@ class HandEyeBaseCalibrator(BaseCalibrator):
     def get_per_image_errors(self) -> Optional[List[float]]:
         """Get per-image reprojection errors."""
         return self.per_image_errors
+
+    # ============================================================================
+    # Shared calibration algorithm (used by both eye-in-hand and eye-to-hand)
+    # ============================================================================
+
+    def _calculate_reprojection_errors(self,
+                                       primary_matrix: np.ndarray,
+                                       secondary_matrix: np.ndarray,
+                                       verbose: bool = False) -> Tuple[float, List[float]]:
+        """
+        Project 3-D object points using the calibrated transformation chain and
+        compare them with the detected image points to obtain per-image and
+        overall RMS reprojection error.
+        """
+        per_image_errors: List[float] = []
+        total_error = 0.0
+        valid_error_count = 0
+
+        for i in range(len(self.image_points)):
+            if (self.image_points[i] is not None and
+                self.object_points[i] is not None and
+                self.end2base_matrices[i] is not None):
+                try:
+                    target2cam = self._compose_target2cam(
+                        primary_matrix, secondary_matrix, self.end2base_matrices[i]
+                    )
+
+                    projected_points, _ = cv2.projectPoints(
+                        self.object_points[i],
+                        target2cam[:3, :3],
+                        target2cam[:3, 3],
+                        self.camera_matrix,
+                        self.distortion_coefficients,
+                    )
+
+                    norm_L2 = cv2.norm(self.image_points[i], projected_points, cv2.NORM_L2)
+                    num_points = len(projected_points)
+
+                    error = norm_L2 / np.sqrt(num_points)
+                    per_image_errors.append(error)
+
+                    total_error += norm_L2 ** 2
+                    valid_error_count += num_points
+
+                    if verbose:
+                        print(f"   Image {i}: Reprojection error = {error:.4f} pixels")
+                except Exception as e:
+                    if verbose:
+                        print(f"   Warning: Could not calculate reprojection error for image {i}: {e}")
+                    per_image_errors.append(float('inf'))
+            else:
+                if verbose:
+                    print(f"   Image {i}: Skipped (missing data)")
+                per_image_errors.append(float('inf'))
+
+        if valid_error_count > 0:
+            rms_error = np.sqrt(total_error / valid_error_count)
+            num_valid_images = len([e for e in per_image_errors if e != float('inf')])
+            if verbose:
+                print(f"   Overall RMS reprojection error: {rms_error:.4f} pixels "
+                      f"({num_valid_images} valid images, {valid_error_count} total points)")
+        else:
+            rms_error = float('inf')
+            if verbose:
+                print("   No valid images for reprojection error calculation")
+
+        return rms_error, per_image_errors
+
+    def calculate_reprojection_errors(self,
+                                      primary_matrix: Optional[np.ndarray] = None,
+                                      secondary_matrix: Optional[np.ndarray] = None,
+                                      verbose: bool = False) -> Tuple[float, List[float]]:
+        """
+        Public wrapper around :meth:`_calculate_reprojection_errors`. Falls back
+        to the stored calibration matrices when arguments are ``None``.
+        """
+        if primary_matrix is None:
+            if self._primary_matrix is None:
+                raise ValueError("No primary matrix provided and no calibration results stored")
+            primary_matrix = self._primary_matrix
+
+        if secondary_matrix is None:
+            if self._secondary_matrix is None:
+                raise ValueError("No secondary matrix provided and no calibration results stored")
+            secondary_matrix = self._secondary_matrix
+
+        if self.image_points is None or self.object_points is None:
+            raise ValueError("Pattern points not detected. Run detect_pattern_points() first.")
+
+        if self.end2base_matrices is None:
+            raise ValueError("Robot poses not loaded")
+
+        if self.camera_matrix is None or self.distortion_coefficients is None:
+            raise ValueError("Camera intrinsic parameters not available")
+
+        return self._calculate_reprojection_errors(primary_matrix, secondary_matrix, verbose)
+
+    def get_reproject_rvec_tvec(self) -> Tuple[List[Optional[np.ndarray]], List[Optional[np.ndarray]]]:
+        """
+        Per-image rvec/tvec computed from the robot kinematic chain (not from
+        ``solvePnP``), used by the base class to draw reprojections.
+        """
+        if not self.is_calibrated() or self._primary_matrix is None or self._secondary_matrix is None:
+            raise ValueError("Hand-eye calibration not completed. Run calibrate() first.")
+
+        if not self.end2base_matrices:
+            raise ValueError("Robot end-effector poses not available. Set end2base_matrices first.")
+
+        rvecs: List[Optional[np.ndarray]] = []
+        tvecs: List[Optional[np.ndarray]] = []
+
+        for i in range(len(self.images)):
+            if (self.end2base_matrices[i] is not None and
+                self.image_points[i] is not None and
+                self.object_points[i] is not None):
+                try:
+                    pattern2cam_matrix = self._compose_target2cam(
+                        self._primary_matrix, self._secondary_matrix, self.end2base_matrices[i]
+                    )
+
+                    rotation_matrix = pattern2cam_matrix[:3, :3]
+                    translation_vector = pattern2cam_matrix[:3, 3]
+
+                    rvec, _ = cv2.Rodrigues(rotation_matrix)
+                    tvec = translation_vector.reshape(-1, 1)
+
+                    rvecs.append(rvec)
+                    tvecs.append(tvec)
+                except Exception:
+                    rvecs.append(None)
+                    tvecs.append(None)
+            else:
+                rvecs.append(None)
+                tvecs.append(None)
+
+        return rvecs, tvecs
+
+    def _calculate_optimal_secondary_matrix(self,
+                                            primary_4x4: np.ndarray,
+                                            verbose: bool = False) -> np.ndarray:
+        """
+        Build per-image candidates for the secondary matrix from the chosen
+        primary matrix and pick the one with the lowest overall reprojection
+        error.
+        """
+        if verbose:
+            print(f"Calculating optimal {self._secondary_name} matrix...")
+
+        best_error = float('inf')
+        best_secondary: Optional[np.ndarray] = None
+
+        candidate_matrices: List[np.ndarray] = []
+        for i in range(len(self.target2cam_matrices)):
+            if self.target2cam_matrices[i] is not None:
+                candidate = self._compose_secondary_candidate(
+                    primary_4x4, self.end2base_matrices[i], self.target2cam_matrices[i]
+                )
+                candidate_matrices.append(candidate)
+
+        for candidate_idx, candidate in enumerate(candidate_matrices):
+            rms_error, _ = self._calculate_reprojection_errors(primary_4x4, candidate, verbose=False)
+
+            if rms_error < best_error:
+                best_error = rms_error
+                best_secondary = candidate.copy()
+                if verbose:
+                    print(f"  Candidate {candidate_idx}: RMS error = {rms_error:.4f} (best so far)")
+            elif verbose:
+                print(f"  Candidate {candidate_idx}: RMS error = {rms_error:.4f}")
+
+        if best_secondary is not None:
+            if verbose:
+                print(f"✅ Optimal {self._secondary_name} matrix found with RMS error: {best_error:.4f}")
+                print(f"{self._secondary_name} transformation matrix:")
+                print(best_secondary)
+        else:
+            if verbose:
+                print(f"⚠️ Could not find optimal {self._secondary_name} matrix, using first candidate")
+            best_secondary = candidate_matrices[0] if candidate_matrices else np.eye(4)
+
+        return best_secondary
+
+    def _perform_single_calibration(self,
+                                    method: int,
+                                    verbose: bool = False
+                                    ) -> Tuple[bool,
+                                               Optional[np.ndarray],
+                                               Optional[np.ndarray],
+                                               float,
+                                               Optional[List[float]]]:
+        """
+        Run a single ``cv2.calibrateHandEye`` invocation with the given method,
+        derive the optimal secondary matrix from it, and report reprojection
+        error.
+        """
+        try:
+            valid_indices: List[int] = []
+            for i in range(len(self.image_points)):
+                if (self.image_points[i] is not None and
+                    self.object_points[i] is not None and
+                    self.end2base_matrices[i] is not None and
+                    self.target2cam_matrices[i] is not None):
+                    valid_indices.append(i)
+
+            if len(valid_indices) < 3:
+                if verbose:
+                    print(f"   Insufficient valid data: {len(valid_indices)} points (need at least 3)")
+                return False, None, None, float('inf'), None
+
+            end2base_valid = [self.end2base_matrices[i] for i in valid_indices]
+            target2cam_valid = [self.target2cam_matrices[i] for i in valid_indices]
+
+            primary_4x4 = self._solve_primary(end2base_valid, target2cam_valid, method)
+
+            secondary_matrix = self._calculate_optimal_secondary_matrix(primary_4x4, verbose)
+            rms_error, per_image_errors = self._calculate_reprojection_errors(
+                primary_4x4, secondary_matrix, verbose
+            )
+
+            return True, primary_4x4, secondary_matrix, rms_error, per_image_errors
+
+        except Exception as e:
+            if verbose:
+                print(f"   Calibration failed: {e}")
+            return False, None, None, float('inf'), None
+
+    def optimize_calibration(self,
+                             ftol_rel: float = 1e-6,
+                             verbose: bool = False) -> Tuple[float, float]:
+        """
+        Two-stage scipy refinement of the primary and secondary matrices.
+
+        Stage 1 holds the primary matrix fixed and refines only the secondary.
+        Stage 2 refines both jointly. The stored calibration state is only
+        overwritten if the refinement actually reduces the reprojection error
+        (this matches the eye-in-hand behaviour and also fixes the eye-to-hand
+        path where the original code silently accepted regressions).
+        """
+        if self._primary_matrix is None:
+            raise ValueError("Initial calibration must be completed before optimization. Call calibrate() first.")
+
+        if verbose:
+            print(f"Starting optimization...")
+            print(f"Initial RMS error: {self.rms_error:.4f} pixels")
+
+        initial_primary = self._primary_matrix.copy()
+        initial_secondary = self._secondary_matrix.copy()
+        initial_error = self.rms_error
+
+        try:
+            if verbose:
+                print("   Two-stage optimization approach:")
+                print(f"   Stage 1: Optimizing secondary matrix ({self._secondary_name}) only")
+
+            primary_stage1, secondary_stage1, error_before_stage1, _ = \
+                self._optimize_matrices_jointly(
+                    initial_primary, initial_secondary, ftol_rel, verbose,
+                    fix_primary_matrix=True,
+                )
+
+            if verbose:
+                print("   Stage 2: Optimizing both matrices jointly")
+            optimized_primary, optimized_secondary, _, error_after_stage2 = \
+                self._optimize_matrices_jointly(
+                    primary_stage1, secondary_stage1, ftol_rel, verbose,
+                    fix_primary_matrix=False,
+                )
+
+            initial_opt_error = error_before_stage1
+            final_opt_error = error_after_stage2
+
+            if verbose:
+                print(f"   Overall two-stage optimization: {initial_opt_error:.4f} -> {final_opt_error:.4f} pixels")
+                if initial_opt_error > 0:
+                    overall_improvement = (initial_opt_error - final_opt_error) / initial_opt_error * 100
+                    print(f"   Overall improvement: {overall_improvement:.1f}%")
+
+            # Only commit the refinement if it actually improved.
+            if initial_opt_error > final_opt_error:
+                self._primary_matrix = optimized_primary
+                self._secondary_matrix = optimized_secondary
+
+                self.rms_error, self.per_image_errors = self.calculate_reprojection_errors(
+                    self._primary_matrix, self._secondary_matrix, verbose=False
+                )
+
+                if verbose:
+                    improvement = initial_error - self.rms_error
+                    improvement_pct = (improvement / initial_error) * 100 if initial_error > 0 else 0
+                    print(f"Optimization completed!")
+                    print(f"Final RMS error: {self.rms_error:.4f} pixels")
+                    print(f"Improvement: {improvement:.4f} pixels ({improvement_pct:.1f}%)")
+
+            return initial_error, self.rms_error
+
+        except Exception as e:
+            if verbose:
+                print(f"Optimization failed: {e}")
+            self._primary_matrix = initial_primary
+            self._secondary_matrix = initial_secondary
+            self.rms_error = initial_error
+            return initial_error, initial_error
+
+    def _optimize_matrices_jointly(self,
+                                   initial_primary: np.ndarray,
+                                   initial_secondary: np.ndarray,
+                                   ftol_rel: float,
+                                   verbose: bool,
+                                   fix_primary_matrix: bool = False):
+        """
+        Scipy-based joint optimization of the primary and secondary matrices
+        using small xyz/rpy delta perturbations.
+        """
+        initial_matrices = [initial_primary, initial_secondary]
+        matrix_names = [self._primary_name, self._secondary_name]
+
+        if fix_primary_matrix:
+            optimize_flags = [False, True]
+            opt_description = f"{self._secondary_name} matrix ({self._primary_name} fixed)"
+        else:
+            optimize_flags = [True, True]
+            opt_description = f"both {self._primary_name} and {self._secondary_name} matrices"
+
+        optimize_indices = [i for i, flag in enumerate(optimize_flags) if flag]
+        param_count = len(optimize_indices) * 6
+        initial_delta_params = np.zeros(param_count)
+
+        if verbose:
+            print(f"   Optimizing {opt_description}")
+
+        def joint_objective(delta_params):
+            try:
+                result_matrices = [matrix.copy() for matrix in initial_matrices]
+
+                param_offset = 0
+                for i, should_optimize in enumerate(optimize_flags):
+                    if should_optimize:
+                        matrix_delta_params = delta_params[param_offset:param_offset + 6]
+                        delta_matrix = xyz_rpy_to_matrix(matrix_delta_params)
+
+                        result_matrices[i] = initial_matrices[i] @ delta_matrix
+                        param_offset += 6
+
+                rms_error, _ = self.calculate_reprojection_errors(
+                    result_matrices[0], result_matrices[1], verbose=False
+                )
+
+                if not np.isfinite(rms_error):
+                    return 1e6
+
+                return rms_error
+            except Exception:
+                return 1e6
+
+        single_matrix_bounds_low = np.array([-0.1, -0.1, -0.1, -0.2, -0.2, -0.2])
+        single_matrix_bounds_high = np.array([0.1, 0.1, 0.1, 0.2, 0.2, 0.2])
+
+        delta_bounds_low = np.tile(single_matrix_bounds_low, len(optimize_indices))
+        delta_bounds_high = np.tile(single_matrix_bounds_high, len(optimize_indices))
+
+        bounds = [(low, high) for low, high in zip(delta_bounds_low, delta_bounds_high)]
+
+        try:
+            result = minimize(
+                joint_objective,
+                initial_delta_params,
+                method='Nelder-Mead',
+                options={'ftol': ftol_rel, 'disp': False},
+            )
+            optimized_delta_params = result.x
+
+            result_matrices = [matrix.copy() for matrix in initial_matrices]
+            param_offset = 0
+            for i, should_optimize in enumerate(optimize_flags):
+                if should_optimize:
+                    matrix_delta_params = optimized_delta_params[param_offset:param_offset + 6]
+                    delta_matrix = xyz_rpy_to_matrix(matrix_delta_params)
+                    result_matrices[i] = initial_matrices[i] @ delta_matrix
+                    param_offset += 6
+
+            initial_error = joint_objective(initial_delta_params)
+            final_error = joint_objective(optimized_delta_params)
+
+            if final_error < initial_error:
+                if verbose:
+                    opt_type = "Secondary-only" if fix_primary_matrix else "Joint"
+                    print(f"   {opt_type} delta optimization: {initial_error:.4f} -> {final_error:.4f} pixels")
+                    if initial_error > 0:
+                        improvement = (initial_error - final_error) / initial_error * 100
+                        print(f"   Improvement: {improvement:.1f}%")
+
+                    param_offset = 0
+                    delta_info = []
+                    for i, should_optimize in enumerate(optimize_flags):
+                        if should_optimize:
+                            matrix_delta_params = optimized_delta_params[param_offset:param_offset + 6]
+                            trans_delta = np.max(np.abs(matrix_delta_params[:3]))
+                            rot_delta = np.max(np.abs(matrix_delta_params[3:]))
+                            delta_info.append(
+                                f"{matrix_names[i]}: translation {trans_delta:.4f}m, rotation {rot_delta:.4f}rad"
+                            )
+                            param_offset += 6
+
+                    if len(delta_info) == 1:
+                        print(f"   Max {delta_info[0]}")
+                    else:
+                        print(f"   Max deltas - {' | '.join(delta_info)}")
+
+                return result_matrices[0], result_matrices[1], initial_error, final_error
+            else:
+                if verbose:
+                    opt_type = "Secondary-only" if fix_primary_matrix else "Joint"
+                    print(f"   {opt_type} delta optimization did not improve: "
+                          f"{initial_error:.4f} -> {final_error:.4f} pixels")
+                    print(f"   Keeping initial matrices")
+                return initial_primary, initial_secondary, initial_error, initial_error
+
+        except Exception as opt_e:
+            if verbose:
+                print(f"   Delta optimization failed: {opt_e}")
+            initial_error = joint_objective(initial_delta_params)
+            return initial_primary, initial_secondary, initial_error, initial_error
+
+    # ============================================================================
+    # Shared validation helpers
+    # ============================================================================
+
+    def _validate_handeye_data(self) -> bool:
+        """
+        Verify that the basic prerequisites for hand-eye calibration are present
+        (images, robot poses with matching count, intrinsics, pattern).
+        """
+        if not self.images or len(self.images) == 0:
+            print("❌ No images loaded")
+            return False
+
+        if not self.end2base_matrices or len(self.end2base_matrices) == 0:
+            print("❌ No end-effector to base transformation matrices")
+            return False
+
+        if len(self.images) != len(self.end2base_matrices):
+            print(f"❌ Mismatch: {len(self.images)} images vs "
+                  f"{len(self.end2base_matrices)} transformation matrices")
+            return False
+
+        if self.camera_matrix is None:
+            print("❌ Camera intrinsic matrix not set")
+            return False
+
+        if self.distortion_coefficients is None:
+            print("❌ Camera distortion coefficients not set")
+            return False
+
+        if self.calibration_pattern is None:
+            print("❌ Calibration pattern not set")
+            return False
+
+        print("✅ All required data for hand-eye calibration is available")
+        return True
+
+    def _is_handeye_calibrated(self) -> bool:
+        """Return True iff calibration is complete and the primary matrix is set."""
+        return self.is_calibrated() and self._primary_matrix is not None
 
     @staticmethod
     def get_available_methods() -> Dict[int, str]:
