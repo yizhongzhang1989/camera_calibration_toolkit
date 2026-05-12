@@ -14,6 +14,7 @@ allowing easy integration into other projects as a submodule.
 
 from .intrinsic_calibration import IntrinsicCalibrator
 from .eye_in_hand_calibration import EyeInHandCalibrator
+from .eye_to_hand_calibration import EyeToHandCalibrator
 from .utils import (
     get_objpoints,
     rpy_to_matrix,
@@ -25,6 +26,7 @@ from .utils import (
 __all__ = [
     'IntrinsicCalibrator',
     'EyeInHandCalibrator',
+    'EyeToHandCalibrator',
     'get_objpoints',
     'rpy_to_matrix',
     'xyz_rpy_to_matrix',
